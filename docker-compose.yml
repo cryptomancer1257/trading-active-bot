@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    hostname: redis
+    ports:
+      - "6379:6379"
+
+  db:
+    image: mysql:8.0
+    hostname: db
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword123
+      MYSQL_DATABASE: bot_marketplace
+      MYSQL_USER: botuser
+      MYSQL_PASSWORD: botpassword123
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+  # api:
+  #   build: .
+  #   ports:
+  #     - "8000:80"
+  #   volumes:
+  #     - .:/app
+  #   depends_on:
+  #     - redis
+  #     - db
+  #   environment:
+  #     - DATABASE_URL=mysql+pymysql://botuser:botpassword123@db:3306/bot_marketplace
+  #     - REDIS_URL=redis://redis:6379/0
+  #     - DEVELOPMENT_MODE=false
+  #     - AWS_DEFAULT_REGION=ap-southeast-2
+  #     - AWS_S3_BUCKET_NAME=test-trade-bot
+  #   command: uvicorn main:app --host 0.0.0.0 --port 80 --reload
+
+  # worker:
+  #   build: .
+  #   command: celery -A tasks.celery_app worker --loglevel=info
+  #   volumes:
+  #     - .:/app
+  #   depends_on:
+  #     - redis
+  #     - db
+  #   environment:
+  #     - DATABASE_URL=mysql+pymysql://botuser:botpassword123@db:3306/bot_marketplace
+  #     - REDIS_URL=redis://redis:6379/0
+  #     - AWS_DEFAULT_REGION=ap-southeast-2
+  #     - AWS_S3_BUCKET_NAME=test-trade-bot
+
+volumes:
+  mysql_data:
