@@ -50,7 +50,8 @@ class BinanceIntegration:
         
         self.session = requests.Session()
         self.session.headers.update({
-            'X-MBX-APIKEY': self.api_key
+            'X-MBX-APIKEY': self.api_key,
+            'Content-Type': 'application/x-www-form-urlencoded'
         })
     
     def _generate_signature(self, params: Dict[str, Any]) -> str:
@@ -71,7 +72,7 @@ class BinanceIntegration:
         return signature
     
     def _make_request(self, method: str, endpoint: str, params: Dict[str, Any] = None, signed: bool = False) -> Dict[str, Any]:
-        """Make authenticated request to Binance API"""
+        """Make authenticated request to Binance API - FIXED VERSION"""
         if params is None:
             params = {}
         
@@ -80,20 +81,54 @@ class BinanceIntegration:
             server_time = self._get_server_time()
             params['timestamp'] = server_time
             
-            # Add signature
-            params['signature'] = self._generate_signature(params)
+            # Add recvWindow for POST requests to allow some clock skew
+            if method == "POST":
+                params['recvWindow'] = 60000  # 60 seconds window
+            
+            # Create query string manually to avoid encoding issues
+            sorted_params = sorted(params.items())
+            query_string = '&'.join([f"{key}={value}" for key, value in sorted_params])
+            
+            # Generate signature
+            signature = hmac.new(
+                self.api_secret.encode('utf-8'),
+                query_string.encode('utf-8'),
+                hashlib.sha256
+            ).hexdigest()
+            
+            # Create final query string with signature
+            final_query = f"{query_string}&signature={signature}"
+            
+            logger.debug(f"Query string for signature: {query_string}")
+            logger.debug(f"Generated signature: {signature}")
         
         url = f"{self.base_url}{endpoint}"
         
         try:
-            logger.debug(f"Making {method} request to {url} with params: {params}")
+            logger.debug(f"Making {method} request to {url}")
+            
+            # Headers with proper Content-Type
+            headers = {
+                'X-MBX-APIKEY': self.api_key,
+                'Content-Type': 'application/x-www-form-urlencoded'
+            }
             
             if method == "GET":
-                response = self.session.get(url, params=params, timeout=10)
+                if signed:
+                    response = self.session.get(f"{url}?{final_query}", headers=headers, timeout=10)
+                else:
+                    response = self.session.get(url, params=params, timeout=10)
             elif method == "POST":
-                response = self.session.post(url, params=params, timeout=10)
+                if signed:
+                    # Send as raw data to avoid any encoding issues
+                    response = self.session.post(url, data=final_query, headers=headers, timeout=10)
+                else:
+                    response = self.session.post(url, data=params, headers=headers, timeout=10)
             elif method == "DELETE":
-                response = self.session.delete(url, params=params, timeout=10)
+                if signed:
+                    response = self.session.delete(url, data=final_query, headers=headers, timeout=10)
+                else:
+                    response = self.session.delete(url, data=params, headers=headers, timeout=10)
             
             logger.debug(f"Response status: {response.status_code}")
             logger.debug(f"Response headers: {dict(response.headers)}")
@@ -133,7 +168,9 @@ class BinanceIntegration:
             return server_time
         except Exception as e:
             logger.warning(f"Failed to get server time, using local time: {e}")
-            return int(time.time() * 1000)
+            # Add small buffer to local time to prevent timing issues
+            local_time = int(time.time() * 1000)
+            return local_time - 1000  # Subtract 1 second buffer
     
     def test_connectivity(self) -> bool:
         """Test connection to Binance API"""

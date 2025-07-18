@@ -76,7 +76,7 @@ async def get_current_active_user(current_user: Annotated[models.User, Depends(g
 
 async def get_current_active_developer(current_user: Annotated[models.User, Depends(get_current_active_user)]) -> models.User:
     """Yêu cầu người dùng phải có vai trò là DEVELOPER hoặc ADMIN."""
-    if current_user.role not in ["DEVELOPER", "ADMIN"]:
+    if current_user.role.value not in ["DEVELOPER", "ADMIN"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Operation not permitted for your role"
@@ -85,7 +85,7 @@ async def get_current_active_developer(current_user: Annotated[models.User, Depe
 
 async def get_current_active_admin(current_user: Annotated[models.User, Depends(get_current_active_user)]) -> models.User:
     """Yêu cầu người dùng phải có vai trò là ADMIN."""
-    if current_user.role != "ADMIN":
+    if current_user.role.value != "ADMIN":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You must be an admin to perform this action"

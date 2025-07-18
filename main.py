@@ -9,7 +9,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 
 # Load environment variables
-load_dotenv('config.env')
+load_dotenv('.env')
 
 from database import engine, SessionLocal
 import models
@@ -26,6 +26,12 @@ if not development_mode:
     from api.endpoints import auth, bots, subscriptions, admin, exchanges
 else:
     from api.endpoints import auth, bots, admin
+    # Import simplified subscriptions for testing without S3
+    try:
+        from api.endpoints import subscriptions_simple
+        logger.info("Simplified subscriptions endpoint loaded for testing")
+    except ImportError:
+        logger.warning("Simplified subscriptions endpoint not available")
     logger.info("Development mode: Skipping endpoints that require external services")
 
 # Initialize managers on startup
@@ -78,7 +84,13 @@ if not development_mode:
     app.include_router(subscriptions.router, prefix="/subscriptions", tags=["Subscriptions"])
     app.include_router(exchanges.router, prefix="/exchanges", tags=["Exchanges"])
 else:
-    logger.info("Development mode: Subscriptions and Exchanges endpoints disabled")
+    # Include simplified subscriptions for testing without S3
+    try:
+        app.include_router(subscriptions_simple.router, prefix="/subscriptions-simple", tags=["Subscriptions (Simplified)"])
+        logger.info("Simplified subscriptions endpoint included for testing")
+    except NameError:
+        logger.warning("Simplified subscriptions endpoint not available")
+    logger.info("Development mode: Full subscriptions and exchanges endpoints disabled")
 
 # Dependency to get DB session
 def get_db():

@@ -41,6 +41,7 @@ class SubscriptionStatus(str, Enum):
     PAUSED = "PAUSED"
     CANCELLED = "CANCELLED"
     EXPIRED = "EXPIRED"
+    ERROR = "ERROR"
 
 class TradeStatus(str, Enum):
     OPEN = "OPEN"

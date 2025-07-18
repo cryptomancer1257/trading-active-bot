@@ -95,23 +95,8 @@ class GoldenCrossBot(CustomBot):
             # Enhanced Golden Cross detection
             if prev_short_ma <= prev_long_ma and current_short_ma > current_long_ma:
                 # Golden Cross detected
-                confidence = signal_strength
-                
-                # Apply volume filter
-                if volume_ratio < 0.8:
-                    confidence *= 0.5  # Reduce confidence if volume is low
-                
-                # Apply volatility filter
-                if volatility > self.volatility_threshold:
-                    confidence *= 0.7  # Reduce confidence in high volatility
-                
-                # Additional confirmation: ensure trend strength
-                ma_slope = (current_short_ma - data[short_ma_col].iloc[-5]) / current_short_ma
-                if ma_slope > 0.002:  # Positive slope indicates strong trend
-                    confidence *= 1.2  # Boost confidence
-                
-                confidence = min(confidence, 1.0)  # Cap at 100%
-                position_size = self.position_size * confidence
+                confidence = 1.0  # Set max confidence
+                position_size = self.position_size  # Use full position size
                 
                 reason = f"Golden Cross: MA{self.short_window}({current_short_ma:.2f}) > MA{self.long_window}({current_long_ma:.2f}), confidence={confidence:.2f}, volume_ratio={volume_ratio:.2f}"
                 
@@ -121,22 +106,7 @@ class GoldenCrossBot(CustomBot):
             # Enhanced Death Cross detection
             elif prev_short_ma >= prev_long_ma and current_short_ma < current_long_ma:
                 # Death Cross detected
-                confidence = signal_strength
-                
-                # Apply volume filter
-                if volume_ratio < 0.8:
-                    confidence *= 0.5
-                
-                # Apply volatility filter  
-                if volatility > self.volatility_threshold:
-                    confidence *= 0.7
-                
-                # Additional confirmation: ensure downward trend
-                ma_slope = (current_short_ma - data[short_ma_col].iloc[-5]) / current_short_ma
-                if ma_slope < -0.002:  # Negative slope indicates strong downward trend
-                    confidence *= 1.2
-                
-                confidence = min(confidence, 1.0)
+                confidence = 1.0  # Set max confidence
                 
                 reason = f"Death Cross: MA{self.short_window}({current_short_ma:.2f}) < MA{self.long_window}({current_long_ma:.2f}), confidence={confidence:.2f}, volume_ratio={volume_ratio:.2f}"
                 
@@ -151,7 +121,7 @@ class GoldenCrossBot(CustomBot):
                 if abs(ma_distance) > 0.02:  # 2% separation indicates strong trend
                     trend_direction = "bullish" if ma_distance > 0 else "bearish"
                     reason = f"Strong {trend_direction} trend: MA distance {ma_distance:.3f}, holding position"
-                else:
+        else:
                     reason = f"No cross signal: MA{self.short_window}({current_short_ma:.2f}) vs MA{self.long_window}({current_long_ma:.2f})"
                 
                 return Action("HOLD", 0.0, reason)

@@ -351,7 +351,7 @@ def update_subscription(
         raise HTTPException(status_code=403, detail="Not enough permissions")
     
     # Can only update if subscription is paused or active
-    if subscription.status not in [schemas.SubscriptionStatus.ACTIVE, schemas.SubscriptionStatus.PAUSED]:
+    if subscription.status not in [models.SubscriptionStatus.ACTIVE, models.SubscriptionStatus.PAUSED]:
         raise HTTPException(
             status_code=400,
             detail="Can only update active or paused subscriptions"
@@ -372,7 +372,8 @@ def pause_subscription(
     if subscription.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not enough permissions")
     
-    if subscription.status != schemas.SubscriptionStatus.ACTIVE:
+    # Fix: Use models.SubscriptionStatus instead of schemas.SubscriptionStatus
+    if subscription.status != models.SubscriptionStatus.ACTIVE:
         raise HTTPException(status_code=400, detail="Can only pause active subscriptions")
     
     updated_sub = crud.update_subscription_status(db, subscription_id, schemas.SubscriptionStatus.PAUSED)
@@ -396,7 +397,7 @@ def resume_subscription(
         if subscription.user_id != current_user.id:
             raise HTTPException(status_code=403, detail="Not enough permissions")
         
-        if subscription.status != schemas.SubscriptionStatus.PAUSED:
+        if subscription.status != models.SubscriptionStatus.PAUSED:
             raise HTTPException(status_code=400, detail="Can only resume paused subscriptions")
         
         # Verify bot can still be loaded from S3
@@ -544,7 +545,7 @@ def force_run_subscription(
     if subscription.user_id != current_user.id and current_user.role != schemas.UserRole.ADMIN:
         raise HTTPException(status_code=403, detail="Not enough permissions")
     
-    if subscription.status != schemas.SubscriptionStatus.ACTIVE:
+    if subscription.status != models.SubscriptionStatus.ACTIVE:
         raise HTTPException(status_code=400, detail="Can only force run active subscriptions")
     
     # Trigger immediate execution

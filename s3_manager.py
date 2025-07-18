@@ -341,36 +341,60 @@ class S3Manager:
             logger.error(f"Error uploading ML model: {e}")
             raise
     
-    def download_bot_code(self, bot_id: int, version: Optional[str] = None) -> str:
+    def download_bot_code(self, bot_id: int, version: Optional[str] = None, filename: Optional[str] = None) -> str:
         """
         Download bot code from S3
         
         Args:
             bot_id: Bot ID
             version: Version to download (latest if not specified)
+            filename: Specific filename to download (auto-detect if not specified)
             
         Returns:
             Bot code content as string
         """
         try:
-            # Get the S3 key
-            if version:
-                s3_key = f"bots/{bot_id}/code/{version}/bot.py"
+            # Get version if not specified
+            if not version:
+                version = self.get_latest_version(bot_id, "code")
+                logger.info(f"Using latest version: {version}")
+            
+            # If filename not specified, find the Python file in the version directory
+            if not filename:
+                prefix = f"bots/{bot_id}/code/{version}/"
+                response = self.s3_client.list_objects_v2(
+                    Bucket=self.bucket_name,
+                    Prefix=prefix
+                )
+                
+                python_files = []
+                for obj in response.get('Contents', []):
+                    key = obj['Key']
+                    if key.endswith('.py'):
+                        python_files.append(key)
+                
+                if not python_files:
+                    raise FileNotFoundError(f"No Python files found in {prefix}")
+                
+                # Use the first Python file found (should be the main bot file)
+                s3_key = python_files[0]
+                filename = s3_key.split('/')[-1]
+                logger.info(f"Found Python file: {filename}")
             else:
-                # Get latest version
-                s3_key = self._get_latest_bot_version_key(bot_id)
-                if not s3_key:
-                    raise ValueError(f"No bot code found for bot {bot_id}")
+                s3_key = f"bots/{bot_id}/code/{version}/{filename}"
             
             # Download file
             response = self.s3_client.get_object(Bucket=self.bucket_name, Key=s3_key)
             code_content = response['Body'].read().decode('utf-8')
             
-            logger.info(f"Downloaded bot code: {s3_key}")
+            logger.info(f"Downloaded bot code: {s3_key} ({len(code_content)} characters)")
             return code_content
             
         except ClientError as e:
             logger.error(f"Error downloading bot code: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error downloading bot code: {e}")
             raise
     
     def download_ml_model(self, bot_id: int, filename: str, version: Optional[str] = None) -> bytes:
@@ -515,14 +539,35 @@ class S3Manager:
             versions = set()
             for obj in response.get('Contents', []):
                 key_parts = obj['Key'].split('/')
-                version_index = 3 if not file_type else 4
+                # Structure: bots/{bot_id}/code/{version}/filename.py
+                # Indices:   0    1        2     3        4
+                if file_type == "code":
+                    version_index = 3
+                elif file_type:
+                    version_index = 3  # For other file types like models
+                else:
+                    version_index = 2  # When no file_type specified
+                
                 if len(key_parts) > version_index:
-                    versions.add(key_parts[version_index])
+                    version = key_parts[version_index]
+                    # Skip if this looks like a filename instead of version
+                    if not version.endswith('.py') and version:
+                        versions.add(version)
             
             if not versions:
-                raise FileNotFoundError(f"No versions found for bot {bot_id}")
+                raise FileNotFoundError(f"No versions found for bot {bot_id} with file_type {file_type}")
             
-            return max(versions)  # Latest version (string comparison)
+            # Sort versions properly (semantic versioning)
+            def version_key(v):
+                try:
+                    return tuple(map(int, v.split('.')))
+                except:
+                    return (0, 0, 0)  # Fallback for non-numeric versions
+            
+            sorted_versions = sorted(versions, key=version_key, reverse=True)
+            latest = sorted_versions[0]
+            logger.info(f"Found versions for bot {bot_id}: {sorted_versions}, using: {latest}")
+            return latest
             
         except ClientError as e:
             logger.error(f"Error getting latest version: {e}")

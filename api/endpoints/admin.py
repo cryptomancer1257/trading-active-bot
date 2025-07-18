@@ -1,6 +1,6 @@
 # file: api/endpoints/admin.py
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Form, File, UploadFile
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
@@ -77,6 +77,84 @@ def create_bot_as_admin(
         db=db, bot=bot_in, developer_id=current_user.id, 
         status=schemas.BotStatus.APPROVED, approved_by=current_user.id
     )
+
+@router.post("/bots/with-code", response_model=schemas.BotInDB, status_code=status.HTTP_201_CREATED)
+async def create_bot_as_admin_with_code(
+    name: str = Form(...),
+    description: str = Form(...),
+    category_id: int = Form(...),
+    price_per_month: float = Form(0.0),
+    is_free: bool = Form(True),
+    bot_type: str = Form("TECHNICAL"),
+    config_schema: str = Form("{}"),
+    default_config: str = Form("{}"),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(security.get_current_active_admin)
+):
+    """Admin creates a bot with code file and auto-approves it"""
+    try:
+        # Import here to avoid circular imports
+        from bot_manager import BotManager
+        from s3_manager import S3Manager
+        import json
+        from decimal import Decimal
+        
+        # Initialize managers
+        bot_manager = BotManager()
+        s3_manager = S3Manager()
+        
+        # Validate file type
+        if not file.filename or not file.filename.endswith('.py'):
+            raise HTTPException(status_code=400, detail="Only Python files are allowed")
+        
+        # Read file content
+        content = await file.read()
+        code_content = content.decode('utf-8')
+        
+        # Validate bot code
+        validation_result = bot_manager.validate_bot_code(code_content)
+        if not validation_result["valid"]:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Bot code validation failed: {validation_result['error']}"
+            )
+        
+        # Parse bot type
+        try:
+            bot_type_enum = schemas.BotType(bot_type)
+        except ValueError:
+            bot_type_enum = schemas.BotType.TECHNICAL
+        
+        # Create bot data
+        bot_data = schemas.BotCreate(
+            name=name,
+            description=description,
+            category_id=category_id,
+            price_per_month=Decimal(str(price_per_month)),
+            is_free=is_free,
+            bot_type=bot_type_enum,
+            config_schema=json.loads(config_schema),
+            default_config=json.loads(default_config)
+        )
+        
+        # Create bot with S3 upload and auto-approve as admin
+        bot_record = crud.save_bot_with_s3(
+            db=db,
+            bot_data=bot_data,
+            developer_id=current_user.id,
+            file_content=code_content,
+            file_name=file.filename,
+            status=schemas.BotStatus.APPROVED,  # Admin bots are auto-approved
+            approved_by=current_user.id
+        )
+        
+        return bot_record
+        
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON in config fields")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create bot: {str(e)}")
 
 @router.delete("/bots/{bot_id}")
 def delete_bot(

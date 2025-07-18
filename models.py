@@ -19,6 +19,7 @@ class SubscriptionStatus(enum.Enum):
     PAUSED = "PAUSED"
     CANCELLED = "CANCELLED"
     EXPIRED = "EXPIRED"
+    ERROR = "ERROR"
 
 class TradeStatus(enum.Enum):
     OPEN = "OPEN"

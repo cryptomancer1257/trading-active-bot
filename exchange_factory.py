@@ -56,6 +56,11 @@ class BaseExchange(ABC):
         pass
     
     @abstractmethod
+    def get_ticker(self, symbol: str) -> Dict[str, Any]:
+        """Get ticker information for symbol"""
+        pass
+    
+    @abstractmethod
     def create_market_order(self, symbol: str, side: str, quantity: str) -> OrderInfo:
         """Create market order"""
         pass
@@ -104,6 +109,19 @@ class BinanceAdapter(BaseExchange):
     
     def get_current_price(self, symbol: str) -> float:
         return self.client.get_current_price(symbol)
+    
+    def get_ticker(self, symbol: str) -> Dict[str, Any]:
+        """Get ticker information for symbol"""
+        try:
+            price = self.client.get_current_price(symbol)
+            return {
+                'symbol': symbol,
+                'price': str(price),
+                'last_price': str(price)
+            }
+        except Exception as e:
+            logger.error(f"Failed to get ticker for {symbol}: {e}")
+            raise
     
     def create_market_order(self, symbol: str, side: str, quantity: str) -> OrderInfo:
         return self.client.create_market_order(symbol, side, quantity)
@@ -201,6 +219,19 @@ class CoinbaseAdapter(BaseExchange):
             return float(ticker['price'])
         except Exception as e:
             logger.error(f"Failed to get Coinbase price: {e}")
+            raise
+    
+    def get_ticker(self, symbol: str) -> Dict[str, Any]:
+        """Get ticker information for symbol"""
+        try:
+            price = self.get_current_price(symbol)
+            return {
+                'symbol': symbol,
+                'price': str(price),
+                'last_price': str(price)
+            }
+        except Exception as e:
+            logger.error(f"Failed to get ticker for {symbol}: {e}")
             raise
     
     def create_market_order(self, symbol: str, side: str, quantity: str) -> OrderInfo:
@@ -396,6 +427,19 @@ class KrakenAdapter(BaseExchange):
             return float(ticker_data['c'][0])  # Last trade price
         except Exception as e:
             logger.error(f"Failed to get Kraken price: {e}")
+            raise
+    
+    def get_ticker(self, symbol: str) -> Dict[str, Any]:
+        """Get ticker information for symbol"""
+        try:
+            price = self.get_current_price(symbol)
+            return {
+                'symbol': symbol,
+                'price': str(price),
+                'last_price': str(price)
+            }
+        except Exception as e:
+            logger.error(f"Failed to get ticker for {symbol}: {e}")
             raise
     
     def create_market_order(self, symbol: str, side: str, quantity: str) -> OrderInfo:

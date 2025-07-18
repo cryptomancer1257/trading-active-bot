@@ -129,6 +129,11 @@ class CustomBot:
                 logger.error("No valid bot class found in module")
                 return None
             
+            # Initialize bot instance
+            if not bot_class:
+                logger.error("No valid bot class found in module")
+                return None
+            
             # Prepare bot configuration
             bot_config = {
                 'short_window': 50,
@@ -210,16 +215,11 @@ def execute_trade_action(db, subscription, exchange, action, current_price):
         logger.info(f"Current balance: {base_free} {base_asset}, {quote_free} {quote_asset}")
         
         if action.action == "BUY":
-            # Fix: Handle percentage values > 1.0 as actual percentages, not decimals
-            percentage = action.value or 0.1  # Default 10%
-            if percentage > 1.0:
-                percentage = percentage / 100.0  # Convert 5.0 → 0.05 (5%)
-            
             # Buy with percentage of USDT balance
-            usdt_amount = quote_free * percentage
+            usdt_amount = quote_free * (action.value or 0.1)
             quantity_str, calc_info = exchange.calculate_quantity(symbol, "BUY", usdt_amount, current_price)
             
-            logger.info(f"BUY: {percentage*100:.1f}% of {quote_free} USDT = {usdt_amount:.2f} USDT")
+            logger.info(f"BUY: {(action.value or 0.1)*100}% of {quote_free} USDT = {usdt_amount} USDT")
             logger.info(f"Quantity: {quantity_str} {base_asset} at ${current_price}")
             
             # Execute buy order
@@ -232,39 +232,26 @@ def execute_trade_action(db, subscription, exchange, action, current_price):
             
             # Send email notification
             try:
-                # Calculate USDT value
-                usdt_value = float(quantity_str) * current_price
-                percentage_used = percentage * 100
-                
                 send_email_notification.delay(
                     subscription.user.email,
                     f"🚀 Bot Trade Executed - {subscription.bot.name}",
-                    f"Your bot executed a BUY order:\n\n"
-                    f"📊 Trade Details:\n"
-                    f"   • Symbol: {trading_pair}\n"
-                    f"   • Action: BUY {quantity_str} {base_asset}\n"
-                    f"   • Price: ${current_price:.2f} per {base_asset}\n"
-                    f"   • Total Value: ${usdt_value:.2f} USDT\n"
-                    f"   • Allocation: {percentage_used:.1f}% of USDT balance\n"
-                    f"   • Order ID: {order.order_id}\n\n"
-                    f"📝 Reason: {action.reason or 'Bot signal'}\n"
-                    f"🔄 Mode: {'🧪 TESTNET' if getattr(subscription, 'is_testnet', True) else '🚀 LIVE TRADING'}\n"
-                    f"⏰ Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
+                    f"Your bot executed a BUY order:\n"
+                    f"Symbol: {trading_pair}\n"
+                    f"Quantity: {quantity_str} {base_asset}\n"
+                    f"Price: ${current_price}\n"
+                    f"Order ID: {order.order_id}\n"
+                    f"Reason: {action.reason or 'Bot signal'}\n"
+                    f"{'🧪 TESTNET' if getattr(subscription, 'is_testnet', True) else '🚀 MAINNET'}"
                 )
             except Exception as e:
                 logger.error(f"Failed to send email notification: {e}")
             
         elif action.action == "SELL":
-            # Fix: Handle percentage values > 1.0 as actual percentages, not decimals
-            percentage = action.value or 0.5  # Default 50%
-            if percentage > 1.0:
-                percentage = percentage / 100.0  # Convert 5.0 → 0.05 (5%)
-            
             # Sell percentage of holdings
-            sell_quantity = base_free * percentage
+            sell_quantity = base_free * (action.value or 0.5)
             quantity_str, calc_info = exchange.calculate_quantity(symbol, "SELL", sell_quantity, current_price)
             
-            logger.info(f"SELL: {percentage*100:.1f}% of {base_free} {base_asset}")
+            logger.info(f"SELL: {(action.value or 0.5)*100}% of {base_free} {base_asset}")
             logger.info(f"Quantity: {quantity_str} {base_asset} at ${current_price}")
             
             # Execute sell order
@@ -277,24 +264,16 @@ def execute_trade_action(db, subscription, exchange, action, current_price):
             
             # Send email notification
             try:
-                # Calculate USDT value and percentage
-                usdt_value = float(quantity_str) * current_price
-                percentage_sold = percentage * 100
-                
                 send_email_notification.delay(
                     subscription.user.email,
                     f"🚀 Bot Trade Executed - {subscription.bot.name}",
-                    f"Your bot executed a SELL order:\n\n"
-                    f"📊 Trade Details:\n"
-                    f"   • Symbol: {trading_pair}\n"
-                    f"   • Action: SELL {quantity_str} {base_asset}\n"
-                    f"   • Price: ${current_price:.2f} per {base_asset}\n"
-                    f"   • Total Value: ${usdt_value:.2f} USDT received\n"
-                    f"   • Allocation: {percentage_sold:.1f}% of {base_asset} holdings\n"
-                    f"   • Order ID: {order.order_id}\n\n"
-                    f"📝 Reason: {action.reason or 'Bot signal'}\n"
-                    f"🔄 Mode: {'🧪 TESTNET' if getattr(subscription, 'is_testnet', True) else '🚀 LIVE TRADING'}\n"
-                    f"⏰ Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
+                    f"Your bot executed a SELL order:\n"
+                    f"Symbol: {trading_pair}\n"
+                    f"Quantity: {quantity_str} {base_asset}\n"
+                    f"Price: ${current_price}\n"
+                    f"Order ID: {order.order_id}\n"
+                    f"Reason: {action.reason or 'Bot signal'}\n"
+                    f"{'🧪 TESTNET' if getattr(subscription, 'is_testnet', True) else '🚀 MAINNET'}"
                 )
             except Exception as e:
                 logger.error(f"Failed to send email notification: {e}")
@@ -371,8 +350,8 @@ def run_bot_logic(self, subscription_id: int):
             else:
                 # Fallback to user's direct API credentials
                 logger.info(f"No exchange credentials found, checking user direct credentials")
-                api_key = str(subscription.user.api_key) if subscription.user.api_key else None
-                api_secret = str(subscription.user.api_secret) if subscription.user.api_secret else None
+                api_key = subscription.user.api_key
+                api_secret = subscription.user.api_secret
                 if api_key and api_secret:
                     logger.info(f"Using user direct API credentials")
             
@@ -388,8 +367,8 @@ def run_bot_logic(self, subscription_id: int):
             
             exchange = ExchangeFactory.create_exchange(
                 exchange_name=exchange_type.value,
-                api_key=str(api_key),
-                api_secret=str(api_secret),
+                api_key=api_key,
+                api_secret=api_secret,
                 testnet=use_testnet
             )
             
@@ -445,18 +424,21 @@ def run_bot_logic(self, subscription_id: int):
                     f"{final_action.reason}. Value: {final_action.value or 0.0}. Price: ${current_price}"
                 )
                 
-                # Prepare subscription config for bot
+                # Initialize bot with exchange client
+                bot.exchange_client = exchange
+                
+                # Create subscription config
                 subscription_config = {
-                    'subscription_id': subscription.id,
-                    'user_id': subscription.user_id,
-                    'timeframe': timeframe,
+                    'subscription_id': subscription_id,
+                    'timeframe': subscription.timeframe,
                     'trading_pair': trading_pair,
-                    'is_testnet': bool(subscription.is_testnet),
-                    'risk_config': subscription.risk_config or {}
+                    'is_testnet': use_testnet,
+                    'exchange_type': exchange_type.value,
+                    'user_id': subscription.user.id
                 }
-
+                
                 # Execute bot prediction
-                final_action = bot.execute_full_cycle(timeframe, subscription_config)
+                final_action = bot.execute_full_cycle(subscription.timeframe, subscription_config)
                 
                 if final_action:
                     logger.info(f"Bot {subscription.bot.name} executed with action: {final_action.action}, value: {final_action.value}, reason: {final_action.reason}")
@@ -471,7 +453,7 @@ def run_bot_logic(self, subscription_id: int):
                     balance_info = ""
                     if final_action.action in ["BUY", "SELL"]:
                         try:
-                            # Get balance from exchange
+                            # Get balance from exchange using real API
                             base_asset = trading_pair.split('/')[0]  # BTC from BTC/USDT
                             quote_asset = trading_pair.split('/')[1]  # USDT from BTC/USDT
                             
@@ -490,18 +472,9 @@ def run_bot_logic(self, subscription_id: int):
                                          f"   • {quote_asset}: {quote_total:.2f} (Free: {quote_balance.free}, Locked: {quote_balance.locked})\n" \
                                          f"   • Portfolio Value: ~${portfolio_value:.2f} USDT\n"
                         except Exception as e:
-                            logger.error(f"Could not get balance info: {e}", exc_info=True)
+                            logger.warning(f"Could not get balance info: {e}")
                             mode_label = "TESTNET" if bool(subscription.is_testnet) else "LIVE"
-                            
-                            # For testnet, provide mock balance when no credentials
-                            if bool(subscription.is_testnet) and "credentials" in str(e).lower():
-                                balance_info = f"\n💼 Account Balance ({mode_label} - DEMO):\n" \
-                                             f"   • BTC: 0.100000 (Free: 0.100000, Locked: 0.000000)\n" \
-                                             f"   • USDT: 10000.00 (Free: 10000.00, Locked: 0.00)\n" \
-                                             f"   • Portfolio Value: ~${10000 + (0.1 * current_price):.2f} USDT\n" \
-                                             f"   ⚠️ Demo balance - Configure exchange credentials for real data\n"
-                            else:
-                                balance_info = f"\n💼 Account Balance ({mode_label}): Error - {str(e)[:100]}...\n"
+                            balance_info = f"\n💼 Account Balance ({mode_label}): Unable to fetch - {str(e)[:100]}\n"
                     
                     # Send email notification for ALL actions (including HOLD)
                     try:
@@ -526,15 +499,17 @@ def run_bot_logic(self, subscription_id: int):
                             f"🔄 Timeframe: {timeframe}\n"
                             f"{'🧪 TESTNET MODE' if bool(subscription.is_testnet) else '🚀 LIVE TRADING'}"
                             f"{balance_info}\n"
-                            f"{'✅ Trade executed' if final_action.action != 'HOLD' else '📊 Analysis only (hold signal)'}"
+                            f"{'✅ Trade executed' if final_action.action != 'HOLD' and not bool(subscription.is_testnet) else '📊 Analysis only (testnet/hold)'}"
                         )
                     except Exception as e:
                         logger.error(f"Failed to send signal notification: {e}")
                 
-                    # Execute trade for BUY/SELL actions (including testnet now!)
+                # Execute trade only for BUY/SELL actions and not in testnet
+                if final_action.action != "HOLD" and not subscription.is_testnet:
+                    execute_trade_action(db, subscription, exchange, final_action, current_price)
+                else:
                     if final_action.action != "HOLD":
-                        execute_trade_action(db, subscription, exchange, final_action, current_price)
-                        logger.info(f"Trade executed: {final_action.action} ({'TESTNET' if bool(subscription.is_testnet) else 'LIVE'})")
+                        logger.info("Testnet mode - trade not executed")
                     else:
                         logger.info("HOLD action - no trade execution")
                 
@@ -569,13 +544,12 @@ def run_bot_logic(self, subscription_id: int):
                     f"Bot execution failed: {str(e)}"
                 )
 
+        except Exception as e:
+            logger.error(f"Critical error in run_bot_logic: {e}")
+            logger.error(traceback.format_exc())
+            # Don't raise here to avoid task retry loops
         finally:
             db.close()
-
-    except Exception as e:
-        logger.error(f"Critical error in run_bot_logic: {e}")
-        logger.error(traceback.format_exc())
-        raise
 
 @app.task
 def schedule_active_bots():

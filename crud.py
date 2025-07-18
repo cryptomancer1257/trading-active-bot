@@ -10,12 +10,34 @@ import hashlib
 import json
 
 import models, schemas, security
-from s3_manager import S3Manager
-from bot_manager import BotManager
 
-# Initialize managers
-s3_manager = S3Manager()
-bot_manager = BotManager()
+# Lazy initialization - only create when needed
+_s3_manager = None
+_bot_manager = None
+
+def get_s3_manager():
+    """Get S3Manager instance (lazy initialization)"""
+    global _s3_manager
+    if _s3_manager is None:
+        try:
+            from s3_manager import S3Manager
+            _s3_manager = S3Manager()
+        except Exception as e:
+            print(f"Warning: Could not initialize S3Manager: {e}")
+            _s3_manager = None
+    return _s3_manager
+
+def get_bot_manager():
+    """Get BotManager instance (lazy initialization)"""
+    global _bot_manager
+    if _bot_manager is None:
+        try:
+            from bot_manager import BotManager
+            _bot_manager = BotManager()
+        except Exception as e:
+            print(f"Warning: Could not initialize BotManager: {e}")
+            _bot_manager = None
+    return _bot_manager
 
 # --- User CRUD ---
 def get_user(db: Session, user_id: int):
@@ -240,7 +262,7 @@ def save_bot_file_to_s3(db: Session, bot_id: int, file_content: bytes, file_name
     try:
         # Upload to S3
         code_content = file_content.decode('utf-8')
-        upload_result = s3_manager.upload_bot_code(
+        upload_result = get_s3_manager().upload_bot_code(
             bot_id=bot_id,
             code_content=code_content,
             filename=file_name,
@@ -284,7 +306,7 @@ def save_bot_with_s3(db: Session, bot_data: schemas.BotCreate, developer_id: int
         
         # Upload code to S3 if provided
         if file_content:
-            upload_result = s3_manager.upload_bot_code(
+            upload_result = get_s3_manager().upload_bot_code(
                 bot_id=db_bot.id,
                 code_content=file_content,
                 filename=file_name,
@@ -308,7 +330,7 @@ def load_bot_from_s3(bot_id: int, version: Optional[str] = None, user_config: Op
                      user_api_keys: Optional[Dict[str, str]] = None):
     """Load bot from S3 using BotManager"""
     try:
-        return bot_manager.load_bot_from_s3(bot_id, version, user_config, user_api_keys)
+        return get_bot_manager().load_bot_from_s3(bot_id, version, user_config, user_api_keys)
     except Exception as e:
         raise Exception(f"Failed to load bot from S3: {str(e)}")
 
@@ -339,7 +361,7 @@ def delete_bot(db: Session, bot_id: int):
             # Delete from S3 first
             if bot.code_path:
                 try:
-                    s3_manager.delete_bot_files(bot_id)
+                    get_s3_manager().delete_bot_files(bot_id)
                 except Exception as e:
                     # Log but don't fail if S3 deletion fails
                     print(f"Warning: Failed to delete S3 files for bot {bot_id}: {e}")
@@ -349,7 +371,7 @@ def delete_bot(db: Session, bot_id: int):
             db.commit()
             
             # Clear from bot manager cache
-            bot_manager.unload_bot(bot_id)
+            get_bot_manager().unload_bot(bot_id)
             
         return True
     except Exception as e:
@@ -778,6 +800,26 @@ def get_subscription_performance_metrics(db: Session, subscription_id: int, days
     # This would calculate performance metrics for a specific subscription
     # Implementation depends on your specific requirements
     pass
+
+def log_bot_action(db: Session, subscription_id: int, action: str, details: str = None):
+    """Log bot action to performance log table"""
+    try:
+        log_entry = models.PerformanceLog(
+            subscription_id=subscription_id,
+            action=action,
+            price=0.0,  # Default price for non-trade actions
+            quantity=0.0,  # Default quantity for non-trade actions  
+            balance=0.0,  # Default balance for non-trade actions
+            signal_data={"details": details} if details else {}
+        )
+        db.add(log_entry)
+        db.commit()
+        db.refresh(log_entry)
+        return log_entry
+    except Exception as e:
+        print(f"Failed to log bot action: {e}")
+        db.rollback()
+        return None
 
 def get_subscription_logs(db: Session, subscription_id: int, skip: int = 0, limit: int = 100, action_filter: Optional[str] = None):
     query = db.query(models.PerformanceLog).filter(
