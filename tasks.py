@@ -23,8 +23,8 @@ def initialize_bot(subscription):
         import models
         import schemas
         from database import SessionLocal
-        from bots.bot_sdk import CustomBot
         from s3_manager import S3Manager
+        from bot_base_classes import get_base_classes
         
         # Initialize S3 manager
         s3_manager = S3Manager()
@@ -53,50 +53,8 @@ def initialize_bot(subscription):
         import tempfile
         import os
         
-        # Add necessary base classes to the code
-        base_classes = '''
-# Base classes for bot execution
-import pandas as pd
-from typing import Dict, Any, Optional
-import logging
-
-logger = logging.getLogger(__name__)
-
-class Action:
-    """Trading action class"""
-    def __init__(self, action_type: str, amount: float, reason: str = "", action_method: str = "FIXED"):
-        self.action_type = action_type.upper()  # BUY, SELL, HOLD
-        self.amount = amount
-        self.reason = reason
-        self.action_method = action_method  # FIXED, PERCENTAGE
-        self.confidence = 1.0
-    
-    @classmethod
-    def buy(cls, method: str, amount: float, reason: str = ""):
-        return cls("BUY", amount, reason, method)
-    
-    @classmethod  
-    def sell(cls, method: str, amount: float, reason: str = ""):
-        return cls("SELL", amount, reason, method)
-    
-    def __str__(self):
-        return f"Action({self.action_type}, {self.amount}, {self.reason})"
-
-class CustomBot:
-    """Base bot class"""
-    def __init__(self, config: Dict[str, Any] = None, api_keys: Dict[str, str] = None):
-        self.config = config or {}
-        self.api_keys = api_keys or {}
-        self.bot_name = "Base Bot"
-        self.version = "1.0.0"
-    
-    def execute_algorithm(self, data: pd.DataFrame, timeframe: str, subscription_config: Dict[str, Any] = None) -> Action:
-        return Action("HOLD", 0.0, "Base implementation")
-    
-    def get_configuration_schema(self) -> Dict[str, Any]:
-        return {}
-
-'''
+        # Load base classes from bot_sdk folder
+        base_classes = get_base_classes()
         
         # Combine base classes with downloaded bot code
         full_code = base_classes + "\n" + code_content
@@ -189,7 +147,7 @@ class CustomBot:
         return None
 
 def execute_trade_action(db, subscription, exchange, action, current_price):
-    """Execute trade action"""
+    """Execute trade action and return trade details for email"""
     try:
         import crud
         
@@ -209,6 +167,21 @@ def execute_trade_action(db, subscription, exchange, action, current_price):
         
         logger.info(f"Current balance: {base_free} {base_asset}, {quote_free} {quote_asset}")
         
+        trade_details = {
+            'action': action.action,
+            'symbol': trading_pair,
+            'base_asset': base_asset,
+            'quote_asset': quote_asset,
+            'current_price': current_price,
+            'reason': action.reason or 'Bot signal',
+            'order_id': None,
+            'quantity': None,
+            'usdt_value': None,
+            'percentage_used': None,
+            'success': False,
+            'error': None
+        }
+        
         if action.action == "BUY":
             # Fix: Handle percentage values > 1.0 as actual percentages, not decimals
             percentage = action.value or 0.1  # Default 10%
@@ -225,34 +198,23 @@ def execute_trade_action(db, subscription, exchange, action, current_price):
             # Execute buy order
             order = exchange.create_market_order(symbol, "BUY", quantity_str)
             
+            # Calculate USDT value
+            usdt_value = float(quantity_str) * current_price
+            percentage_used = percentage * 100
+            
+            # Update trade details
+            trade_details.update({
+                'order_id': order.order_id,
+                'quantity': quantity_str,
+                'usdt_value': usdt_value,
+                'percentage_used': percentage_used,
+                'success': True
+            })
+            
             crud.log_bot_action(
                 db, subscription.id, "BUY",
                 f"Bought {quantity_str} {base_asset} at ${current_price}. Order ID: {order.order_id}"
             )
-            
-            # Send email notification
-            try:
-                # Calculate USDT value
-                usdt_value = float(quantity_str) * current_price
-                percentage_used = percentage * 100
-                
-                send_email_notification.delay(
-                    subscription.user.email,
-                    f"🚀 Bot Trade Executed - {subscription.bot.name}",
-                    f"Your bot executed a BUY order:\n\n"
-                    f"📊 Trade Details:\n"
-                    f"   • Symbol: {trading_pair}\n"
-                    f"   • Action: BUY {quantity_str} {base_asset}\n"
-                    f"   • Price: ${current_price:.2f} per {base_asset}\n"
-                    f"   • Total Value: ${usdt_value:.2f} USDT\n"
-                    f"   • Allocation: {percentage_used:.1f}% of USDT balance\n"
-                    f"   • Order ID: {order.order_id}\n\n"
-                    f"📝 Reason: {action.reason or 'Bot signal'}\n"
-                    f"🔄 Mode: {'🧪 TESTNET' if getattr(subscription, 'is_testnet', True) else '🚀 LIVE TRADING'}\n"
-                    f"⏰ Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
-                )
-            except Exception as e:
-                logger.error(f"Failed to send email notification: {e}")
             
         elif action.action == "SELL":
             # Fix: Handle percentage values > 1.0 as actual percentages, not decimals
@@ -270,36 +232,26 @@ def execute_trade_action(db, subscription, exchange, action, current_price):
             # Execute sell order
             order = exchange.create_market_order(symbol, "SELL", quantity_str)
             
+            # Calculate USDT value and percentage
+            usdt_value = float(quantity_str) * current_price
+            percentage_sold = percentage * 100
+            
+            # Update trade details
+            trade_details.update({
+                'order_id': order.order_id,
+                'quantity': quantity_str,
+                'usdt_value': usdt_value,
+                'percentage_used': percentage_sold,
+                'success': True
+            })
+            
             crud.log_bot_action(
                 db, subscription.id, "SELL",
                 f"Sold {quantity_str} {base_asset} at ${current_price}. Order ID: {order.order_id}"
             )
-            
-            # Send email notification
-            try:
-                # Calculate USDT value and percentage
-                usdt_value = float(quantity_str) * current_price
-                percentage_sold = percentage * 100
-                
-                send_email_notification.delay(
-                    subscription.user.email,
-                    f"🚀 Bot Trade Executed - {subscription.bot.name}",
-                    f"Your bot executed a SELL order:\n\n"
-                    f"📊 Trade Details:\n"
-                    f"   • Symbol: {trading_pair}\n"
-                    f"   • Action: SELL {quantity_str} {base_asset}\n"
-                    f"   • Price: ${current_price:.2f} per {base_asset}\n"
-                    f"   • Total Value: ${usdt_value:.2f} USDT received\n"
-                    f"   • Allocation: {percentage_sold:.1f}% of {base_asset} holdings\n"
-                    f"   • Order ID: {order.order_id}\n\n"
-                    f"📝 Reason: {action.reason or 'Bot signal'}\n"
-                    f"🔄 Mode: {'🧪 TESTNET' if getattr(subscription, 'is_testnet', True) else '🚀 LIVE TRADING'}\n"
-                    f"⏰ Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
-                )
-            except Exception as e:
-                logger.error(f"Failed to send email notification: {e}")
         
         logger.info(f"Trade executed successfully: {action.action}")
+        return trade_details
         
     except Exception as e:
         logger.error(f"Error executing trade: {e}")
@@ -307,6 +259,16 @@ def execute_trade_action(db, subscription, exchange, action, current_price):
             db, subscription.id, "ERROR",
             f"Trade execution failed: {str(e)}"
         )
+        
+        # Return error details
+        return {
+            'action': action.action,
+            'symbol': trading_pair,
+            'current_price': current_price,
+            'reason': action.reason or 'Bot signal',
+            'success': False,
+            'error': str(e)
+        }
 
 @app.task(bind=True, autoretry_for=(Exception,), retry_kwargs={'max_retries': 3, 'countdown': 60})
 def run_bot_logic(self, subscription_id: int):
@@ -503,40 +465,80 @@ def run_bot_logic(self, subscription_id: int):
                             else:
                                 balance_info = f"\n💼 Account Balance ({mode_label}): Error - {str(e)[:100]}...\n"
                     
-                    # Send email notification for ALL actions (including HOLD)
+                    # Execute trade for BUY/SELL actions (including testnet now!)
+                    trade_details = None
+                    if final_action.action != "HOLD":
+                        trade_details = execute_trade_action(db, subscription, exchange, final_action, current_price)
+                        logger.info(f"Trade executed: {final_action.action} ({'TESTNET' if bool(subscription.is_testnet) else 'LIVE'})")
+                        if not trade_details['success']:
+                            logger.error(f"Trade execution failed: {trade_details['error']}")
+                            crud.log_bot_action(
+                                db, subscription_id, "ERROR",
+                                f"Trade execution failed: {trade_details['error']}"
+                            )
+                    else:
+                        logger.info("HOLD action - no trade execution")
+                    
+                    # Send combined email notification (signal + trade execution)
                     try:
                         from datetime import datetime
-                        # Different emoji for different actions
-                        action_emoji = {
-                            "BUY": "🟢",
-                            "SELL": "🔴", 
-                            "HOLD": "🟡"
-                        }.get(final_action.action, "📊")
+                        from email_templates import create_email_content, EmailTemplates
+                        
+                        # Get balance info if available
+                        balance_info = ""
+                        if final_action.action in ["BUY", "SELL"]:
+                            try:
+                                # Get balance from exchange
+                                base_asset = trading_pair.split('/')[0]  # BTC from BTC/USDT
+                                quote_asset = trading_pair.split('/')[1]  # USDT from BTC/USDT
+                                
+                                base_balance = exchange.get_balance(base_asset)
+                                quote_balance = exchange.get_balance(quote_asset)
+                                
+                                balance_info = EmailTemplates.get_balance_info_template(
+                                    base_asset=base_asset,
+                                    quote_asset=quote_asset,
+                                    base_balance=base_balance,
+                                    quote_balance=quote_balance,
+                                    current_price=current_price,
+                                    is_testnet=bool(subscription.is_testnet)
+                                )
+                            except Exception as e:
+                                logger.error(f"Could not get balance info: {e}", exc_info=True)
+                                mode_label = "TESTNET" if bool(subscription.is_testnet) else "LIVE"
+                                
+                                # For testnet, provide mock balance when no credentials
+                                if bool(subscription.is_testnet) and "credentials" in str(e).lower():
+                                    balance_info = EmailTemplates.get_demo_balance_template(
+                                        base_asset=trading_pair.split('/')[0],
+                                        quote_asset=trading_pair.split('/')[1],
+                                        current_price=current_price,
+                                        is_testnet=bool(subscription.is_testnet)
+                                    )
+                                else:
+                                    balance_info = f"\n💼 Account Balance ({mode_label}): Error - {str(e)[:100]}...\n"
+                        
+                        # Create email content using template
+                        email_subject, email_body = create_email_content(
+                            action=final_action.action,
+                            bot_name=subscription.bot.name,
+                            trading_pair=trading_pair,
+                            current_price=current_price,
+                            reason=final_action.reason or 'Bot signal',
+                            confidence=final_action.value,
+                            timeframe=timeframe,
+                            is_testnet=bool(subscription.is_testnet),
+                            trade_details=trade_details,
+                            balance_info=balance_info
+                        )
                         
                         send_email_notification.delay(
                             subscription.user.email,
-                            f"{action_emoji} Bot {final_action.action} Signal - {subscription.bot.name}",
-                            f"Your bot analysis complete:\n\n"
-                            f"📈 Symbol: {trading_pair}\n"
-                            f"💰 Price: ${current_price:.2f}\n"
-                            f"🎯 Action: {final_action.action}\n"
-                            f"📝 Reason: {final_action.reason}\n"
-                            f"⚡ Confidence: {final_action.value or 'N/A'}\n"
-                            f"⏰ Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC\n"
-                            f"🔄 Timeframe: {timeframe}\n"
-                            f"{'🧪 TESTNET MODE' if bool(subscription.is_testnet) else '🚀 LIVE TRADING'}"
-                            f"{balance_info}\n"
-                            f"{'✅ Trade executed' if final_action.action != 'HOLD' else '📊 Analysis only (hold signal)'}"
+                            email_subject,
+                            email_body
                         )
                     except Exception as e:
-                        logger.error(f"Failed to send signal notification: {e}")
-                
-                    # Execute trade for BUY/SELL actions (including testnet now!)
-                    if final_action.action != "HOLD":
-                        execute_trade_action(db, subscription, exchange, final_action, current_price)
-                        logger.info(f"Trade executed: {final_action.action} ({'TESTNET' if bool(subscription.is_testnet) else 'LIVE'})")
-                    else:
-                        logger.info("HOLD action - no trade execution")
+                        logger.error(f"Failed to send combined notification: {e}")
                 
                 # Update last_run_at and calculate next_run_at
                 from datetime import datetime, timedelta
