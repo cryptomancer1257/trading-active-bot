@@ -1,3 +1,10 @@
+import sys
+import os
+
+# Add parent directory to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
 # file: api/endpoints/bots.py
 
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
@@ -7,10 +14,10 @@ from datetime import datetime
 from decimal import Decimal
 import json
 
-import crud, models, schemas, security
-from database import get_db
-from bot_manager import BotManager
-from s3_manager import S3Manager
+from core import crud, models, schemas, security
+from core.database import get_db
+from core.bot_manager import BotManager
+from services.s3_manager import S3Manager
 
 # Initialize managers
 bot_manager = BotManager()

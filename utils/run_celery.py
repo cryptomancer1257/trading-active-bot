@@ -6,8 +6,8 @@ import os
 import sys
 import logging
 
-# Add current directory to path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# Add parent directory to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Configure logging
 logging.basicConfig(
@@ -17,7 +17,7 @@ logging.basicConfig(
 
 def main():
     """Run Celery worker"""
-    from celery_app import app
+    from utils.celery_app import app
     
     # Start worker
     app.worker_main([

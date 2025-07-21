@@ -1,78 +1,32 @@
+# Core Dependencies
 fastapi==0.104.1
-uvicorn==0.24.0
+uvicorn[standard]==0.24.0
 sqlalchemy==2.0.23
 pymysql==1.1.0
-cryptography==41.0.7
-passlib==1.7.4
-bcrypt==4.0.1
-python-jose[cryptography]==3.3.0
-python-multipart==0.0.6
-redis==5.0.1
-celery==5.3.4
-boto3==1.34.0
-pandas==2.1.4
-numpy==1.24.3
-scikit-learn==1.3.2
-requests==2.31.0
 pydantic==2.5.0
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.6
+
+# Background Tasks
+celery==5.3.4
+redis==5.0.1
+
+# External Services
+boto3==1.34.0
+sendgrid==6.10.0
+ccxt==4.1.77
+requests==2.31.0
+
+# Data Processing
+pandas==2.1.4
+numpy==1.25.2
+
+# Utilities
+python-dotenv==1.0.0
+jinja2==3.1.2
 python-dateutil==2.8.2
-ecdsa==0.18.0
-kombu==5.3.4
-billiard==4.1.0
-click-didyoumean==0.3.0
-click-plugins==1.1.1
-click-repl==0.3.0
 
-# Email dependencies
-Jinja2==3.1.2
-MarkupSafe==2.1.3
-sendgrid==6.11.0
-
-# Character detection (alternative to cchardet)
-charset-normalizer==3.4.0
-
-# Exchange API integrations (removed version pins to avoid conflicts)
-python-binance
-# cbpro==1.1.4  # Removed due to old requests dependency conflict
-krakenex
-ccxt  # This covers most exchanges including Coinbase Pro
-
-# ML/DL frameworks (optional - install as needed)
-scikit-learn
-joblib
-xgboost
-lightgbm
-
-# For TensorFlow bots (optional)
-# tensorflow>=2.10.0
-
-# For PyTorch bots (optional)  
-# torch>=1.12.0
-# torchvision
-
-# For transformers/LLM bots (optional)
-# transformers
-# torch
-
-# Additional data processing
-numpy
-scipy
-
-# AWS S3 integration
-boto3
-botocore
-
-# File handling and compression
-# zipfile-deflate64  # Removed due to compilation issues in Docker
-
-# Enhanced logging and monitoring
-structlog==25.1.0
-
-# Testing
-pytest==8.3.4
-pytest-asyncio==0.25.0
-
-# Development tools
-black==25.1.0
-flake8==7.1.1
-mypy==1.13.0
+# Development
+pytest==7.4.3
+pytest-asyncio==0.21.1

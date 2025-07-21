@@ -1,3 +1,10 @@
+import sys
+import os
+
+# Add parent directory to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
 """
 Exchange API endpoints
 Handles exchange integration, credentials validation, and supported exchange listing
@@ -8,10 +15,10 @@ from fastapi.security import HTTPBearer
 from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
 
-import models, schemas
-from database import get_db
-from security import get_current_user
-from exchange_factory import ExchangeFactory, validate_exchange_credentials
+from core import models, schemas
+from core.database import get_db
+from core.security import get_current_user
+from services.exchange_factory import ExchangeFactory, validate_exchange_credentials
 import logging
 
 logger = logging.getLogger(__name__)
@@ -83,7 +90,7 @@ async def validate_credentials_get(
         account_info = None
         if is_valid and exchange_name.upper() == "BINANCE":
             try:
-                from binance_integration import BinanceIntegration
+                from services.binance_integration import BinanceIntegration
                 client = BinanceIntegration(api_key, api_secret, testnet)
                 
                 # Get basic account info
@@ -135,7 +142,7 @@ async def validate_credentials_post(
         account_info = None
         if is_valid and credentials.exchange_name.upper() == "BINANCE":
             try:
-                from binance_integration import BinanceIntegration
+                from services.binance_integration import BinanceIntegration
                 client = BinanceIntegration(credentials.api_key, credentials.api_secret, credentials.testnet)
                 
                 # Get basic account info
@@ -179,7 +186,7 @@ async def validate_credentials_debug(
                 detail="Debug validation only supported for Binance"
             )
         
-        from binance_integration import BinanceIntegration
+        from services.binance_integration import BinanceIntegration
         import logging
         
         # Enable debug logging

@@ -9,7 +9,7 @@ import inspect
 import os
 import tempfile
 
-from celery_app import app
+from utils.celery_app import app
 from sqlalchemy.orm import Session
 
 # Configure logging
@@ -23,8 +23,8 @@ def initialize_bot(subscription):
         import models
         import schemas
         from database import SessionLocal
+        from bots.bot_sdk import CustomBot
         from s3_manager import S3Manager
-        from bot_base_classes import get_base_classes
         
         # Initialize S3 manager
         s3_manager = S3Manager()
@@ -53,8 +53,50 @@ def initialize_bot(subscription):
         import tempfile
         import os
         
-        # Load base classes from bot_sdk folder
-        base_classes = get_base_classes()
+        # Add necessary base classes to the code
+        base_classes = '''
+# Base classes for bot execution
+import pandas as pd
+from typing import Dict, Any, Optional
+import logging
+
+logger = logging.getLogger(__name__)
+
+class Action:
+    """Trading action class"""
+    def __init__(self, action_type: str, amount: float, reason: str = "", action_method: str = "FIXED"):
+        self.action_type = action_type.upper()  # BUY, SELL, HOLD
+        self.amount = amount
+        self.reason = reason
+        self.action_method = action_method  # FIXED, PERCENTAGE
+        self.confidence = 1.0
+    
+    @classmethod
+    def buy(cls, method: str, amount: float, reason: str = ""):
+        return cls("BUY", amount, reason, method)
+    
+    @classmethod  
+    def sell(cls, method: str, amount: float, reason: str = ""):
+        return cls("SELL", amount, reason, method)
+    
+    def __str__(self):
+        return f"Action({self.action_type}, {self.amount}, {self.reason})"
+
+class CustomBot:
+    """Base bot class"""
+    def __init__(self, config: Dict[str, Any] = None, api_keys: Dict[str, str] = None):
+        self.config = config or {}
+        self.api_keys = api_keys or {}
+        self.bot_name = "Base Bot"
+        self.version = "1.0.0"
+    
+    def execute_algorithm(self, data: pd.DataFrame, timeframe: str, subscription_config: Dict[str, Any] = None) -> Action:
+        return Action("HOLD", 0.0, "Base implementation")
+    
+    def get_configuration_schema(self) -> Dict[str, Any]:
+        return {}
+
+'''
         
         # Combine base classes with downloaded bot code
         full_code = base_classes + "\n" + code_content
@@ -482,55 +524,77 @@ def run_bot_logic(self, subscription_id: int):
                     # Send combined email notification (signal + trade execution)
                     try:
                         from datetime import datetime
-                        from email_templates import create_email_content, EmailTemplates
+                        # Different emoji for different actions
+                        action_emoji = {
+                            "BUY": "🟢",
+                            "SELL": "🔴", 
+                            "HOLD": "🟡"
+                        }.get(final_action.action, "📊")
                         
-                        # Get balance info if available
-                        balance_info = ""
-                        if final_action.action in ["BUY", "SELL"]:
-                            try:
-                                # Get balance from exchange
-                                base_asset = trading_pair.split('/')[0]  # BTC from BTC/USDT
-                                quote_asset = trading_pair.split('/')[1]  # USDT from BTC/USDT
+                        # Build email content based on action type
+                        if final_action.action == "HOLD":
+                            # HOLD action - only signal information
+                            email_subject = f"{action_emoji} Bot {final_action.action} Signal - {subscription.bot.name}"
+                            email_body = f"Your bot analysis complete:\n\n" \
+                                       f"📈 Symbol: {trading_pair}\n" \
+                                       f"💰 Price: ${current_price:.2f}\n" \
+                                       f"🎯 Action: {final_action.action}\n" \
+                                       f"📝 Reason: {final_action.reason}\n" \
+                                       f"⚡ Confidence: {final_action.value or 'N/A'}\n" \
+                                       f"⏰ Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC\n" \
+                                       f"🔄 Timeframe: {timeframe}\n" \
+                                       f"{'🧪 TESTNET MODE' if bool(subscription.is_testnet) else '🚀 LIVE TRADING'}\n" \
+                                       f"📊 Analysis only (hold signal)"
+                        else:
+                            # BUY/SELL action - combine signal and trade execution
+                            if trade_details and trade_details.get('success'):
+                                # Successful trade execution
+                                email_subject = f"🚀 Bot Trade Executed - {subscription.bot.name}"
                                 
-                                base_balance = exchange.get_balance(base_asset)
-                                quote_balance = exchange.get_balance(quote_asset)
+                                # Build trade execution details
+                                # Extract the conditional logic outside the f-string
+                                balance_type = 'USDT balance' if final_action.action == 'BUY' else f'{trade_details["base_asset"]} holdings'
+
+                                trade_info = f"📊 Trade Execution Details:\n" \
+                                            f"   • Order ID: {trade_details['order_id']}\n" \
+                                            f"   • Quantity: {trade_details['quantity']} {trade_details['base_asset']}\n" \
+                                            f"   • Price: ${trade_details['current_price']:.2f} per {trade_details['base_asset']}\n" \
+                                            f"   • Total Value: ${trade_details['usdt_value']:.2f} USDT\n" \
+                                            f"   • Allocation: {trade_details['percentage_used']:.1f}% of {balance_type}\n"
                                 
-                                balance_info = EmailTemplates.get_balance_info_template(
-                                    base_asset=base_asset,
-                                    quote_asset=quote_asset,
-                                    base_balance=base_balance,
-                                    quote_balance=quote_balance,
-                                    current_price=current_price,
-                                    is_testnet=bool(subscription.is_testnet)
-                                )
-                            except Exception as e:
-                                logger.error(f"Could not get balance info: {e}", exc_info=True)
-                                mode_label = "TESTNET" if bool(subscription.is_testnet) else "LIVE"
+                                email_body = f"Your bot executed a {final_action.action} order:\n\n" \
+                                           f"📈 Signal Information:\n" \
+                                           f"   • Symbol: {trading_pair}\n" \
+                                           f"   • Action: {final_action.action}\n" \
+                                           f"   • Reason: {final_action.reason}\n" \
+                                           f"   • Confidence: {final_action.value or 'N/A'}\n" \
+                                           f"   • Timeframe: {timeframe}\n\n" \
+                                           f"{trade_info}\n" \
+                                           f"📝 Signal Reason: {final_action.reason or 'Bot signal'}\n" \
+                                           f"🔄 Mode: {'🧪 TESTNET' if bool(subscription.is_testnet) else '🚀 LIVE TRADING'}\n" \
+                                           f"⏰ Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
+                            else:
+                                # Trade execution failed
+                                email_subject = f"⚠️ Bot Signal - Trade Failed - {subscription.bot.name}"
+                                error_msg = trade_details.get('error', 'Unknown error') if trade_details else 'Trade execution failed'
                                 
-                                # For testnet, provide mock balance when no credentials
-                                if bool(subscription.is_testnet) and "credentials" in str(e).lower():
-                                    balance_info = EmailTemplates.get_demo_balance_template(
-                                        base_asset=trading_pair.split('/')[0],
-                                        quote_asset=trading_pair.split('/')[1],
-                                        current_price=current_price,
-                                        is_testnet=bool(subscription.is_testnet)
-                                    )
-                                else:
-                                    balance_info = f"\n💼 Account Balance ({mode_label}): Error - {str(e)[:100]}...\n"
+                                email_body = f"Your bot generated a {final_action.action} signal but trade execution failed:\n\n" \
+                                           f"📈 Signal Information:\n" \
+                                           f"   • Symbol: {trading_pair}\n" \
+                                           f"   • Action: {final_action.action}\n" \
+                                           f"   • Reason: {final_action.reason}\n" \
+                                           f"   • Confidence: {final_action.value or 'N/A'}\n" \
+                                           f"   • Timeframe: {timeframe}\n\n" \
+                                           f"❌ Trade Execution Error:\n" \
+                                           f"   • Error: {error_msg}\n" \
+                                           f"   • Price: ${current_price:.2f}\n\n" \
+                                           f"📝 Signal Reason: {final_action.reason or 'Bot signal'}\n" \
+                                           f"🔄 Mode: {'🧪 TESTNET' if bool(subscription.is_testnet) else '🚀 LIVE TRADING'}\n" \
+                                           f"⏰ Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
                         
-                        # Create email content using template
-                        email_subject, email_body = create_email_content(
-                            action=final_action.action,
-                            bot_name=subscription.bot.name,
-                            trading_pair=trading_pair,
-                            current_price=current_price,
-                            reason=final_action.reason or 'Bot signal',
-                            confidence=final_action.value,
-                            timeframe=timeframe,
-                            is_testnet=bool(subscription.is_testnet),
-                            trade_details=trade_details,
-                            balance_info=balance_info
-                        )
+                        # Add balance info if available
+                        if balance_info:
+                            email_body += balance_info
                         
                         send_email_notification.delay(
                             subscription.user.email,

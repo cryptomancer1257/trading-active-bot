@@ -1,6 +1,7 @@
 # file: security.py
 
 import os
+import sys
 from datetime import datetime, timedelta
 from typing import Optional, Annotated
 
@@ -10,8 +11,11 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
-import crud, models, schemas
-from database import get_db
+# Add parent directory to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from core import crud, models, schemas
+from core.database import get_db
 
 # Lấy các biến từ .env hoặc dùng giá trị mặc định
 SECRET_KEY = os.getenv("SECRET_KEY", "a_super_secret_key_for_dev")

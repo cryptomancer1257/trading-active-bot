@@ -1,11 +1,18 @@
+import sys
+import os
+
+# Add parent directory to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
 # file: api/endpoints/admin.py
 
 from fastapi import APIRouter, Depends, HTTPException, status, Form, File, UploadFile
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
-import crud, models, schemas, security
-from database import get_db
+from core import crud, models, schemas, security
+from core.database import get_db
 
 router = APIRouter()
 
@@ -95,8 +102,8 @@ async def create_bot_as_admin_with_code(
     """Admin creates a bot with code file and auto-approves it"""
     try:
         # Import here to avoid circular imports
-        from bot_manager import BotManager
-        from s3_manager import S3Manager
+        from core.bot_manager import BotManager
+        from services.s3_manager import S3Manager
         import json
         from decimal import Decimal
         

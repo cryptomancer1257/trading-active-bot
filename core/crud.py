@@ -1,15 +1,19 @@
 # file: crud.py
 
+import sys
+import os
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, desc, asc, and_, or_
 from typing import List, Optional, Tuple, Dict, Any
 from datetime import datetime, timedelta
 from decimal import Decimal
-import os
 import hashlib
 import json
 
-import models, schemas, security
+# Add parent directory to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from core import models, schemas, security
 
 # Lazy initialization - only create when needed
 _s3_manager = None
@@ -20,7 +24,7 @@ def get_s3_manager():
     global _s3_manager
     if _s3_manager is None:
         try:
-            from s3_manager import S3Manager
+            from services.s3_manager import S3Manager
             _s3_manager = S3Manager()
         except Exception as e:
             print(f"Warning: Could not initialize S3Manager: {e}")
@@ -32,7 +36,7 @@ def get_bot_manager():
     global _bot_manager
     if _bot_manager is None:
         try:
-            from bot_manager import BotManager
+            from core.bot_manager import BotManager
             _bot_manager = BotManager()
         except Exception as e:
             print(f"Warning: Could not initialize BotManager: {e}")

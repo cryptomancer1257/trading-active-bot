@@ -4,7 +4,11 @@ Loads base classes from bot_sdk folder for dynamic bot execution
 """
 
 import os
+import sys
 import logging
+
+# Add parent directory to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +22,8 @@ def load_base_classes_from_sdk():
     try:
         # Get the path to bot_sdk folder
         current_dir = os.path.dirname(os.path.abspath(__file__))
-        bot_sdk_path = os.path.join(current_dir, 'bots', 'bot_sdk')
+        parent_dir = os.path.dirname(current_dir)
+        bot_sdk_path = os.path.join(parent_dir, 'bots', 'bot_sdk')
         
         base_classes_code = []
         
@@ -98,9 +103,9 @@ logger = logging.getLogger(__name__)
     except Exception as e:
         logger.error(f"Failed to load base classes from bot_sdk: {e}")
         
-        # Fallback to hardcoded base classes
+        # Return fallback base classes
         return """
-# Fallback base classes (hardcoded)
+# Fallback base classes
 import pandas as pd
 from typing import Dict, Any, Optional
 import logging
@@ -141,22 +146,13 @@ class CustomBot:
     def get_configuration_schema(self) -> Dict[str, Any]:
         return {}
     
-    def crawl_market_data(self, timeframe: str) -> pd.DataFrame:
-        return pd.DataFrame()
-    
-    def preprocess_data(self, data: pd.DataFrame) -> pd.DataFrame:
-        return data
-    
-    def post_process_action(self, action: Action, data: pd.DataFrame) -> Action:
-        return action
-    
     def execute_full_cycle(self, timeframe: str, subscription_config: Dict[str, Any] = None) -> Action:
         return Action("HOLD", 0.0, "Base implementation")
 """
 
 def get_base_classes():
     """
-    Get base classes code for bot initialization
+    Get base classes for bot execution
     
     Returns:
         str: Base classes code

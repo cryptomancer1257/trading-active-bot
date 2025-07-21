@@ -1,3 +1,10 @@
+import sys
+import os
+
+# Add parent directory to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
 # file: api/endpoints/subscriptions_simple.py
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
@@ -5,8 +12,8 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 import logging
 
-import models, schemas, security
-from database import get_db
+from core import models, schemas, security
+from core.database import get_db
 from tasks_simple_no_s3 import run_bot_logic_simple
 
 # Initialize logger

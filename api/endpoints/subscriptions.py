@@ -1,3 +1,10 @@
+import sys
+import os
+
+# Add parent directory to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
 # file: api/endpoints/subscriptions.py
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
@@ -5,11 +12,11 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 import logging
 
-import crud, models, schemas, security
-from database import get_db
+from core import crud, models, schemas, security
+from core.database import get_db
 from tasks import run_bot_logic
-from s3_manager import S3Manager
-from bot_manager import BotManager
+from services.s3_manager import S3Manager
+from core.bot_manager import BotManager
 
 # Initialize logger
 logger = logging.getLogger(__name__)
@@ -177,7 +184,7 @@ def create_trial_subscription(
         credentials = user_credentials[0]
         
         # Validate API credentials work with testnet
-        from exchange_factory import validate_exchange_credentials
+        from services.exchange_factory import validate_exchange_credentials
         is_valid, message = validate_exchange_credentials(
             exchange_name=credentials.exchange.value,
             api_key=credentials.api_key,

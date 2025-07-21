@@ -11,7 +11,7 @@ import logging
 from abc import ABC, abstractmethod
 
 from bots.bot_sdk.Action import Action
-from exchange_factory import ExchangeFactory, BaseExchange
+from services.exchange_factory import ExchangeFactory, BaseExchange
 
 logger = logging.getLogger(__name__)
 

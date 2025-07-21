@@ -1,3 +1,10 @@
+import sys
+import os
+
+# Add parent directory to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
 # file: api/endpoints/auth.py
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
@@ -5,8 +12,8 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from typing import Annotated, List, Optional
 
-import crud, schemas, security
-from database import get_db
+from core import crud, schemas, security
+from core.database import get_db
 
 router = APIRouter()
 
@@ -192,7 +199,7 @@ def validate_exchange_credentials(
         raise HTTPException(status_code=404, detail="Credentials not found")
     
     # Validate using exchange factory
-    from exchange_factory import validate_exchange_credentials
+    from services.exchange_factory import validate_exchange_credentials
     
     is_valid, message = validate_exchange_credentials(
         exchange_name=credentials.exchange.value,

@@ -11,7 +11,7 @@ import pandas as pd
 from datetime import datetime
 from dataclasses import dataclass
 
-from binance_integration import BinanceIntegration, OrderInfo, BalanceInfo
+from services.binance_integration import BinanceIntegration, OrderInfo, BalanceInfo
 
 logger = logging.getLogger(__name__)
 

@@ -1,6 +1,10 @@
 import os
+import sys
 from celery import Celery
 from kombu import Queue
+
+# Add parent directory to path to import from core and services
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Load environment variables
 from dotenv import load_dotenv
@@ -29,13 +33,13 @@ app.conf.update(
     task_default_retry_delay=60,
     task_max_retries=3,
     imports=[
-        'tasks',  # Use main tasks.py for S3 production mode
+        'core.tasks',  # Updated import path
     ],
     task_routes={
-        'tasks.run_bot_logic': {'queue': 'bot_execution'},
-        'tasks.cleanup_old_logs': {'queue': 'maintenance'},
-        'tasks.send_email_notification': {'queue': 'notifications'},
-        'tasks.test_task': {'queue': 'default'},
+        'core.tasks.run_bot_logic': {'queue': 'bot_execution'},
+        'core.tasks.cleanup_old_logs': {'queue': 'maintenance'},
+        'core.tasks.send_email_notification': {'queue': 'notifications'},
+        'core.tasks.test_task': {'queue': 'default'},
     },
     task_default_queue='default',
     task_queues=(
@@ -46,18 +50,18 @@ app.conf.update(
     ),
     beat_schedule={
         'cleanup-old-logs': {
-            'task': 'tasks.cleanup_old_logs',
+            'task': 'core.tasks.cleanup_old_logs',
             'schedule': 300.0,  # Run every 5 minutes
         },
         'schedule-active-bots': {
-            'task': 'tasks.schedule_active_bots',
+            'task': 'core.tasks.schedule_active_bots',
             'schedule': 60.0,  # Run every 1 minute to check for bot executions
         },
     },
 )
 
 # Auto-discover tasks
-app.autodiscover_tasks(['tasks'])
+app.autodiscover_tasks(['core.tasks'])
 
 if __name__ == '__main__':
     app.start() 
