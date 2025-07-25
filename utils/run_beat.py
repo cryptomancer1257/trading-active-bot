@@ -18,13 +18,13 @@ logging.basicConfig(
 def main():
     """Run Celery beat scheduler"""
     from utils.celery_app import app
-    
+        
     # Start beat scheduler using app.start()
-    app.start([
-        'beat',
-        '--loglevel=info',
+        app.start([
+            'beat',
+            '--loglevel=info',
         '--scheduler=celery.beat.PersistentScheduler'
-    ])
+        ])
 
 if __name__ == '__main__':
     main() 

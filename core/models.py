@@ -114,7 +114,7 @@ class Bot(Base):
     model_path = Column(String(500))  # Path to ML model files
     model_metadata = Column(JSON)  # Model info, requirements, etc.
     
-    # Pricing
+    # Legacy pricing (keep for backward compatibility)
     price_per_month = Column(DECIMAL(10, 2), default=0.00)
     is_free = Column(Boolean, default=True)
     
@@ -141,6 +141,8 @@ class Bot(Base):
     reviews = relationship("BotReview", back_populates="bot")
     performance_metrics = relationship("BotPerformance", back_populates="bot")
     bot_files = relationship("BotFile", back_populates="bot")
+    pricing_plans = relationship("BotPricingPlan", back_populates="bot", cascade="all, delete-orphan")
+    promotions = relationship("BotPromotion", back_populates="bot", cascade="all, delete-orphan")
 
 class BotFile(Base):
     """Storage for bot files including ML models, weights, etc."""
@@ -176,6 +178,9 @@ class Subscription(Base):
     bot_id = Column(Integer, ForeignKey("bots.id"))
     status = Column(Enum(SubscriptionStatus), default=SubscriptionStatus.ACTIVE)
     
+    # Pricing plan reference
+    pricing_plan_id = Column(Integer, ForeignKey("bot_pricing_plans.id"))
+    
     # Testnet and Trial support
     is_testnet = Column(Boolean, default=False)  # True for testnet subscriptions
     is_trial = Column(Boolean, default=False)    # True for trial subscriptions
@@ -206,11 +211,18 @@ class Subscription(Base):
     winning_trades = Column(Integer, default=0)
     total_pnl = Column(DECIMAL(15, 8), default=0.0)
     
+    # Billing information
+    billing_cycle = Column(String(20), default="MONTHLY")  # MONTHLY, QUARTERLY, YEARLY
+    next_billing_date = Column(DateTime)
+    auto_renew = Column(Boolean, default=True)
+    
     # Relationships
     user = relationship("User", back_populates="subscriptions")
     bot = relationship("Bot", back_populates="subscriptions")
+    pricing_plan = relationship("BotPricingPlan", back_populates="subscriptions")
     trades = relationship("Trade", back_populates="subscription")
     performance_logs = relationship("PerformanceLog", back_populates="subscription")
+    invoices = relationship("SubscriptionInvoice", back_populates="subscription")
 
 class Trade(Base):
     """Table to track individual trades"""
@@ -325,3 +337,114 @@ class Payment(Base):
     # Relationships
     user = relationship("User")
     subscription = relationship("Subscription")
+
+class BotPricingPlan(Base):
+    """Pricing plans for bots (Free, Basic, Pro, Enterprise)"""
+    __tablename__ = "bot_pricing_plans"
+    
+    id = Column(Integer, primary_key=True)
+    bot_id = Column(Integer, ForeignKey("bots.id"))
+    plan_name = Column(String(100))  # "Free", "Basic", "Pro", "Enterprise"
+    plan_description = Column(Text)
+    
+    # Pricing
+    price_per_month = Column(DECIMAL(10, 2), default=0.00)
+    price_per_year = Column(DECIMAL(10, 2), default=0.00)  # Annual discount
+    price_per_quarter = Column(DECIMAL(10, 2), default=0.00)  # Quarterly discount
+    
+    # Features and limits
+    max_trading_pairs = Column(Integer, default=1)  # Number of trading pairs allowed
+    max_daily_trades = Column(Integer, default=10)  # Daily trade limit
+    max_position_size = Column(DECIMAL(5, 2), default=0.10)  # Max 10% of balance
+    advanced_features = Column(JSON)  # Custom features for this plan
+    
+    # Trial settings
+    trial_days = Column(Integer, default=0)  # Free trial period
+    trial_trades_limit = Column(Integer, default=5)  # Trial trade limit
+    
+    # Status
+    is_active = Column(Boolean, default=True)
+    is_popular = Column(Boolean, default=False)  # Highlight this plan
+    
+    # Metadata
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    
+    # Relationships
+    bot = relationship("Bot", back_populates="pricing_plans")
+    subscriptions = relationship("Subscription", back_populates="pricing_plan")
+
+class BotPromotion(Base):
+    """Promotional offers and discounts for bots"""
+    __tablename__ = "bot_promotions"
+    
+    id = Column(Integer, primary_key=True)
+    bot_id = Column(Integer, ForeignKey("bots.id"))
+    promotion_code = Column(String(50), unique=True)
+    promotion_name = Column(String(100))
+    promotion_description = Column(Text)
+    
+    # Discount settings
+    discount_type = Column(String(20))  # "PERCENTAGE", "FIXED_AMOUNT", "FREE_TRIAL"
+    discount_value = Column(DECIMAL(10, 2))  # 20.00 for 20% or $20
+    max_uses = Column(Integer, default=100)  # Maximum uses
+    used_count = Column(Integer, default=0)  # Current usage count
+    
+    # Validity period
+    valid_from = Column(DateTime)
+    valid_until = Column(DateTime)
+    
+    # Eligibility
+    min_subscription_months = Column(Integer, default=1)  # Minimum subscription period
+    applicable_plans = Column(JSON)  # Which plans this applies to
+    
+    # Status
+    is_active = Column(Boolean, default=True)
+    
+    # Metadata
+    created_at = Column(DateTime, server_default=func.now())
+    created_by = Column(Integer, ForeignKey("users.id"))
+    
+    # Relationships
+    bot = relationship("Bot", back_populates="promotions")
+    creator = relationship("User")
+
+class SubscriptionInvoice(Base):
+    """Detailed invoice tracking for subscriptions"""
+    __tablename__ = "subscription_invoices"
+    
+    id = Column(Integer, primary_key=True)
+    subscription_id = Column(Integer, ForeignKey("subscriptions.id"))
+    user_id = Column(Integer, ForeignKey("users.id"))
+    
+    # Invoice details
+    invoice_number = Column(String(50), unique=True)
+    amount = Column(DECIMAL(10, 2))
+    currency = Column(String(10), default="USD")
+    
+    # Pricing breakdown
+    base_price = Column(DECIMAL(10, 2))
+    discount_amount = Column(DECIMAL(10, 2), default=0.00)
+    tax_amount = Column(DECIMAL(10, 2), default=0.00)
+    final_amount = Column(DECIMAL(10, 2))
+    
+    # Billing period
+    billing_period_start = Column(DateTime)
+    billing_period_end = Column(DateTime)
+    
+    # Payment status
+    status = Column(String(20), default="PENDING")  # PENDING, PAID, OVERDUE, CANCELLED
+    payment_method = Column(String(50))
+    payment_date = Column(DateTime)
+    
+    # Promotional info
+    promotion_code = Column(String(50))
+    promotion_discount = Column(DECIMAL(10, 2), default=0.00)
+    
+    # Metadata
+    created_at = Column(DateTime, server_default=func.now())
+    due_date = Column(DateTime)
+    
+    # Relationships
+    subscription = relationship("Subscription", back_populates="invoices")
+    user = relationship("User")

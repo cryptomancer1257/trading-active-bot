@@ -190,3 +190,5 @@ trading_bot.log
 # Configuration backups
 *.env.backup
 *.env.example.backup
+
+logs/

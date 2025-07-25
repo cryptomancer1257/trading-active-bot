@@ -2,11 +2,14 @@ version: '3.8'
 
 services:
   api:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: api
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=mysql+pymysql://user:password@db/bot_marketplace
+      - DATABASE_URL=mysql+pymysql://botuser:botpassword123@db/bot_marketplace
       - REDIS_URL=redis://redis:6379/0
     depends_on:
       - db
@@ -14,12 +17,20 @@ services:
     volumes:
       - ./logs:/app/logs
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   celery:
-    build: .
-    command: celery -A utils.celery_app worker --loglevel=info
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: celery-worker
     environment:
-      - DATABASE_URL=mysql+pymysql://user:password@db/bot_marketplace
+      - DATABASE_URL=mysql+pymysql://botuser:botpassword123@db/bot_marketplace
       - REDIS_URL=redis://redis:6379/0
     depends_on:
       - db
@@ -27,12 +38,20 @@ services:
     volumes:
       - ./logs:/app/logs
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "celery", "-A", "utils.celery_app", "inspect", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   beat:
-    build: .
-    command: celery -A utils.celery_app beat --loglevel=info
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: celery-beat
     environment:
-      - DATABASE_URL=mysql+pymysql://user:password@db/bot_marketplace
+      - DATABASE_URL=mysql+pymysql://botuser:botpassword123@db/bot_marketplace
       - REDIS_URL=redis://redis:6379/0
     depends_on:
       - db
@@ -40,25 +59,43 @@ services:
     volumes:
       - ./logs:/app/logs
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "celery", "-A", "utils.celery_app", "inspect", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   db:
     image: mysql:8.0
     environment:
-      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_ROOT_PASSWORD: rootpassword123
       MYSQL_DATABASE: bot_marketplace
-      MYSQL_USER: user
-      MYSQL_PASSWORD: password
+      MYSQL_USER: botuser
+      MYSQL_PASSWORD: botpassword123
     ports:
-      - "3306:3306"
+      - "3307:3306"
     volumes:
       - mysql_data:/var/lib/mysql
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   redis:
     image: redis:7-alpine
     ports:
       - "6379:6379"
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
 volumes:
   mysql_data:

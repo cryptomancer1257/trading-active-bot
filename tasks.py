@@ -22,7 +22,7 @@ def initialize_bot(subscription):
         # Import here to avoid circular imports
         import models
         import schemas
-        from database import SessionLocal
+from database import SessionLocal
         from bots.bot_sdk import CustomBot
         from s3_manager import S3Manager
         
@@ -372,7 +372,7 @@ def run_bot_logic(self, subscription_id: int):
                 api_key = cred.api_key
                 api_secret = cred.api_secret
                 logger.info(f"Found exchange credentials for {exchange_type.value} (testnet={use_testnet})")
-            else:
+        else:
                 # Fallback to user's direct API credentials
                 logger.info(f"No exchange credentials found, checking user direct credentials")
                 api_key = str(subscription.user.api_key) if subscription.user.api_key else None
@@ -699,8 +699,8 @@ def schedule_active_bots():
 
         except Exception as e:
             logger.error(f"Error in schedule_active_bots: {e}")
-        finally:
-            db.close()
+    finally:
+        db.close()
 
     except Exception as e:
         logger.error(f"Error in schedule_active_bots outer: {e}")

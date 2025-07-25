@@ -878,3 +878,266 @@ def get_system_health(db: Session):
 def get_system_performance_logs(db: Session, skip: int = 0, limit: int = 100):
     # Implementation for system performance logs
     return []
+
+# --- Pricing Plan CRUD ---
+def create_pricing_plan(db: Session, plan_data: schemas.PricingPlanCreate, bot_id: int):
+    """Create a new pricing plan for a bot"""
+    db_plan = models.BotPricingPlan(
+        bot_id=bot_id,
+        **plan_data.dict()
+    )
+    db.add(db_plan)
+    db.commit()
+    db.refresh(db_plan)
+    return db_plan
+
+def get_bot_pricing_plans(db: Session, bot_id: int, active_only: bool = True):
+    """Get all pricing plans for a bot"""
+    query = db.query(models.BotPricingPlan).filter(models.BotPricingPlan.bot_id == bot_id)
+    if active_only:
+        query = query.filter(models.BotPricingPlan.is_active == True)
+    return query.order_by(models.BotPricingPlan.price_per_month).all()
+
+def get_pricing_plan_by_id(db: Session, plan_id: int):
+    """Get a specific pricing plan"""
+    return db.query(models.BotPricingPlan).filter(models.BotPricingPlan.id == plan_id).first()
+
+def update_pricing_plan(db: Session, plan_id: int, plan_data: schemas.PricingPlanUpdate):
+    """Update a pricing plan"""
+    db_plan = get_pricing_plan_by_id(db, plan_id)
+    if not db_plan:
+        return None
+    
+    update_data = plan_data.dict(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(db_plan, field, value)
+    
+    db.commit()
+    db.refresh(db_plan)
+    return db_plan
+
+def delete_pricing_plan(db: Session, plan_id: int):
+    """Delete a pricing plan (soft delete by setting is_active=False)"""
+    db_plan = get_pricing_plan_by_id(db, plan_id)
+    if not db_plan:
+        return False
+    
+    db_plan.is_active = False
+    db.commit()
+    return True
+
+# --- Promotion CRUD ---
+def create_promotion(db: Session, promotion_data: schemas.PromotionCreate, bot_id: int, created_by: int):
+    """Create a new promotion for a bot"""
+    db_promotion = models.BotPromotion(
+        bot_id=bot_id,
+        created_by=created_by,
+        **promotion_data.dict()
+    )
+    db.add(db_promotion)
+    db.commit()
+    db.refresh(db_promotion)
+    return db_promotion
+
+def get_bot_promotions(db: Session, bot_id: int, active_only: bool = True):
+    """Get all promotions for a bot"""
+    query = db.query(models.BotPromotion).filter(models.BotPromotion.bot_id == bot_id)
+    if active_only:
+        query = query.filter(models.BotPromotion.is_active == True)
+    return query.all()
+
+def get_promotion_by_code(db: Session, promotion_code: str):
+    """Get a promotion by its code"""
+    return db.query(models.BotPromotion).filter(
+        models.BotPromotion.promotion_code == promotion_code,
+        models.BotPromotion.is_active == True
+    ).first()
+
+def validate_promotion(db: Session, promotion_code: str, bot_id: int, user_id: int):
+    """Validate if a promotion code can be used"""
+    promotion = get_promotion_by_code(db, promotion_code)
+    if not promotion:
+        return None, "Invalid promotion code"
+    
+    if promotion.bot_id != bot_id:
+        return None, "Promotion code not valid for this bot"
+    
+    if promotion.used_count >= promotion.max_uses:
+        return None, "Promotion code usage limit exceeded"
+    
+    now = datetime.utcnow()
+    if now < promotion.valid_from or now > promotion.valid_until:
+        return None, "Promotion code expired or not yet valid"
+    
+    return promotion, None
+
+def use_promotion(db: Session, promotion_id: int):
+    """Mark a promotion as used"""
+    promotion = db.query(models.BotPromotion).filter(models.BotPromotion.id == promotion_id).first()
+    if promotion:
+        promotion.used_count += 1
+        db.commit()
+        return True
+    return False
+
+# --- Invoice CRUD ---
+def create_invoice(db: Session, invoice_data: schemas.InvoiceCreate):
+    """Create a new invoice"""
+    # Generate invoice number
+    invoice_number = f"INV-{datetime.utcnow().strftime('%Y%m%d')}-{invoice_data.subscription_id:06d}"
+    
+    db_invoice = models.SubscriptionInvoice(
+        invoice_number=invoice_number,
+        **invoice_data.dict()
+    )
+    db.add(db_invoice)
+    db.commit()
+    db.refresh(db_invoice)
+    return db_invoice
+
+def get_user_invoices(db: Session, user_id: int, skip: int = 0, limit: int = 50):
+    """Get invoices for a user"""
+    return db.query(models.SubscriptionInvoice).filter(
+        models.SubscriptionInvoice.user_id == user_id
+    ).offset(skip).limit(limit).all()
+
+def get_subscription_invoices(db: Session, subscription_id: int):
+    """Get all invoices for a subscription"""
+    return db.query(models.SubscriptionInvoice).filter(
+        models.SubscriptionInvoice.subscription_id == subscription_id
+    ).order_by(models.SubscriptionInvoice.created_at.desc()).all()
+
+def update_invoice_status(db: Session, invoice_id: int, status: str, payment_date: datetime = None):
+    """Update invoice status"""
+    invoice = db.query(models.SubscriptionInvoice).filter(models.SubscriptionInvoice.id == invoice_id).first()
+    if invoice:
+        invoice.status = status
+        if payment_date:
+            invoice.payment_date = payment_date
+        db.commit()
+        return invoice
+    return None
+
+# --- Enhanced Subscription CRUD ---
+def create_subscription_with_plan(
+    db: Session, 
+    sub: schemas.SubscriptionCreate, 
+    user_id: int, 
+    pricing_plan_id: int,
+    promotion_code: str = None
+):
+    """Create subscription with pricing plan and optional promotion"""
+    # Validate pricing plan
+    pricing_plan = get_pricing_plan_by_id(db, pricing_plan_id)
+    if not pricing_plan or not pricing_plan.is_active:
+        raise ValueError("Invalid or inactive pricing plan")
+    
+    # Validate promotion if provided
+    promotion = None
+    if promotion_code:
+        promotion, error = validate_promotion(db, promotion_code, sub.bot_id, user_id)
+        if error:
+            raise ValueError(error)
+    
+    # Calculate billing dates
+    now = datetime.utcnow()
+    if pricing_plan.trial_days > 0:
+        trial_expires = now + timedelta(days=pricing_plan.trial_days)
+        expires_at = trial_expires
+        is_trial = True
+    else:
+        expires_at = now + timedelta(days=30)  # Default 30 days
+        is_trial = False
+    
+    # Create subscription
+    db_sub = models.Subscription(
+        user_id=user_id,
+        bot_id=sub.bot_id,
+        pricing_plan_id=pricing_plan_id,
+        instance_name=sub.instance_name,
+        trading_pair=sub.trading_pair,
+        timeframe=sub.timeframe,
+        strategy_config=sub.strategy_config,
+        execution_config=sub.execution_config.dict(),
+        risk_config=sub.risk_config.dict(),
+        is_testnet=sub.is_testnet,
+        is_trial=is_trial,
+        trial_expires_at=trial_expires if is_trial else None,
+        expires_at=expires_at,
+        status=models.SubscriptionStatus.ACTIVE,
+        billing_cycle="MONTHLY",
+        next_billing_date=expires_at
+    )
+    db.add(db_sub)
+    db.commit()
+    db.refresh(db_sub)
+    
+    # Create invoice
+    base_price = pricing_plan.price_per_month
+    discount_amount = Decimal('0.00')
+    
+    if promotion:
+        if promotion.discount_type == "PERCENTAGE":
+            discount_amount = base_price * (promotion.discount_value / 100)
+        elif promotion.discount_type == "FIXED_AMOUNT":
+            discount_amount = promotion.discount_value
+        elif promotion.discount_type == "FREE_TRIAL":
+            discount_amount = base_price
+        
+        # Mark promotion as used
+        use_promotion(db, promotion.id)
+    
+    final_amount = base_price - discount_amount
+    
+    invoice_data = schemas.InvoiceCreate(
+        subscription_id=db_sub.id,
+        user_id=user_id,
+        amount=base_price,
+        base_price=base_price,
+        discount_amount=discount_amount,
+        final_amount=final_amount,
+        billing_period_start=now,
+        billing_period_end=expires_at,
+        promotion_code=promotion_code if promotion else None,
+        promotion_discount=discount_amount
+    )
+    
+    create_invoice(db, invoice_data)
+    
+    # Update bot subscriber count
+    update_bot_subscriber_count(db, sub.bot_id)
+    
+    return db_sub
+
+# --- Pricing Calculation Functions ---
+def calculate_subscription_price(
+    pricing_plan: models.BotPricingPlan,
+    billing_cycle: str = "MONTHLY",
+    promotion: models.BotPromotion = None
+) -> Dict[str, Decimal]:
+    """Calculate subscription price with discounts"""
+    if billing_cycle == "YEARLY" and pricing_plan.price_per_year:
+        base_price = pricing_plan.price_per_year
+    elif billing_cycle == "QUARTERLY" and pricing_plan.price_per_quarter:
+        base_price = pricing_plan.price_per_quarter
+    else:
+        base_price = pricing_plan.price_per_month
+    
+    discount_amount = Decimal('0.00')
+    
+    if promotion:
+        if promotion.discount_type == "PERCENTAGE":
+            discount_amount = base_price * (promotion.discount_value / 100)
+        elif promotion.discount_type == "FIXED_AMOUNT":
+            discount_amount = promotion.discount_value
+        elif promotion.discount_type == "FREE_TRIAL":
+            discount_amount = base_price
+    
+    final_amount = base_price - discount_amount
+    
+    return {
+        "base_price": base_price,
+        "discount_amount": discount_amount,
+        "final_amount": final_amount,
+        "billing_cycle": billing_cycle
+    }

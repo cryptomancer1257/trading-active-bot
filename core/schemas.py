@@ -539,3 +539,138 @@ class AdminStats(BaseModel):
     active_subscriptions: int
     total_trades: int
     total_revenue: Decimal
+
+# --- Pricing Plan Schemas ---
+class PricingPlanBase(BaseModel):
+    plan_name: str
+    plan_description: str
+    price_per_month: Decimal
+    price_per_year: Optional[Decimal] = None
+    price_per_quarter: Optional[Decimal] = None
+    max_trading_pairs: int = 1
+    max_daily_trades: int = 10
+    max_position_size: Decimal = Decimal('0.10')
+    advanced_features: Optional[Dict[str, Any]] = None
+    trial_days: int = 0
+    trial_trades_limit: int = 5
+    is_popular: bool = False
+
+class PricingPlanCreate(PricingPlanBase):
+    pass
+
+class PricingPlanUpdate(BaseModel):
+    plan_name: Optional[str] = None
+    plan_description: Optional[str] = None
+    price_per_month: Optional[Decimal] = None
+    price_per_year: Optional[Decimal] = None
+    price_per_quarter: Optional[Decimal] = None
+    max_trading_pairs: Optional[int] = None
+    max_daily_trades: Optional[int] = None
+    max_position_size: Optional[Decimal] = None
+    advanced_features: Optional[Dict[str, Any]] = None
+    trial_days: Optional[int] = None
+    trial_trades_limit: Optional[int] = None
+    is_popular: Optional[bool] = None
+    is_active: Optional[bool] = None
+
+class PricingPlanInDB(PricingPlanBase):
+    id: int
+    bot_id: int
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+# --- Promotion Schemas ---
+class PromotionBase(BaseModel):
+    promotion_code: str
+    promotion_name: str
+    promotion_description: str
+    discount_type: str  # "PERCENTAGE", "FIXED_AMOUNT", "FREE_TRIAL"
+    discount_value: Decimal
+    max_uses: int = 100
+    valid_from: datetime
+    valid_until: datetime
+    min_subscription_months: int = 1
+    applicable_plans: Optional[List[int]] = None
+
+class PromotionCreate(PromotionBase):
+    pass
+
+class PromotionUpdate(BaseModel):
+    promotion_name: Optional[str] = None
+    promotion_description: Optional[str] = None
+    discount_value: Optional[Decimal] = None
+    max_uses: Optional[int] = None
+    valid_from: Optional[datetime] = None
+    valid_until: Optional[datetime] = None
+    min_subscription_months: Optional[int] = None
+    applicable_plans: Optional[List[int]] = None
+    is_active: Optional[bool] = None
+
+class PromotionInDB(PromotionBase):
+    id: int
+    bot_id: int
+    used_count: int
+    is_active: bool
+    created_at: datetime
+    created_by: int
+    
+    class Config:
+        from_attributes = True
+
+# --- Invoice Schemas ---
+class InvoiceBase(BaseModel):
+    amount: Decimal
+    currency: str = "USD"
+    base_price: Decimal
+    discount_amount: Decimal = Decimal('0.00')
+    tax_amount: Decimal = Decimal('0.00')
+    final_amount: Decimal
+    billing_period_start: datetime
+    billing_period_end: datetime
+    payment_method: Optional[str] = None
+    promotion_code: Optional[str] = None
+    promotion_discount: Decimal = Decimal('0.00')
+
+class InvoiceCreate(InvoiceBase):
+    subscription_id: int
+    user_id: int
+
+class InvoiceUpdate(BaseModel):
+    status: Optional[str] = None
+    payment_date: Optional[datetime] = None
+    payment_method: Optional[str] = None
+
+class InvoiceInDB(InvoiceBase):
+    id: int
+    subscription_id: int
+    user_id: int
+    invoice_number: str
+    status: str
+    payment_date: Optional[datetime] = None
+    created_at: datetime
+    due_date: datetime
+    
+    class Config:
+        from_attributes = True
+
+# --- Enhanced Bot Schemas ---
+class BotWithPricing(BotPublic):
+    pricing_plans: List[PricingPlanInDB] = []
+    active_promotions: List[PromotionInDB] = []
+    
+    class Config:
+        from_attributes = True
+
+# --- Subscription with Pricing ---
+class SubscriptionWithPricing(SubscriptionResponse):
+    pricing_plan: Optional[PricingPlanInDB] = None
+    next_billing_date: Optional[datetime] = None
+    billing_cycle: str = "MONTHLY"
+    auto_renew: bool = True
+    
+    class Config:
+        from_attributes = True
