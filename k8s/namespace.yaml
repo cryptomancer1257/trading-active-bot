@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: bot-marketplace
+  labels:
+    name: bot-marketplace
+    app: bot-marketplace 

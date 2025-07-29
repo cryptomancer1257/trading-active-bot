@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 import hashlib
 import json
+import logging
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -723,6 +724,24 @@ def get_active_subscriptions_for_user(db: Session, user_id: int):
         models.Subscription.status == models.SubscriptionStatus.ACTIVE
     ).all()
 
+def get_active_subscriptions(db: Session):
+    """Get all active subscriptions for scheduling"""
+    return db.query(models.Subscription).options(
+        joinedload(models.Subscription.bot),
+        joinedload(models.Subscription.user)
+    ).filter(
+        models.Subscription.status == models.SubscriptionStatus.ACTIVE
+    ).all()
+
+def update_subscription_next_run(db: Session, subscription_id: int, next_run: datetime):
+    """Update subscription's next run time"""
+    subscription = get_subscription_by_id(db, subscription_id)
+    if subscription:
+        subscription.next_run_at = next_run
+        db.commit()
+        return subscription
+    return None
+
 def update_bot_subscriber_count(db: Session, bot_id: int):
     """Update bot's total subscriber count"""
     total_subscribers = db.query(models.Subscription).filter(
@@ -1026,21 +1045,24 @@ def create_subscription_with_plan(
     pricing_plan_id: int,
     promotion_code: str = None
 ):
-    """Create subscription with pricing plan and optional promotion"""
-    # Validate pricing plan
+    """Create subscription with pricing plan and promotion"""
+    now = datetime.utcnow()
+    
+    # Get pricing plan
     pricing_plan = get_pricing_plan_by_id(db, pricing_plan_id)
-    if not pricing_plan or not pricing_plan.is_active:
-        raise ValueError("Invalid or inactive pricing plan")
+    if not pricing_plan:
+        raise ValueError(f"Pricing plan {pricing_plan_id} not found")
     
     # Validate promotion if provided
     promotion = None
     if promotion_code:
-        promotion, error = validate_promotion(db, promotion_code, sub.bot_id, user_id)
-        if error:
-            raise ValueError(error)
+        promotion = validate_promotion(db, promotion_code, sub.bot_id, user_id)
+        if not promotion:
+            raise ValueError(f"Invalid promotion code: {promotion_code}")
     
-    # Calculate billing dates
-    now = datetime.utcnow()
+    # Calculate trial period
+    trial_expires = None
+    is_trial = False
     if pricing_plan.trial_days > 0:
         trial_expires = now + timedelta(days=pricing_plan.trial_days)
         expires_at = trial_expires
@@ -1053,7 +1075,7 @@ def create_subscription_with_plan(
     db_sub = models.Subscription(
         user_id=user_id,
         bot_id=sub.bot_id,
-        pricing_plan_id=pricing_plan_id,
+        # pricing_plan_id=pricing_plan_id,  # Tạm thời comment out
         instance_name=sub.instance_name,
         trading_pair=sub.trading_pair,
         timeframe=sub.timeframe,
@@ -1141,3 +1163,22 @@ def calculate_subscription_price(
         "final_amount": final_amount,
         "billing_cycle": billing_cycle
     }
+
+def cleanup_old_bot_actions(cutoff_date: datetime) -> int:
+    """Clean up old performance logs"""
+    try:
+        from core.database import SessionLocal
+        db = SessionLocal()
+        
+        # Delete performance logs older than cutoff date
+        deleted_count = db.query(models.PerformanceLog).filter(
+            models.PerformanceLog.timestamp < cutoff_date
+        ).delete()
+        
+        db.commit()
+        db.close()
+        
+        return deleted_count
+        
+    except Exception as e:
+        return 0
