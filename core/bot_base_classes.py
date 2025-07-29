@@ -114,23 +114,26 @@ logger = logging.getLogger(__name__)
 
 class Action:
     \"\"\"Trading action class\"\"\"
-    def __init__(self, action_type: str, amount: float, reason: str = "", action_method: str = "FIXED"):
-        self.action_type = action_type.upper()  # BUY, SELL, HOLD
-        self.amount = amount
+    def __init__(self, action: str, value: float, reason: str = "", type: str = "PERCENTAGE"):
+        self.action = action.upper()  # BUY, SELL, HOLD
+        self.value = value
         self.reason = reason
-        self.action_method = action_method  # FIXED, PERCENTAGE
-        self.confidence = 1.0
+        self.type = type  # PERCENTAGE, USDT_AMOUNT, QUANTITY
     
     @classmethod
-    def buy(cls, method: str, amount: float, reason: str = ""):
-        return cls("BUY", amount, reason, method)
+    def buy(cls, type: str, value: float, reason: str = ""):
+        return cls("BUY", value, reason, type)
     
     @classmethod  
-    def sell(cls, method: str, amount: float, reason: str = ""):
-        return cls("SELL", amount, reason, method)
+    def sell(cls, type: str, value: float, reason: str = ""):
+        return cls("SELL", value, reason, type)
+    
+    @classmethod
+    def hold(cls, reason: str = ""):
+        return cls("HOLD", 0.0, reason)
     
     def __str__(self):
-        return f"Action({self.action_type}, {self.amount}, {self.reason})"
+        return f"Action(action={self.action}, value={self.value}, reason={self.reason})"
 
 class CustomBot:
     \"\"\"Base bot class\"\"\"
@@ -141,13 +144,13 @@ class CustomBot:
         self.version = "1.0.0"
     
     def execute_algorithm(self, data: pd.DataFrame, timeframe: str, subscription_config: Dict[str, Any] = None) -> Action:
-        return Action("HOLD", 0.0, "Base implementation")
+        return Action.hold("Base implementation")
     
     def get_configuration_schema(self) -> Dict[str, Any]:
         return {}
     
     def execute_full_cycle(self, timeframe: str, subscription_config: Dict[str, Any] = None) -> Action:
-        return Action("HOLD", 0.0, "Base implementation")
+        return Action.hold("Base implementation")
 """
 
 def get_base_classes():

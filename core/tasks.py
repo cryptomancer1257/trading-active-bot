@@ -163,10 +163,10 @@ def execute_trade_action(db, subscription, exchange, action, current_price):
         try:
             base_asset = trading_pair.split('/')[0]  # BTC from BTC/USDT
             quote_asset = trading_pair.split('/')[1]  # USDT from BTC/USDT
-            
+        
             base_balance = exchange.get_balance(base_asset)
             quote_balance = exchange.get_balance(quote_asset)
-            
+        
             base_total = float(base_balance.free) + float(base_balance.locked)
             quote_total = float(quote_balance.free) + float(quote_balance.locked)
             
@@ -182,36 +182,61 @@ def execute_trade_action(db, subscription, exchange, action, current_price):
             portfolio_value = 0
         
         # Execute trade based on action
-        if action.action_type == "BUY":
+        if action.action == "BUY":
             # Calculate buy amount
-            if action.action_method == "PERCENTAGE":
+            if action.type == "PERCENTAGE":
                 # Use percentage of quote balance
-                buy_amount_usdt = quote_total * (action.amount / 100)
-                buy_quantity = buy_amount_usdt / current_price
+                buy_amount_usdt = quote_total * (action.value / 100)
+                # Use exchange's calculate_quantity method for proper precision
+                quantity_str, quantity_info = exchange.calculate_quantity(
+                    symbol=exchange_symbol,
+                    side="BUY",
+                    amount=buy_amount_usdt,
+                    price=current_price
+                )
+                buy_quantity = float(quantity_str)
             else:
                 # Fixed amount in base currency
-                buy_quantity = action.amount
+                quantity_str, quantity_info = exchange.calculate_quantity(
+                    symbol=exchange_symbol,
+                    side="BUY",
+                    amount=action.value,
+                    price=current_price
+                )
+                buy_quantity = float(quantity_str)
             
             # Check if we have enough quote currency
             if buy_quantity * current_price > quote_total:
                 logger.warning(f"Insufficient {quote_asset} balance for buy order")
-                return False
+                return {
+                    'success': False,
+                    'error': f"Insufficient {quote_asset} balance"
+                }
             
             # Place buy order
             try:
-                order = exchange.create_market_buy_order(
+                order = exchange.create_market_order(
                     symbol=exchange_symbol,
-                    amount=buy_quantity
+                    side="BUY",
+                    quantity=quantity_str
                 )
                 logger.info(f"Buy order executed: {order}")
                 
                 # Log trade to database
                 crud.log_bot_action(
                     db, subscription.id, "BUY_EXECUTED",
-                    f"Bought {buy_quantity} {base_asset} at ${current_price:.2f}. Order: {order.get('id', 'N/A')}"
+                    f"Bought {buy_quantity} {base_asset} at ${current_price:.2f}. Order: {order.order_id}"
                 )
                 
-                return True
+                return {
+                    'success': True,
+                    'order_id': order.order_id,
+                    'quantity': quantity_str,
+                    'current_price': current_price,
+                    'usdt_value': buy_quantity * current_price,
+                    'percentage_used': action.value,
+                    'base_asset': base_asset
+                }
                 
             except Exception as e:
                 logger.error(f"Buy order failed: {e}")
@@ -219,37 +244,66 @@ def execute_trade_action(db, subscription, exchange, action, current_price):
                     db, subscription.id, "BUY_FAILED",
                     f"Failed to buy {buy_quantity} {base_asset}: {str(e)}"
                 )
-                return False
+                return {
+                    'success': False,
+                    'error': str(e)
+                }
                 
-        elif action.action_type == "SELL":
+        elif action.action == "SELL":
             # Calculate sell amount
-            if action.action_method == "PERCENTAGE":
+            if action.type == "PERCENTAGE":
                 # Use percentage of base balance
-                sell_quantity = base_total * (action.amount / 100)
+                sell_amount = base_total * (action.value / 100)
+                # Use exchange's calculate_quantity method for proper precision
+                quantity_str, quantity_info = exchange.calculate_quantity(
+                    symbol=exchange_symbol,
+                    side="SELL",
+                    amount=sell_amount,
+                    price=current_price
+                )
+                sell_quantity = float(quantity_str)
             else:
                 # Fixed amount in base currency
-                sell_quantity = action.amount
+                quantity_str, quantity_info = exchange.calculate_quantity(
+                    symbol=exchange_symbol,
+                    side="SELL",
+                    amount=action.value,
+                    price=current_price
+                )
+                sell_quantity = float(quantity_str)
             
             # Check if we have enough base currency
             if sell_quantity > base_total:
                 logger.warning(f"Insufficient {base_asset} balance for sell order")
-                return False
+                return {
+                    'success': False,
+                    'error': f"Insufficient {base_asset} balance"
+                }
             
             # Place sell order
             try:
-                order = exchange.create_market_sell_order(
+                order = exchange.create_market_order(
                     symbol=exchange_symbol,
-                    amount=sell_quantity
+                    side="SELL",
+                    quantity=quantity_str
                 )
                 logger.info(f"Sell order executed: {order}")
                 
                 # Log trade to database
                 crud.log_bot_action(
                     db, subscription.id, "SELL_EXECUTED",
-                    f"Sold {sell_quantity} {base_asset} at ${current_price:.2f}. Order: {order.get('id', 'N/A')}"
+                    f"Sold {sell_quantity} {base_asset} at ${current_price:.2f}. Order: {order.order_id}"
                 )
                 
-                return True
+                return {
+                    'success': True,
+                    'order_id': order.order_id,
+                    'quantity': quantity_str,
+                    'current_price': current_price,
+                    'usdt_value': sell_quantity * current_price,
+                    'percentage_used': action.value,
+                    'base_asset': base_asset
+                }
                 
             except Exception as e:
                 logger.error(f"Sell order failed: {e}")
@@ -257,9 +311,15 @@ def execute_trade_action(db, subscription, exchange, action, current_price):
                     db, subscription.id, "SELL_FAILED",
                     f"Failed to sell {sell_quantity} {base_asset}: {str(e)}"
                 )
-                return False
+                return {
+                    'success': False,
+                    'error': str(e)
+                }
         
-        return False
+        return {
+            'success': False,
+            'error': 'Invalid action type'
+        }
         
     except Exception as e:
         logger.error(f"Error executing trade action: {e}")
@@ -368,15 +428,15 @@ def run_bot_logic(self, subscription_id: int):
             subscription_config = {
                 'subscription_id': subscription_id,
                 'timeframe': subscription.timeframe,
-                'trading_pair': trading_pair,
+                    'trading_pair': trading_pair,
                 'is_testnet': use_testnet,
                 'exchange_type': exchange_type.value,
                 'user_id': subscription.user.id
-            }
-            
-            # Execute bot prediction
+                }
+
+                # Execute bot prediction
             final_action = bot.execute_full_cycle(subscription.timeframe, subscription_config)
-            
+                
             if final_action:
                 logger.info(f"Bot {subscription.bot.name} executed with action: {final_action.action}, value: {final_action.value}, reason: {final_action.reason}")
                 
@@ -386,11 +446,11 @@ def run_bot_logic(self, subscription_id: int):
                     f"{final_action.reason}. Value: {final_action.value or 0.0}. Price: ${current_price}"
                 )
                 
-                # Get balance info for BUY/SELL actions (real API call)
+            # Get balance info for BUY/SELL actions (real API call)
                 balance_info = ""
                 if final_action.action in ["BUY", "SELL"]:
                     try:
-                        # Get balance from exchange using real API
+                    # Get balance from exchange using real API
                         base_asset = trading_pair.split('/')[0]  # BTC from BTC/USDT
                         quote_asset = trading_pair.split('/')[1]  # USDT from BTC/USDT
                         
@@ -405,15 +465,46 @@ def run_bot_logic(self, subscription_id: int):
                         
                         mode_label = "TESTNET" if bool(subscription.is_testnet) else "LIVE"
                         balance_info = f"\n💼 Account Balance ({mode_label}):\n" \
-                                     f"   • {base_asset}: {base_total:.6f} (Free: {base_balance.free}, Locked: {base_balance.locked})\n" \
-                                     f"   • {quote_asset}: {quote_total:.2f} (Free: {quote_balance.free}, Locked: {quote_balance.locked})\n" \
-                                     f"   • Portfolio Value: ~${portfolio_value:.2f} USDT\n"
+                                        f"   • {base_asset}: {base_total:.6f} (Free: {base_balance.free}, Locked: {base_balance.locked})\n" \
+                                        f"   • {quote_asset}: {quote_total:.2f} (Free: {quote_balance.free}, Locked: {quote_balance.locked})\n" \
+                                        f"   • Portfolio Value: ~${portfolio_value:.2f} USDT\n"
                     except Exception as e:
                         logger.warning(f"Could not get balance info: {e}")
                         mode_label = "TESTNET" if bool(subscription.is_testnet) else "LIVE"
                         balance_info = f"\n💼 Account Balance ({mode_label}): Unable to fetch - {str(e)[:100]}\n"
+            
+                # Execute actual trading (if not HOLD)
+                trade_result = False
+                trade_details = None
                 
-                # Send email notification for ALL actions (including HOLD)
+                if final_action.action != "HOLD":
+                    try:
+                        trade_result_data = execute_trade_action(db, subscription, exchange, final_action, current_price)
+                        trade_result = trade_result_data.get('success', False)
+                        trade_details = trade_result_data
+                        
+                        if trade_result:
+                            logger.info(f"Trade executed successfully: {final_action.action}")
+                        else:
+                            logger.warning(f"Trade execution failed: {final_action.action}")
+                    except Exception as e:
+                        logger.error(f"Failed to execute trade: {e}")
+                        trade_details = {
+                            'success': False,
+                            'error': str(e)
+                        }
+                        crud.log_bot_action(
+                            db, subscription_id, "TRADE_ERROR",
+                            f"Failed to execute trade: {str(e)}"
+                        )
+                else:
+                    # For HOLD actions, no trade execution
+                    trade_details = {
+                        'success': True,
+                        'message': 'No trade executed (HOLD signal)'
+                    }
+                
+                # Send email notification AFTER trade execution
                 try:
                     from datetime import datetime
                     from services.email_templates import send_combined_notification
@@ -425,7 +516,7 @@ def run_bot_logic(self, subscription_id: int):
                         "HOLD": "🟡"
                     }.get(final_action.action, "📊")
                     
-                    # Send combined notification
+                    # Send combined notification with trade result
                     send_combined_notification(
                         subscription.user.email,
                         subscription.bot.name,
@@ -438,22 +529,12 @@ def run_bot_logic(self, subscription_id: int):
                             'timeframe': subscription.timeframe,
                             'is_testnet': bool(subscription.is_testnet),
                             'balance_info': balance_info,
-                            'subscription_id': subscription_id
+                            'subscription_id': subscription_id,
+                            'trade_details': trade_details
                         }
                     )
                 except Exception as e:
                     logger.error(f"Failed to send signal notification: {e}")
-                
-                # Execute actual trading (if not testnet and not HOLD)
-                if final_action.action != "HOLD" and not use_testnet:
-                    try:
-                        execute_trade_action(db, subscription, exchange, final_action, current_price)
-                    except Exception as e:
-                        logger.error(f"Failed to execute trade: {e}")
-                        crud.log_bot_action(
-                            db, subscription_id, "TRADE_ERROR",
-                            f"Failed to execute trade: {str(e)}"
-                        )
                 
             else:
                 logger.warning(f"Bot {subscription.bot.name} returned no action")
@@ -461,10 +542,10 @@ def run_bot_logic(self, subscription_id: int):
                     db, subscription_id, "NO_ACTION",
                     "Bot analysis completed but no action was taken"
                 )
-                
+
         finally:
             db.close()
-            
+
     except Exception as e:
         logger.error(f"Error in run_bot_logic for subscription {subscription_id}: {e}")
         logger.error(traceback.format_exc())
@@ -498,7 +579,17 @@ def schedule_active_bots():
             
             for subscription in active_subscriptions:
                 # Check if it's time to run this bot
-                if subscription.next_run_at and subscription.next_run_at <= datetime.utcnow():
+                should_run = False
+                
+                if subscription.next_run_at:
+                    # If next_run_at is set, check if it's time to run
+                    should_run = subscription.next_run_at <= datetime.utcnow()
+                else:
+                    # If next_run_at is NULL, run immediately
+                    should_run = True
+                    logger.info(f"Subscription {subscription.id} has no next_run_at, scheduling immediately")
+                
+                if should_run:
                     logger.info(f"Scheduling bot execution for subscription {subscription.id}")
                     
                     # Queue the bot execution task
@@ -521,10 +612,13 @@ def schedule_active_bots():
                         next_run = datetime.utcnow() + timedelta(hours=1)  # Default to 1 hour
                     
                     crud.update_subscription_next_run(db, subscription.id, next_run)
+                    logger.info(f"Updated next_run_at for subscription {subscription.id} to {next_run}")
+                else:
+                    logger.debug(f"Subscription {subscription.id} not ready to run yet. Next run: {subscription.next_run_at}")
                     
         finally:
             db.close()
-            
+
     except Exception as e:
         logger.error(f"Error in schedule_active_bots: {e}")
         logger.error(traceback.format_exc())
@@ -545,6 +639,7 @@ def cleanup_old_logs():
             
     except Exception as e:
         logger.error(f"Error in cleanup_old_logs: {e}")
+        logger.error(traceback.format_exc())
 
 @app.task
 def send_email_notification(email: str, subject: str, body: str):
@@ -558,8 +653,8 @@ def send_email_notification(email: str, subject: str, body: str):
             sendgrid_service = SendGridEmailService()
             success = sendgrid_service.send_email(email, subject, body)
             if success:
-                logger.info(f"Email sent via SendGrid to {email}")
-                return
+                    logger.info(f"Email sent via SendGrid to {email}")
+                    return
         except Exception as e:
             logger.warning(f"SendGrid failed: {e}")
         

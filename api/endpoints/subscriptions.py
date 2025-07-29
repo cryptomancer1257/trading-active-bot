@@ -14,7 +14,7 @@ import logging
 
 from core import crud, models, schemas, security
 from core.database import get_db
-from tasks import run_bot_logic
+from core.tasks import run_bot_logic
 from services.s3_manager import S3Manager
 from core.bot_manager import BotManager
 
@@ -272,7 +272,7 @@ def create_subscription_with_version(
         # Check if bot exists and is approved
         bot = crud.get_bot_by_id(db, sub_in.bot_id)
         if not bot or bot.status != schemas.BotStatus.APPROVED:
-        raise HTTPException(status_code=404, detail="Bot not found or not approved for use")
+            raise HTTPException(status_code=404, detail="Bot not found or not approved for use")
 
         # Check if user has API credentials
         if not current_user.api_key or not current_user.api_secret:

@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bot-marketplace-config
+  namespace: bot-marketplace
+data:
+  # Database Configuration
+  MYSQL_HOST: "mysql-service"
+  MYSQL_DATABASE: "bot_marketplace"
+  MYSQL_USER: "botuser"
+  
+  # Redis Configuration
+  REDIS_HOST: "redis-service"
+  REDIS_PORT: "6379"
+  
+  # Application Configuration
+  ENVIRONMENT: "production"
+  SECRET_KEY: "your-secret-key-change-in-production"
+  ALGORITHM: "HS256"
+  ACCESS_TOKEN_EXPIRE_MINUTES: "30"
+  
+  # AWS S3 Configuration (if using)
+  AWS_REGION: "us-east-1"
+  S3_BUCKET_NAME: "bot-marketplace-storage"
+  
+  # Celery Configuration
+  CELERY_BROKER_URL: "redis://redis-service:6379/0"
+  CELERY_RESULT_BACKEND: "redis://redis-service:6379/0" 
