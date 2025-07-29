@@ -1,62 +1,93 @@
-# Trading Bot Marketplace
+# 🤖 Bot Marketplace
 
-A comprehensive backend marketplace for trading bot rental.
+Advanced Trading Bot Platform
 
-## Project Structure
+## 🚀 Quick Start
 
-```
-bot_marketplace/
-├── core/                 # Core application files
-│   ├── main.py          # FastAPI application
-│   ├── tasks.py         # Celery background tasks
-│   ├── models.py        # Database models
-│   ├── schemas.py       # Pydantic schemas
-│   ├── crud.py          # Database operations
-│   ├── database.py      # Database configuration
-│   ├── security.py      # Authentication
-│   ├── bot_manager.py   # Bot lifecycle management
-│   └── bot_base_classes.py # Base classes loader
-├── services/            # External services
-│   ├── binance_integration.py
-│   ├── exchange_factory.py
-│   ├── s3_manager.py
-│   ├── sendgrid_email_service.py
-│   ├── gmail_smtp_service.py
-│   └── email_templates.py
-├── utils/               # Utility functions
-│   ├── celery_app.py
-│   ├── run_beat.py
-│   └── run_celery.py
-├── api/                 # API endpoints
-│   └── endpoints/
-├── bots/                # Bot SDK and examples
-│   └── bot_sdk/
-├── config/              # Configuration files
-│   ├── docker.env
-│   └── requirements.txt
-├── scripts/             # Utility scripts
-├── tests/               # Test files
-├── docs/                # Documentation
-├── logs/                # Log files
-├── temp/                # Temporary files
-├── docker-compose.yml
-├── Dockerfile
-└── README.md
-```
-
-## Quick Start
-
+### 1. Clone & Setup
 ```bash
-# Start with Docker
-docker-compose up -d
-
-# Or run manually
-pip install -r config/requirements.txt
-python main.py
-python utils/run_celery.py
-python utils/run_beat.py
+git clone <repository-url>
+cd bot_marketplace
+cp env.example .env
+nano .env  # Configure required settings
 ```
 
-## Documentation
+### 2. Configure Required Settings
 
-See `docs/` folder for detailed documentation.
+#### A. Generate Secret Key
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+#### B. Configure Email (Choose One)
+
+**SendGrid (Recommended):**
+```env
+SENDGRID_API_KEY=your-sendgrid-api-key
+FROM_EMAIL=noreply@yourdomain.com
+```
+
+**Gmail SMTP:**
+```env
+GMAIL_USER=your-gmail@gmail.com
+GMAIL_PASSWORD=your-app-password
+```
+
+#### C. AWS S3 (Optional - for bot storage)
+```env
+AWS_ACCESS_KEY_ID=your-aws-key
+AWS_SECRET_ACCESS_KEY=your-aws-secret
+AWS_REGION=us-east-1
+S3_BUCKET_NAME=your-bucket
+```
+
+### 3. Start Application
+```bash
+docker-compose up -d
+```
+
+### 4. Access Application
+- **API Docs**: http://localhost:8000/docs
+- **Health Check**: http://localhost:8000/health
+
+## 📧 Email Setup
+
+### SendGrid
+1. Create account at [sendgrid.com](https://sendgrid.com)
+2. Generate API key
+3. Verify sender email
+4. Add to `.env`:
+   ```env
+   SENDGRID_API_KEY=your-api-key
+   FROM_EMAIL=verified@yourdomain.com
+   ```
+
+### Gmail
+1. Enable 2FA
+2. Generate app password
+3. Add to `.env`:
+   ```env
+   GMAIL_USER=your-gmail@gmail.com
+   GMAIL_PASSWORD=your-app-password
+   ```
+
+## 🔧 Troubleshooting
+
+### Reset Database
+```bash
+./reset_database.sh
+```
+
+### View Logs
+```bash
+docker-compose logs -f
+```
+
+### Common Issues
+- **Port in use**: Change `API_PORT` in `.env`
+- **Email not working**: Check API key/credentials
+- **Database error**: Run `./reset_database.sh`
+
+## 📚 Documentation
+- **API Docs**: http://localhost:8000/docs
+- **Detailed Setup**: See `SETUP_GUIDE.md`
