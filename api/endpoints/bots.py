@@ -406,3 +406,125 @@ def delete_bot_review(
     
     crud.delete_bot_review(db, review_id=review_id)
     return {"message": "Review deleted successfully"}
+
+# --- Marketplace Bot Registration Endpoints ---
+@router.post("/register", response_model=schemas.BotRegistrationResponse, status_code=status.HTTP_201_CREATED)
+def register_bot_for_marketplace(
+    registration: schemas.BotRegistrationRequest,
+    db: Session = Depends(get_db),
+    marketplace_user: models.User = Depends(security.get_marketplace_user)
+):
+    """
+    Register a bot for marketplace user via API key authentication.
+    This endpoint allows external marketplace systems to register bots for users.
+    """
+    try:
+        # Create bot registration/subscription
+        subscription = crud.create_bot_registration(
+            db=db,
+            registration=registration,
+            marketplace_user_id=marketplace_user.id
+        )
+        
+        # Prepare response
+        response = schemas.BotRegistrationResponse(
+            subscription_id=subscription.id,
+            user_principal_id=registration.user_principal_id,
+            bot_id=registration.bot_id,
+            status="success",
+            message="Bot registered successfully for marketplace user",
+            registration_details={
+                "instance_name": subscription.instance_name,
+                "symbol": registration.symbol,
+                "timeframes": registration.timeframes,
+                "trade_evaluation_period": registration.trade_evaluation_period,
+                "exchange_name": registration.exchange_name.value,
+                "network_type": registration.network_type.value,
+                "trade_mode": registration.trade_mode.value,
+                "start_time": registration.starttime.isoformat(),
+                "end_time": registration.endtime.isoformat(),
+                "created_at": subscription.started_at.isoformat()
+            }
+        )
+        
+        return response
+        
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to register bot: {str(e)}"
+        )
+
+@router.put("/update-registration/{subscription_id}", response_model=schemas.BotRegistrationUpdateResponse)
+def update_bot_registration(
+    subscription_id: int,
+    update_data: schemas.BotRegistrationUpdate,
+    db: Session = Depends(get_db),
+    marketplace_user: models.User = Depends(security.get_marketplace_user)
+):
+    """
+    Update an existing bot registration for marketplace user.
+    Allows updating timeframes, trade_evaluation_period, starttime, endtime, 
+    exchange_name, network_type, and trade_mode.
+    """
+    try:
+        # Update bot registration
+        subscription, updated_fields = crud.update_bot_registration(
+            db=db,
+            subscription_id=subscription_id,
+            update_data=update_data,
+            marketplace_user_id=marketplace_user.id
+        )
+        
+        # Prepare response
+        response = schemas.BotRegistrationUpdateResponse(
+            subscription_id=subscription.id,
+            user_principal_id=subscription.user_principal_id,
+            status="success",
+            message=f"Bot registration updated successfully. Updated fields: {', '.join(updated_fields)}",
+            updated_fields=updated_fields
+        )
+        
+        return response
+        
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update bot registration: {str(e)}"
+        )
+
+@router.get("/registrations/{user_principal_id}", response_model=List[schemas.SubscriptionInDB])
+def get_bot_registrations_by_principal_id(
+    user_principal_id: str,
+    bot_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    marketplace_user: models.User = Depends(security.get_marketplace_user)
+):
+    """
+    Get bot registrations by user principal ID.
+    Optionally filter by bot_id.
+    """
+    try:
+        subscriptions = crud.get_bot_registration_by_principal_id(
+            db=db,
+            user_principal_id=user_principal_id,
+            bot_id=bot_id
+        )
+        
+        return subscriptions
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get bot registrations: {str(e)}"
+        )

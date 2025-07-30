@@ -25,6 +25,15 @@ class TradeStatus(enum.Enum):
     OPEN = "OPEN"
     CLOSED = "CLOSED"
 
+class NetworkType(enum.Enum):
+    TESTNET = "TESTNET"
+    MAINNET = "MAINNET"
+
+class TradeMode(enum.Enum):
+    SPOT = "SPOT"
+    MARGIN = "MARGIN"
+    FUTURES = "FUTURES"
+
 class ExchangeType(enum.Enum):
     BINANCE = "BINANCE"
     COINBASE = "COINBASE"
@@ -189,7 +198,14 @@ class Subscription(Base):
     # Exchange and trading configuration
     exchange_type = Column(Enum(ExchangeType), default=ExchangeType.BINANCE)  # BINANCE, COINBASE, KRAKEN
     trading_pair = Column(String(20))
-    timeframe = Column(String(10))  # "1h", "4h", "1d"
+    timeframe = Column(String(10))  # "1h", "4h", "1d" - kept for backward compatibility
+    
+    # New fields for marketplace bot registration
+    user_principal_id = Column(String(255))  # ICP Principal ID
+    timeframes = Column(JSON)  # List of timeframes ["1h", "2h", "4h"]
+    trade_evaluation_period = Column(Integer)  # Minutes for bot analysis period
+    network_type = Column(Enum(NetworkType), default=NetworkType.TESTNET)
+    trade_mode = Column(Enum(TradeMode), default=TradeMode.SPOT)
     
     # Strategy configuration (overrides defaults)
     strategy_config = Column(JSON)
