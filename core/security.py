@@ -7,8 +7,8 @@ from typing import Optional, Annotated
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi import Depends, HTTPException, status, Header
+from fastapi.security import OAuth2PasswordBearer, APIKeyHeader
 from sqlalchemy.orm import Session
 
 # Add parent directory to path
@@ -94,4 +94,42 @@ async def get_current_active_admin(current_user: Annotated[models.User, Depends(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You must be an admin to perform this action"
         )
+    return current_user
+
+# --- API Key Authentication for Marketplace ---
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+async def get_user_by_api_key(api_key: str = Depends(api_key_header), db: Session = Depends(get_db)) -> models.User:
+    """
+    Authenticate user by API key for marketplace integration.
+    This allows external systems to authenticate using API keys.
+    """
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="API key is required",
+            headers={"WWW-Authenticate": "ApiKey"},
+        )
+    
+    # Find user by API key
+    user = crud.get_user_by_api_key(db, api_key=api_key)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid API key",
+            headers={"WWW-Authenticate": "ApiKey"},
+        )
+    
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User account is inactive"
+        )
+    
+    return user
+
+async def get_marketplace_user(current_user: Annotated[models.User, Depends(get_user_by_api_key)]) -> models.User:
+    """
+    Dependency for marketplace endpoints that require API key authentication.
+    """
     return current_user

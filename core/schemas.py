@@ -47,6 +47,15 @@ class TradeStatus(str, Enum):
     OPEN = "OPEN"
     CLOSED = "CLOSED"
 
+class NetworkType(str, Enum):
+    TESTNET = "testnet"
+    MAINNET = "mainnet"
+
+class TradeMode(str, Enum):
+    SPOT = "Spot"
+    MARGIN = "Margin"
+    FUTURES = "Futures"
+
 # --- User Schemas ---
 class UserBase(BaseModel):
     email: EmailStr
@@ -331,7 +340,7 @@ class SubscriptionBase(BaseModel):
     bot_id: int
     exchange_type: ExchangeType = ExchangeType.BINANCE
     trading_pair: str
-    timeframe: str = Field(..., pattern="^(1m|5m|15m|1h|4h|1d|1w)$")
+    timeframe: str = Field(..., pattern="^(1m|5m|15m|1h|2h|4h|6h|8h|12h|1d|1w)$")
     strategy_config: Dict[str, Any] = {}
     execution_config: ExecutionConfig
     risk_config: RiskConfig
@@ -664,6 +673,70 @@ class BotWithPricing(BotPublic):
     
     class Config:
         from_attributes = True
+
+# --- Bot Registration Schemas for Marketplace ---
+class BotRegistrationRequest(BaseModel):
+    """Schema for marketplace bot registration request"""
+    user_principal_id: str = Field(..., description="Principal ID của ICP user")
+    bot_id: int = Field(..., description="ID của bot đã được approve")
+    symbol: str = Field(..., description="Trading pair như ETH/USDT, BTC/USDT")
+    timeframes: List[str] = Field(..., description="Danh sách timeframes như ['1h', '2h', '4h']")
+    trade_evaluation_period: int = Field(..., gt=0, description="Thời gian quan sát và phân tích (phút)")
+    starttime: datetime = Field(..., description="Thời gian bắt đầu cho thuê")
+    endtime: datetime = Field(..., description="Thời gian kết thúc cho thuê")
+    exchange_name: ExchangeType = Field(..., description="Sàn giao dịch")
+    network_type: NetworkType = Field(..., description="Testnet hoặc mainnet")
+    trade_mode: TradeMode = Field(..., description="Chế độ giao dịch")
+
+    @validator('timeframes')
+    def validate_timeframes(cls, v):
+        valid_timeframes = ['1m', '5m', '15m', '1h', '2h', '4h', '6h', '8h', '12h', '1d', '1w']
+        for tf in v:
+            if tf not in valid_timeframes:
+                raise ValueError(f'Invalid timeframe: {tf}. Must be one of {valid_timeframes}')
+        return v
+
+    @validator('symbol')
+    def validate_symbol(cls, v):
+        if '/' not in v or len(v.split('/')) != 2:
+            raise ValueError('Symbol must be in format BASE/QUOTE (e.g., BTC/USDT)')
+        return v.upper()
+
+class BotRegistrationResponse(BaseModel):
+    """Response for bot registration"""
+    subscription_id: int
+    user_principal_id: str
+    bot_id: int
+    status: str
+    message: str
+    registration_details: Dict[str, Any]
+
+class BotRegistrationUpdate(BaseModel):
+    """Schema for updating bot registration"""
+    timeframes: Optional[List[str]] = Field(None, description="Cập nhật timeframes")
+    trade_evaluation_period: Optional[int] = Field(None, gt=0, description="Cập nhật thời gian quan sát")
+    starttime: Optional[datetime] = Field(None, description="Cập nhật thời gian bắt đầu")
+    endtime: Optional[datetime] = Field(None, description="Cập nhật thời gian kết thúc")
+    exchange_name: Optional[ExchangeType] = Field(None, description="Cập nhật sàn giao dịch")
+    network_type: Optional[NetworkType] = Field(None, description="Cập nhật network type")
+    trade_mode: Optional[TradeMode] = Field(None, description="Cập nhật chế độ giao dịch")
+
+    @validator('timeframes')
+    def validate_timeframes(cls, v):
+        if v is not None:
+            valid_timeframes = ['1m', '5m', '15m', '1h', '2h', '4h', '6h', '8h', '12h', '1d', '1w']
+            for tf in v:
+                if tf not in valid_timeframes:
+                    raise ValueError(f'Invalid timeframe: {tf}. Must be one of {valid_timeframes}')
+        return v
+
+class BotRegistrationUpdateResponse(BaseModel):
+    """Response for bot registration update"""
+    subscription_id: int
+    user_principal_id: str
+    status: str
+    message: str
+    updated_fields: List[str]
 
 # --- Subscription with Pricing ---
 class SubscriptionWithPricing(SubscriptionResponse):

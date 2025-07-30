@@ -51,6 +51,10 @@ def get_user(db: Session, user_id: int):
 def get_user_by_email(db: Session, email: str):
     return db.query(models.User).filter(models.User.email == email).first()
 
+def get_user_by_api_key(db: Session, api_key: str):
+    """Get user by API key for marketplace authentication"""
+    return db.query(models.User).filter(models.User.api_key == api_key).first()
+
 def get_users(db: Session, skip: int = 0, limit: int = 100):
     return db.query(models.User).offset(skip).limit(limit).all()
 
@@ -1182,3 +1186,165 @@ def cleanup_old_bot_actions(cutoff_date: datetime) -> int:
         
     except Exception as e:
         return 0
+
+# --- Bot Registration CRUD for Marketplace ---
+def create_bot_registration(
+    db: Session, 
+    registration: schemas.BotRegistrationRequest,
+    marketplace_user_id: int
+) -> models.Subscription:
+    """Create a new bot registration/subscription for marketplace"""
+    
+    # Check if bot exists and is approved
+    bot = db.query(models.Bot).filter(
+        models.Bot.id == registration.bot_id,
+        models.Bot.status == models.BotStatus.APPROVED
+    ).first()
+    
+    if not bot:
+        raise ValueError(f"Bot with ID {registration.bot_id} not found or not approved")
+    
+    # Check if user already has a subscription for this bot with same principal_id
+    existing_sub = db.query(models.Subscription).filter(
+        models.Subscription.user_id == marketplace_user_id,
+        models.Subscription.bot_id == registration.bot_id,
+        models.Subscription.user_principal_id == registration.user_principal_id,
+        models.Subscription.status == models.SubscriptionStatus.ACTIVE
+    ).first()
+    
+    if existing_sub:
+        raise ValueError(f"Active subscription already exists for principal_id {registration.user_principal_id}")
+    
+    # Determine if testnet based on network_type
+    is_testnet = registration.network_type == schemas.NetworkType.TESTNET
+    
+    # Create subscription
+    db_subscription = models.Subscription(
+        instance_name=f"{bot.name} - {registration.user_principal_id[:8]}",
+        user_id=marketplace_user_id,
+        bot_id=registration.bot_id,
+        status=models.SubscriptionStatus.ACTIVE,
+        
+        # Marketplace specific fields
+        user_principal_id=registration.user_principal_id,
+        timeframes=registration.timeframes,
+        trade_evaluation_period=registration.trade_evaluation_period,
+        network_type=registration.network_type.value.upper(),
+        trade_mode=registration.trade_mode.value.upper(),
+        
+        # Exchange and trading configuration
+        exchange_type=registration.exchange_name,
+        trading_pair=registration.symbol,
+        timeframe=registration.timeframes[0] if registration.timeframes else "1h",  # Use first timeframe for backward compatibility
+        is_testnet=is_testnet,
+        
+        # Time configuration
+        started_at=registration.starttime,
+        expires_at=registration.endtime,
+        
+        # Default configurations
+        strategy_config={},
+        execution_config={
+            "buy_order_type": "PERCENTAGE",
+            "buy_order_value": 10.0,
+            "sell_order_type": "ALL",
+            "sell_order_value": 100.0
+        },
+        risk_config={
+            "stop_loss_percent": 5.0,
+            "take_profit_percent": 10.0,
+            "max_position_size": 0.1
+        }
+    )
+    
+    db.add(db_subscription)
+    db.commit()
+    db.refresh(db_subscription)
+    
+    # Update bot subscriber count
+    update_bot_subscriber_count(db, registration.bot_id)
+    
+    return db_subscription
+
+def update_bot_registration(
+    db: Session,
+    subscription_id: int,
+    update_data: schemas.BotRegistrationUpdate,
+    marketplace_user_id: int
+) -> tuple[models.Subscription, List[str]]:
+    """Update an existing bot registration/subscription"""
+    
+    # Get subscription and verify ownership
+    subscription = db.query(models.Subscription).filter(
+        models.Subscription.id == subscription_id,
+        models.Subscription.user_id == marketplace_user_id
+    ).first()
+    
+    if not subscription:
+        raise ValueError(f"Subscription {subscription_id} not found or not owned by user")
+    
+    # Track updated fields
+    updated_fields = []
+    
+    # Update fields if provided
+    if update_data.timeframes is not None:
+        subscription.timeframes = update_data.timeframes
+        # Update backward compatibility field
+        subscription.timeframe = update_data.timeframes[0] if update_data.timeframes else subscription.timeframe
+        updated_fields.append("timeframes")
+    
+    if update_data.trade_evaluation_period is not None:
+        subscription.trade_evaluation_period = update_data.trade_evaluation_period
+        updated_fields.append("trade_evaluation_period")
+    
+    if update_data.starttime is not None:
+        subscription.started_at = update_data.starttime
+        updated_fields.append("starttime")
+    
+    if update_data.endtime is not None:
+        subscription.expires_at = update_data.endtime
+        updated_fields.append("endtime")
+    
+    if update_data.exchange_name is not None:
+        subscription.exchange_type = update_data.exchange_name
+        updated_fields.append("exchange_name")
+    
+    if update_data.network_type is not None:
+        subscription.network_type = update_data.network_type.value.upper()
+        subscription.is_testnet = update_data.network_type == schemas.NetworkType.TESTNET
+        updated_fields.append("network_type")
+    
+    if update_data.trade_mode is not None:
+        subscription.trade_mode = update_data.trade_mode.value.upper()
+        updated_fields.append("trade_mode")
+    
+    db.commit()
+    db.refresh(subscription)
+    
+    return subscription, updated_fields
+
+def get_bot_registration_by_principal_id(
+    db: Session,
+    user_principal_id: str,
+    bot_id: int = None
+) -> List[models.Subscription]:
+    """Get bot registrations by principal ID"""
+    query = db.query(models.Subscription).filter(
+        models.Subscription.user_principal_id == user_principal_id
+    )
+    
+    if bot_id:
+        query = query.filter(models.Subscription.bot_id == bot_id)
+    
+    return query.all()
+
+def get_marketplace_subscription_by_id(
+    db: Session,
+    subscription_id: int,
+    marketplace_user_id: int
+) -> models.Subscription:
+    """Get subscription by ID for marketplace user"""
+    return db.query(models.Subscription).filter(
+        models.Subscription.id == subscription_id,
+        models.Subscription.user_id == marketplace_user_id
+    ).first()
