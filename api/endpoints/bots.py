@@ -17,11 +17,17 @@ import json
 from core import crud, models, schemas, security
 from core.database import get_db
 from core.bot_manager import BotManager
+from core.api_key_manager import api_key_manager
 from services.s3_manager import S3Manager
+import logging
+from typing import Dict, Any
 
 # Initialize managers
 bot_manager = BotManager()
 s3_manager = S3Manager()
+
+# Initialize logger
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -408,42 +414,39 @@ def delete_bot_review(
     return {"message": "Review deleted successfully"}
 
 # --- Marketplace Bot Registration Endpoints ---
-@router.post("/register", response_model=schemas.BotRegistrationResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/register", response_model=schemas.BotMarketplaceRegistrationResponse, status_code=status.HTTP_201_CREATED)
 def register_bot_for_marketplace(
-    registration: schemas.BotRegistrationRequest,
+    registration: schemas.BotMarketplaceRegistrationRequest,
     db: Session = Depends(get_db),
-    marketplace_user: models.User = Depends(security.get_marketplace_user)
+    _: bool = Depends(security.validate_marketplace_api_key)  # Just validate API key, no user object
 ):
     """
-    Register a bot for marketplace user via API key authentication.
-    This endpoint allows external marketplace systems to register bots for users.
+    Register a bot for marketplace listing using hardcoded API key.
+    This endpoint allows marketplace to register bots with auto-generated API keys.
     """
     try:
-        # Create bot registration/subscription
-        subscription = crud.create_bot_registration(
+        # Create marketplace registration (auto-approved)
+        registration_record = crud.create_bot_marketplace_registration(
             db=db,
-            registration=registration,
-            marketplace_user_id=marketplace_user.id
+            registration=registration
         )
         
-        # Prepare response
-        response = schemas.BotRegistrationResponse(
-            subscription_id=subscription.id,
+        # Prepare response with generated API key
+        response = schemas.BotMarketplaceRegistrationResponse(
+            registration_id=registration_record.id,
             user_principal_id=registration.user_principal_id,
             bot_id=registration.bot_id,
-            status="success",
-            message="Bot registered successfully for marketplace user",
+            api_key=registration_record.api_key,
+            status="approved",
+            message="Bot registered successfully for marketplace with auto-generated API key",
             registration_details={
-                "instance_name": subscription.instance_name,
-                "symbol": registration.symbol,
-                "timeframes": registration.timeframes,
-                "trade_evaluation_period": registration.trade_evaluation_period,
-                "exchange_name": registration.exchange_name.value,
-                "network_type": registration.network_type.value,
-                "trade_mode": registration.trade_mode.value,
-                "start_time": registration.starttime.isoformat(),
-                "end_time": registration.endtime.isoformat(),
-                "created_at": subscription.started_at.isoformat()
+                "marketplace_name": registration_record.marketplace_name,
+                "marketplace_description": registration_record.marketplace_description,
+                "price_on_marketplace": str(registration_record.price_on_marketplace),
+                "commission_rate": registration_record.commission_rate,
+                "registered_at": registration_record.registered_at.isoformat(),
+                "status": registration_record.status.value,
+                "api_key": registration_record.api_key
             }
         )
         
@@ -457,8 +460,30 @@ def register_bot_for_marketplace(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to register bot: {str(e)}"
+            detail=f"Failed to register bot for marketplace: {str(e)}"
         )
+
+@router.get("/marketplace", response_model=List[schemas.BotMarketplaceRegistrationInDB])
+def get_marketplace_bots_list(
+    skip: int = 0,
+    limit: int = 50,
+    db: Session = Depends(get_db)
+):
+    """Get approved bots available on marketplace"""
+    return crud.get_marketplace_bots(db, skip=skip, limit=limit)
+
+@router.get("/validate-bot-key/{api_key}", response_model=schemas.BotMarketplaceRegistrationInDB)
+def validate_bot_api_key(
+    api_key: str,
+    db: Session = Depends(get_db)
+):
+    """Validate bot API key and return registration info"""
+    registration = crud.get_bot_registration_by_api_key(db, api_key)
+    
+    if not registration:
+        raise HTTPException(status_code=404, detail="Invalid or inactive bot API key")
+    
+    return registration
 
 @router.put("/update-registration/{subscription_id}", response_model=schemas.BotRegistrationUpdateResponse)
 def update_bot_registration(
@@ -527,4 +552,69 @@ def get_bot_registrations_by_principal_id(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get bot registrations: {str(e)}"
+        )
+
+# Marketplace endpoint for storing credentials by principal ID
+@router.post("/marketplace/store-by-principal", response_model=Dict[str, Any])
+async def store_credentials_by_principal_id(
+    request: schemas.ExchangeCredentialsByPrincipalRequest,
+    api_key: str = Depends(security.api_key_header),
+    db: Session = Depends(get_db)
+):
+    """
+    Marketplace: Store exchange credentials by ICP Principal ID
+    Allows marketplace users to provide their exchange API keys
+    Requires valid marketplace API key
+    """
+    try:
+        # Verify marketplace API key
+        if api_key != security.MARKETPLACE_API_KEY:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid marketplace API key"
+            )
+        
+        # Validate exchange
+        if request.exchange.upper() not in ["BINANCE", "COINBASE", "KRAKEN"]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Unsupported exchange. Supported: BINANCE, COINBASE, KRAKEN"
+            )
+        
+        # Store credentials using principal ID
+        success = api_key_manager.store_user_exchange_credentials_by_principal_id(
+            db=db,
+            principal_id=request.principal_id,
+            exchange=request.exchange.upper(),
+            api_key=request.api_key,
+            api_secret=request.api_secret,
+            api_passphrase=request.api_passphrase,
+            is_testnet=request.is_testnet
+        )
+        
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Failed to store credentials. Check if user exists and credentials are valid."
+            )
+        
+        logger.info(f"Stored {request.exchange} credentials for principal ID: {request.principal_id}")
+        
+        return {
+            "status": "success",
+            "message": "Exchange credentials stored successfully",
+            "principal_id": request.principal_id,
+            "exchange": request.exchange.upper(),
+            "is_testnet": request.is_testnet,
+            "created_at": "2025-08-03T12:00:00Z"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to store credentials by principal ID: {e}")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to store credentials"
         )

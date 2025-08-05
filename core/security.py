@@ -128,6 +128,31 @@ async def get_user_by_api_key(api_key: str = Depends(api_key_header), db: Sessio
     
     return user
 
+# Get marketplace API key from environment or use default for development
+MARKETPLACE_API_KEY = os.getenv("MARKETPLACE_API_KEY", "marketplace_dev_api_key_12345")
+
+async def validate_marketplace_api_key(api_key: str = Depends(api_key_header)) -> bool:
+    """
+    Validate marketplace API key from header (dynamic from environment).
+    No user object needed.
+    """
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="API key is required",
+            headers={"WWW-Authenticate": "ApiKey"},
+        )
+    
+    # Check against environment variable API key
+    if api_key != MARKETPLACE_API_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid marketplace API key",
+            headers={"WWW-Authenticate": "ApiKey"},
+        )
+    
+    return True  # Just return True, no user object needed
+
 async def get_marketplace_user(current_user: Annotated[models.User, Depends(get_user_by_api_key)]) -> models.User:
     """
     Dependency for marketplace endpoints that require API key authentication.

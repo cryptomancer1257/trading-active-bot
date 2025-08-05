@@ -56,6 +56,10 @@ class TradeMode(str, Enum):
     MARGIN = "Margin"
     FUTURES = "Futures"
 
+class UserPrincipalStatus(str, Enum):
+    ACTIVE = "ACTIVE"
+    INACTIVE = "INACTIVE"
+
 # --- User Schemas ---
 class UserBase(BaseModel):
     email: EmailStr
@@ -93,6 +97,36 @@ class UserProfile(UserInDB):
     active_subscriptions: int = 0
     total_developed_bots: int = 0
     approved_bots: int = 0
+
+# --- User Principal Schemas ---
+class UserPrincipalBase(BaseModel):
+    principal_id: str = Field(..., description="ICP Principal ID")
+    status: UserPrincipalStatus = UserPrincipalStatus.ACTIVE
+
+class UserPrincipalCreate(BaseModel):
+    principal_id: str = Field(..., description="ICP Principal ID")
+    
+    @validator('principal_id')
+    def validate_principal_id(cls, v):
+        if not v or len(v.strip()) == 0:
+            raise ValueError('Principal ID cannot be empty')
+        # Add more validation if needed (e.g., format check)
+        return v.strip()
+
+class UserPrincipalUpdate(BaseModel):
+    status: Optional[UserPrincipalStatus] = None
+
+class UserPrincipalInDB(UserPrincipalBase):
+    id: int
+    user_id: int
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+class UserPrincipalResponse(UserPrincipalInDB):
+    pass
 
 # --- Exchange Credentials Schemas ---
 class ExchangeCredentialsBase(BaseModel):
@@ -214,6 +248,8 @@ class BotPublic(BaseModel):
     developer_id: int
     category_id: Optional[int] = None
     version: str
+    bot_type: Optional[str] = None
+    code_path: Optional[str] = None
     price_per_month: Decimal
     is_free: bool
     total_subscribers: int
@@ -358,6 +394,34 @@ class SubscriptionTrialCreate(BaseModel):
     trading_pair: str = "BTC/USDT"
     timeframe: str = "1h"
     trial_duration_hours: float = Field(default=24.0, ge=0.1, le=168.0)  # 0.1 hours (6 minutes) to 1 week
+
+class MarketplaceSubscriptionCreate(BaseModel):
+    """Schema for creating subscription from marketplace with user principal ID"""
+    user_principal_id: str = Field(..., description="ICP Principal ID of user from marketplace")
+    bot_api_key: str = Field(..., description="API key of the registered bot")
+    instance_name: str
+    bot_id: int
+    exchange_type: ExchangeType = ExchangeType.BINANCE
+    trading_pair: str = "BTCUSDT"
+    timeframe: str = "1h"
+    is_testnet: bool = True  # Default to testnet for safety
+    
+    # Marketplace controls subscription timing
+    start_time: Optional[datetime] = Field(None, description="When subscription should start (UTC). If None, starts immediately")
+    end_time: Optional[datetime] = Field(None, description="When subscription should end (UTC). If None, no expiration")
+    
+    strategy_config: Dict[str, Any] = {}
+    execution_config: ExecutionConfig = Field(default_factory=lambda: ExecutionConfig(
+        buy_order_type="PERCENTAGE",
+        buy_order_value=100.0,
+        sell_order_type="ALL", 
+        sell_order_value=100.0
+    ))
+    risk_config: RiskConfig = Field(default_factory=lambda: RiskConfig(
+        stop_loss_percent=2.0,
+        take_profit_percent=4.0,
+        max_position_size=100.0
+    ))
 
 class SubscriptionUpdate(BaseModel):
     instance_name: Optional[str] = None
@@ -702,6 +766,50 @@ class BotRegistrationRequest(BaseModel):
             raise ValueError('Symbol must be in format BASE/QUOTE (e.g., BTC/USDT)')
         return v.upper()
 
+class BotMarketplaceRegistrationRequest(BaseModel):
+    """Request schema for registering bot on marketplace"""
+    user_principal_id: str = Field(..., description="ICP Principal ID của developer")
+    bot_id: int = Field(..., description="ID của bot cần đăng ký")
+    marketplace_name: Optional[str] = Field(None, description="Tên hiển thị trên marketplace")
+    marketplace_description: Optional[str] = Field(None, description="Mô tả trên marketplace") 
+    price_on_marketplace: Optional[Decimal] = Field(None, description="Giá bán trên marketplace")
+    
+    @validator('user_principal_id')
+    def validate_principal_id(cls, v):
+        # Validate ICP Principal ID format
+        if not v or len(v) < 20:
+            raise ValueError('Invalid ICP Principal ID format')
+        return v
+
+class BotMarketplaceRegistrationResponse(BaseModel):
+    """Response for bot marketplace registration"""
+    registration_id: int
+    user_principal_id: str
+    bot_id: int
+    api_key: str
+    status: str
+    message: str
+    registration_details: Dict[str, Any]
+
+class BotMarketplaceRegistrationInDB(BaseModel):
+    """Bot registration in database"""
+    id: int
+    user_principal_id: str
+    bot_id: int
+    api_key: str
+    status: str  # Will be BotRegistrationStatus enum value
+    marketplace_name: Optional[str]
+    marketplace_description: Optional[str]
+    price_on_marketplace: Optional[Decimal]
+    commission_rate: float
+    registered_at: datetime
+    is_featured: bool
+    is_active: bool
+    
+    class Config:
+        from_attributes = True
+
+# Legacy schema - keeping for backward compatibility
 class BotRegistrationResponse(BaseModel):
     """Response for bot registration"""
     subscription_id: int
@@ -747,3 +855,31 @@ class SubscriptionWithPricing(SubscriptionResponse):
     
     class Config:
         from_attributes = True
+
+# Exchange Credentials by Principal ID (for marketplace)
+class ExchangeCredentialsByPrincipalRequest(BaseModel):
+    """Request model for storing exchange credentials by principal ID"""
+    principal_id: str = Field(..., description="ICP Principal ID")
+    exchange: ExchangeType = Field(..., description="Exchange name")
+    api_key: str = Field(..., description="Exchange API key")
+    api_secret: str = Field(..., description="Exchange API secret")
+    api_passphrase: Optional[str] = Field(None, description="Exchange API passphrase (for some exchanges)")
+    is_testnet: bool = Field(True, description="Whether these are testnet credentials")
+    
+    @validator('principal_id')
+    def validate_principal_id(cls, v):
+        if not v or len(v.strip()) == 0:
+            raise ValueError('Principal ID cannot be empty')
+        return v.strip()
+    
+    @validator('api_key')
+    def validate_api_key(cls, v):
+        if not v or len(v.strip()) == 0:
+            raise ValueError('API key cannot be empty')
+        return v.strip()
+    
+    @validator('api_secret')
+    def validate_api_secret(cls, v):
+        if not v or len(v.strip()) == 0:
+            raise ValueError('API secret cannot be empty')
+        return v.strip()

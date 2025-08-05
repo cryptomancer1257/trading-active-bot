@@ -1,0 +1,44 @@
+[
+  {
+    "timestamp": "2025-08-03T08:46:59.931871",
+    "action": "SELL",
+    "symbol": "BTCUSDT",
+    "quantity": "0.026",
+    "entry_price": 112900.0,
+    "leverage": 10,
+    "stop_loss": {
+      "price": 113161.0,
+      "order_id": null,
+      "source": "recommendation"
+    },
+    "take_profit": {
+      "price": 112661.0,
+      "order_id": 5523999346,
+      "source": "recommendation"
+    },
+    "order_id": 5523999325,
+    "confidence": 0.75,
+    "reason": "[LLM-MULTI-TF] The market is in a downtrend across multiple timeframes with the price currently between the 50% and 61.8% Fibonacci retracement levels. Technical indicators such as MACD and RSI suggest bearish momentum, supporting a short position."
+  },
+  {
+    "timestamp": "2025-08-03T09:29:57.958492",
+    "action": "BUY",
+    "symbol": "BTCUSDT",
+    "quantity": "0.027",
+    "entry_price": 112600.0,
+    "leverage": 10,
+    "stop_loss": {
+      "price": 112500.0,
+      "order_id": 5524185206,
+      "source": "recommendation"
+    },
+    "take_profit": {
+      "price": 113000.0,
+      "order_id": 5524185250,
+      "source": "recommendation"
+    },
+    "order_id": 5524185083,
+    "confidence": 0.75,
+    "reason": "[LLM-MULTI-TF] The price is near the lower Bollinger Band and key Fibonacci support level, indicating potential for a reversal. Rising volume supports the likelihood of a bounce. The oversold conditions in RSI and Stochastic RSI further suggest a potential upward move."
+  }
+]

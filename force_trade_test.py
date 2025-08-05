@@ -8,7 +8,7 @@ import os
 import json
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from binance_trading_bot import BinanceTradingBot
+from bot_files.binance_trading_bot import BinanceTradingBot
 from bots.bot_sdk.Action import Action
 import logging
 

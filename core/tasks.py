@@ -695,3 +695,170 @@ def test_task():
     """Test task for debugging"""
     logger.info("Test task executed successfully")
     return "Test task completed"
+
+@app.task(bind=True)
+def run_futures_bot_trading(self, user_principal_id: str = None, config: Dict[str, Any] = None):
+    """
+    Celery task to run Binance Futures Bot with auto-confirmation
+    
+    Args:
+        user_principal_id: Optional user principal ID for database API keys
+        config: Bot configuration override
+    """
+    try:
+        import sys
+        import os
+        import asyncio
+        
+        # Add bot_files to path
+        bot_files_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'bot_files')
+        if bot_files_path not in sys.path:
+            sys.path.insert(0, bot_files_path)
+        
+        from binance_futures_bot import BinanceFuturesBot, main_execution
+        
+        logger.info(f"🚀 Starting Futures Bot Celery task")
+        logger.info(f"   User Principal ID: {user_principal_id or 'None (Direct Keys)'}")
+        logger.info(f"   Config provided: {'Yes' if config else 'No'}")
+        
+        # Default configuration for Celery execution
+        default_config = {
+            'trading_pair': 'BTCUSDT',
+            'testnet': True,
+            'leverage': 10,
+            'stop_loss_pct': 0.02,
+            'take_profit_pct': 0.04,
+            'position_size_pct': 0.05,
+            'timeframes': ['5m', '30m', '1h', '4h', '1d'],
+            'primary_timeframe': '1h',
+            'use_llm_analysis': True,
+            'llm_model': 'openai',
+            'require_confirmation': False,  # Disable confirmation for Celery
+            'auto_confirm': True  # Enable auto-confirmation
+        }
+        
+        # Merge with provided config
+        if config:
+            default_config.update(config)
+            
+        logger.info(f"🤖 Bot Config: {default_config['trading_pair']} | {len(default_config['timeframes'])} timeframes | Auto-confirm: ON")
+        
+        # LLM API keys - get from environment
+        llm_api_keys = {
+            'openai_api_key': os.getenv('OPENAI_API_KEY'),
+            'claude_api_key': os.getenv('CLAUDE_API_KEY'),
+            'gemini_api_key': os.getenv('GEMINI_API_KEY')
+        }
+        
+        # Exchange API keys MUST come from database via principal ID
+        if not user_principal_id:
+            logger.error("user_principal_id is required for Celery tasks - all exchange keys must come from database")
+            return {'status': 'error', 'message': 'user_principal_id is required'}
+        
+        # Initialize bot - ONLY database lookup allowed
+        logger.info(f"🏦 Using database API keys for principal: {user_principal_id}")
+        bot = BinanceFuturesBot(default_config, api_keys=llm_api_keys, user_principal_id=user_principal_id)
+        
+        # Run the trading cycle asynchronously
+        async def run_trading_cycle():
+            try:
+                # Check account status
+                account_status = bot.check_account_status()
+                logger.info(f"💰 Account Status: {account_status}")
+                
+                # Crawl multi-timeframe data
+                multi_timeframe_data = bot.crawl_data()
+                if not multi_timeframe_data.get("timeframes"):
+                    logger.error("❌ Failed to crawl multi-timeframe data")
+                    return {'status': 'error', 'message': 'Data crawl failed'}
+                
+                logger.info(f"📊 Crawled {len(multi_timeframe_data['timeframes'])} timeframes")
+                
+                # Analyze data
+                analysis = bot.analyze_data(multi_timeframe_data)
+                if 'error' in analysis:
+                    logger.error(f"❌ Analysis error: {analysis['error']}")
+                    return {'status': 'error', 'message': f'Analysis failed: {analysis["error"]}'}
+                
+                # Generate signal
+                signal = bot.generate_signal(analysis)
+                logger.info(f"🎯 Signal: {signal.action} | Confidence: {signal.value*100:.1f}% | Reason: {signal.reason}")
+                
+                # Execute trade (auto-confirmed)
+                trade_result = None
+                if signal.action != "HOLD":
+                    logger.info(f"🚀 AUTO-EXECUTING {signal.action} trade via Celery...")
+                    trade_result = await bot.setup_position(signal, analysis)
+                    
+                    # Save transaction if successful
+                    if trade_result.get('status') == 'success':
+                        bot.save_transaction_to_db(trade_result)
+                        logger.info(f"✅ Trade executed and saved: {trade_result.get('main_order_id')}")
+                    else:
+                        logger.error(f"❌ Trade failed: {trade_result}")
+                else:
+                    trade_result = {'status': 'success', 'action': 'HOLD', 'reason': signal.reason}
+                
+                return {
+                    'status': 'success',
+                    'signal': {
+                        'action': signal.action,
+                        'confidence': signal.value,
+                        'reason': signal.reason
+                    },
+                    'trade_result': trade_result,
+                    'account_status': account_status,
+                    'timeframes_analyzed': len(analysis.get('multi_timeframe', {})),
+                    'timestamp': datetime.now().isoformat()
+                }
+                
+            except Exception as e:
+                logger.error(f"❌ Error in trading cycle: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+                return {'status': 'error', 'message': str(e)}
+        
+        # Run the async trading cycle
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            result = loop.run_until_complete(run_trading_cycle())
+            logger.info(f"🎉 Futures Bot Celery task completed: {result['status']}")
+            return result
+        finally:
+            loop.close()
+            
+    except Exception as e:
+        logger.error(f"❌ Error in Futures Bot Celery task: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return {'status': 'error', 'message': str(e)}
+
+@app.task(bind=True)
+def schedule_futures_bot_trading(self, interval_minutes: int = 60, user_principal_id: str = None, config: Dict[str, Any] = None):
+    """
+    Schedule periodic Futures Bot trading
+    
+    Args:
+        interval_minutes: Interval between trades in minutes
+        user_principal_id: Optional user principal ID
+        config: Bot configuration override
+    """
+    try:
+        logger.info(f"⏰ Scheduling Futures Bot every {interval_minutes} minutes")
+        
+        # Execute the bot immediately
+        result = run_futures_bot_trading.delay(user_principal_id, config)
+        
+        # Schedule next execution
+        schedule_futures_bot_trading.apply_async(
+            args=[interval_minutes, user_principal_id, config],
+            countdown=interval_minutes * 60  # Convert to seconds
+        )
+        
+        logger.info(f"✅ Futures Bot scheduled and executed. Next run in {interval_minutes} minutes")
+        return {'status': 'scheduled', 'next_run_in_minutes': interval_minutes}
+        
+    except Exception as e:
+        logger.error(f"❌ Error scheduling Futures Bot: {e}")
+        return {'status': 'error', 'message': str(e)}
