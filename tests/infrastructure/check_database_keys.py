@@ -1,6 +1,6 @@
 import os
 import sys
-sys.path.append('.')
+sys.path.append('../..')
 
 # Set database URL
 os.environ['DATABASE_URL'] = 'mysql+pymysql://botuser:botpassword123@localhost:3307/bot_marketplace'

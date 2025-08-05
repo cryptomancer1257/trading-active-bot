@@ -91,37 +91,100 @@ def initialize_bot(subscription):
                 logger.error("No valid bot class found in module")
                 return None
             
-            # Prepare bot configuration
-            bot_config = {
-                'short_window': 50,
-                'long_window': 200,
-                'position_size': 0.3,
-                'min_volume_threshold': 1000000,
-                'volatility_threshold': 0.05
-            }
+            # Prepare bot configuration - Rich config for Futures bots
+            if hasattr(subscription.bot, 'bot_type') and subscription.bot.bot_type and subscription.bot.bot_type.upper() == 'FUTURES':
+                # Rich configuration for Futures bots (like main_execution)
+                bot_config = {
+                    # Trading configuration
+                    'trading_pair': subscription.trading_pair or 'BTCUSDT',
+                    'testnet': subscription.is_testnet if subscription.is_testnet is not None else True,
+                    'leverage': 10,
+                    'stop_loss_pct': 0.02,  # 2% stop loss
+                    'take_profit_pct': 0.04,  # 4% take profit
+                    'position_size_pct': 0.05,  # 5% of balance
+                    
+                    # Multi-timeframe configuration (enhanced from main_execution)
+                    'timeframes': ['5m', '30m', '1h', '4h', '1d'],  # 5 timeframes like main_execution
+                    'primary_timeframe': '1h',  # Primary timeframe for decision making
+                    
+                    # LLM configuration
+                    'use_llm_analysis': True,  # Enable full LLM analysis
+                    'llm_model': 'openai',  # Primary LLM model
+                    
+                    # Technical indicators config (fallback)
+                    'rsi_period': 14,
+                    'rsi_oversold': 30,
+                    'rsi_overbought': 70,
+                    
+                    # Capital management
+                    'base_position_size_pct': 0.02,  # 2% base
+                    'max_position_size_pct': 0.10,   # 10% max
+                    'max_portfolio_exposure': 0.30,  # 30% total
+                    'max_drawdown_threshold': 0.15,  # 15%
+                    
+                    # Celery specific
+                    'require_confirmation': False,  # No confirmation for Celery
+                    'auto_confirm': True  # Auto-confirm all trades
+                }
+                logger.info(f"🚀 Applied RICH FUTURES CONFIG: {len(bot_config['timeframes'])} timeframes, {bot_config['leverage']}x leverage")
+            else:
+                # Standard configuration for other bots
+                bot_config = {
+                    'short_window': 50,
+                    'long_window': 200,
+                    'position_size': 0.3,
+                    'min_volume_threshold': 1000000,
+                    'volatility_threshold': 0.05
+                }
+                logger.info("📊 Applied STANDARD CONFIG for non-futures bot")
             
-            # Override with subscription config if available
+            # Override with subscription strategy_config if available (from database)
             if subscription.strategy_config:
+                logger.info(f"🎯 Merging DATABASE STRATEGY CONFIG: {subscription.strategy_config}")
                 bot_config.update(subscription.strategy_config)
             
-            # Prepare API keys (mock for now, real implementation would get from user)
-            api_keys = {
+            # Prepare subscription context for bot (includes principal ID)
+            subscription_context = {
+                'subscription_id': subscription.id,
+                'user_principal_id': subscription.user_principal_id,
                 'exchange': subscription.exchange_type.value if subscription.exchange_type else 'binance',
-                'key': 'test_key',  # Would be real API key in production
-                'secret': 'test_secret',  # Would be real API secret in production  
-                'testnet': subscription.is_testnet if subscription.is_testnet else True
+                'trading_pair': subscription.trading_pair,
+                'timeframe': subscription.timeframe,
+                'is_testnet': subscription.is_testnet if subscription.is_testnet else True,
+                'is_marketplace_subscription': getattr(subscription, 'is_marketplace_subscription', False)
             }
             
-            # Try to initialize bot with new constructor format first
+            # Try to initialize bot with correct parameters (config, api_keys, user_principal_id)
             try:
-                bot_instance = bot_class(bot_config, api_keys)
-                logger.info(f"Successfully initialized bot with new constructor: {bot_class.__name__} v{latest_version}")
+                # Create api_keys dict for backward compatibility
+                api_keys = {
+                    'exchange': subscription_context['exchange'],
+                    'testnet': subscription_context['is_testnet']
+                }
+                
+                # Initialize bot with principal ID
+                bot_instance = bot_class(bot_config, api_keys, subscription.user_principal_id)
+                logger.info(f"Successfully initialized bot with principal ID: {bot_class.__name__} v{latest_version}")
+                logger.info(f"Bot principal ID: {subscription.user_principal_id}")
             except TypeError as e:
-                # Fallback to old constructor format (no parameters)
+                # Fallback to old constructor format and manually inject context
                 if "missing" in str(e) and "required positional arguments" in str(e):
                     try:
                         bot_instance = bot_class()
                         logger.info(f"Successfully initialized bot with old constructor: {bot_class.__name__} v{latest_version}")
+                        
+                        # Manually inject subscription context
+                        if hasattr(bot_instance, 'user_principal_id'):
+                            bot_instance.user_principal_id = subscription_context['user_principal_id']
+                        if hasattr(bot_instance, 'subscription_id'):
+                            bot_instance.subscription_id = subscription_context['subscription_id']
+                        if hasattr(bot_instance, 'trading_pair'):
+                            bot_instance.trading_pair = subscription_context['trading_pair']
+                        if hasattr(bot_instance, 'timeframe'):
+                            bot_instance.timeframe = subscription_context['timeframe']
+                        if hasattr(bot_instance, 'is_testnet'):
+                            bot_instance.is_testnet = subscription_context['is_testnet']
+                        
                         # Set config manually if the bot has attributes for it
                         if hasattr(bot_instance, 'short_window'):
                             bot_instance.short_window = bot_config.get('short_window', 50)
@@ -129,6 +192,8 @@ def initialize_bot(subscription):
                             bot_instance.long_window = bot_config.get('long_window', 200)
                         if hasattr(bot_instance, 'position_size'):
                             bot_instance.position_size = bot_config.get('position_size', 0.3)
+                            
+                        logger.info(f"Manually injected principal ID: {subscription_context['user_principal_id']}")
                     except Exception as fallback_error:
                         logger.error(f"Both new and old constructor failed: {fallback_error}")
                         return None
@@ -353,6 +418,18 @@ def run_bot_logic(self, subscription_id: int):
                 logger.info(f"Subscription {subscription_id} is not active (status: {subscription.status}), skipping")
                 return
 
+            # Skip if subscription has expired
+            from datetime import datetime
+            now = datetime.utcnow()
+            if subscription.expires_at and subscription.expires_at < now:
+                logger.info(f"Subscription {subscription_id} has expired (ended at {subscription.expires_at}), skipping")
+                return
+            
+            # Skip if subscription hasn't started yet
+            if subscription.started_at and subscription.started_at > now:
+                logger.info(f"Subscription {subscription_id} hasn't started yet (starts at {subscription.started_at}), skipping")
+                return
+
             # Initialize bot
             bot = initialize_bot(subscription)
             if not bot:
@@ -369,26 +446,45 @@ def run_bot_logic(self, subscription_id: int):
             api_key = None
             api_secret = None
             
-            # First try to get from exchange_credentials table
-            logger.info(f"Looking for exchange credentials for user {subscription.user.email}")
-            credentials = crud.get_user_exchange_credentials(
-                db, 
-                user_id=subscription.user.id, 
-                exchange=exchange_type.value,
-                is_testnet=use_testnet
-            )
-            if credentials:
-                cred = credentials[0]  # Get first matching credential
-                api_key = cred.api_key
-                api_secret = cred.api_secret
-                logger.info(f"Found exchange credentials for {exchange_type.value} (testnet={use_testnet})")
+            # Handle both studio users and marketplace users
+            if subscription.user_id:
+                # Studio user - existing logic
+                logger.info(f"Looking for exchange credentials for studio user {subscription.user.email}")
+                credentials = crud.get_user_exchange_credentials(
+                    db, 
+                    user_id=subscription.user.id, 
+                    exchange=exchange_type.value,
+                    is_testnet=use_testnet
+                )
+                if credentials:
+                    cred = credentials[0]  # Get first matching credential
+                    api_key = cred.api_key
+                    api_secret = cred.api_secret
+                    logger.info(f"Found exchange credentials for {exchange_type.value} (testnet={use_testnet})")
+                else:
+                    # Fallback to user's direct API credentials
+                    logger.info(f"No exchange credentials found, checking user direct credentials")
+                    api_key = subscription.user.api_key
+                    api_secret = subscription.user.api_secret
+                    if api_key and api_secret:
+                        logger.info(f"Using user direct API credentials")
             else:
-                # Fallback to user's direct API credentials
-                logger.info(f"No exchange credentials found, checking user direct credentials")
-                api_key = subscription.user.api_key
-                api_secret = subscription.user.api_secret
-                if api_key and api_secret:
-                    logger.info(f"Using user direct API credentials")
+                # Marketplace user - use principal_id
+                logger.info(f"Looking for exchange credentials for marketplace user (principal: {subscription.user_principal_id})")
+                from core.api_key_manager import APIKeyManager
+                api_key_manager = APIKeyManager()
+                creds = api_key_manager.get_user_exchange_credentials_by_principal_id(
+                    db=db,
+                    principal_id=subscription.user_principal_id,
+                    exchange=exchange_type.value,
+                    is_testnet=use_testnet
+                )
+                if creds:
+                    api_key = creds.get('api_key')
+                    api_secret = creds.get('api_secret')
+                    logger.info(f"Found exchange credentials for marketplace user (testnet={use_testnet})")
+                else:
+                    logger.error(f"No exchange credentials found for marketplace user {subscription.user_principal_id}")
             
             if not api_key or not api_secret:
                 logger.error(f"No valid API credentials for subscription {subscription_id}")
@@ -431,11 +527,25 @@ def run_bot_logic(self, subscription_id: int):
                     'trading_pair': trading_pair,
                 'is_testnet': use_testnet,
                 'exchange_type': exchange_type.value,
-                'user_id': subscription.user.id
+                'user_id': subscription.user_id or 0  # 0 for marketplace users
                 }
 
-                # Execute bot prediction
-            final_action = bot.execute_full_cycle(subscription.timeframe, subscription_config)
+                # Execute bot prediction - Advanced workflow for Futures bots
+            if hasattr(subscription.bot, 'bot_type') and subscription.bot.bot_type and subscription.bot.bot_type.upper() == 'FUTURES':
+                logger.info(f"🚀 Using ADVANCED FUTURES WORKFLOW for {subscription.bot.name}")
+                # Run async workflow in event loop
+                import asyncio
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    final_action = loop.run_until_complete(
+                        run_advanced_futures_workflow(bot, subscription_id, subscription_config, db)
+                    )
+                finally:
+                    loop.close()
+            else:
+                logger.info(f"📊 Using STANDARD WORKFLOW for {subscription.bot.name}")
+                final_action = bot.execute_full_cycle(subscription.timeframe, subscription_config)
                 
             if final_action:
                 logger.info(f"Bot {subscription.bot.name} executed with action: {final_action.action}, value: {final_action.value}, reason: {final_action.reason}")
@@ -517,8 +627,11 @@ def run_bot_logic(self, subscription_id: int):
                     }.get(final_action.action, "📊")
                     
                     # Send combined notification with trade result
+                    # Get email for notification (studio user or marketplace user)
+                    user_email = subscription.user.email if subscription.user_id else subscription.marketplace_user_email
+                    
                     send_combined_notification(
-                        subscription.user.email,
+                        user_email,
                         subscription.bot.name,
                         final_action.action,
                         {
@@ -578,12 +691,25 @@ def schedule_active_bots():
             active_subscriptions = crud.get_active_subscriptions(db)
             
             for subscription in active_subscriptions:
+                # Check subscription time range first
+                now = datetime.utcnow()
+                
+                # Skip if subscription has expired
+                if subscription.expires_at and subscription.expires_at < now:
+                    logger.debug(f"Subscription {subscription.id} has expired (ended at {subscription.expires_at}), skipping")
+                    continue
+                
+                # Skip if subscription hasn't started yet
+                if subscription.started_at and subscription.started_at > now:
+                    logger.debug(f"Subscription {subscription.id} hasn't started yet (starts at {subscription.started_at}), skipping")
+                    continue
+                
                 # Check if it's time to run this bot
                 should_run = False
                 
                 if subscription.next_run_at:
                     # If next_run_at is set, check if it's time to run
-                    should_run = subscription.next_run_at <= datetime.utcnow()
+                    should_run = subscription.next_run_at <= now
                 else:
                     # If next_run_at is NULL, run immediately
                     should_run = True
@@ -862,3 +988,93 @@ def schedule_futures_bot_trading(self, interval_minutes: int = 60, user_principa
     except Exception as e:
         logger.error(f"❌ Error scheduling Futures Bot: {e}")
         return {'status': 'error', 'message': str(e)}
+
+async def run_advanced_futures_workflow(bot, subscription_id: int, subscription_config: dict, db):
+    """
+    Advanced multi-timeframe futures trading workflow
+    Applies MAIN_EXECUTION() advanced features to CELERY execution
+    """
+    try:
+        from datetime import datetime
+        
+        logger.info(f"🎯 Starting ADVANCED FUTURES WORKFLOW for subscription {subscription_id}")
+        
+        # 1. Check account status (like main_execution)
+        logger.info("💰 Step 1: Checking account status...")
+        account_status = bot.check_account_status()
+        if account_status:
+            logger.info(f"Account Balance: ${account_status.get('available_balance', 0):.2f}")
+        
+        # 2. Crawl multi-timeframe data (instead of single timeframe)
+        logger.info("📊 Step 2: Crawling multi-timeframe data...")
+        multi_timeframe_data = bot.crawl_data()
+        if not multi_timeframe_data.get("timeframes"):
+            logger.error("❌ Failed to crawl multi-timeframe data")
+            from bots.bot_sdk.Action import Action
+            return Action(action="HOLD", value=0.0, reason="Multi-timeframe data crawl failed")
+        
+        timeframes_crawled = list(multi_timeframe_data['timeframes'].keys())
+        logger.info(f"✅ Crawled {len(timeframes_crawled)} timeframes: {timeframes_crawled}")
+        
+        # 3. Analyze all timeframes (instead of single timeframe)
+        logger.info("🔍 Step 3: Analyzing multi-timeframe data...")
+        analysis = bot.analyze_data(multi_timeframe_data)
+        if 'error' in analysis:
+            logger.error(f"❌ Multi-timeframe analysis error: {analysis['error']}")
+            from bots.bot_sdk.Action import Action
+            return Action(action="HOLD", value=0.0, reason=f"Multi-timeframe analysis failed: {analysis['error']}")
+        
+        analyzed_timeframes = len(analysis.get('multi_timeframe', {}))
+        primary_timeframe = analysis.get('primary_timeframe', 'unknown')
+        logger.info(f"✅ Analyzed {analyzed_timeframes} timeframes, primary: {primary_timeframe}")
+        
+        # 4. Generate signal with multi-timeframe confirmation (instead of basic signal)
+        logger.info("🎯 Step 4: Generating advanced multi-timeframe signal...")
+        signal = bot.generate_signal(analysis)
+        
+        logger.info(f"📊 ADVANCED SIGNAL: {signal.action} | Confidence: {signal.value*100:.1f}% | Reason: {signal.reason}")
+        
+        # Log advanced signal details
+        if hasattr(signal, 'recommendation') and signal.recommendation:
+            rec = signal.recommendation
+            logger.info(f"🎯 LLM Recommendation Details:")
+            logger.info(f"   Strategy: {rec.get('strategy', 'N/A')}")
+            logger.info(f"   Entry Price: {rec.get('entry_price', 'Market')}")
+            logger.info(f"   Take Profit: {rec.get('take_profit', 'N/A')}")
+            logger.info(f"   Stop Loss: {rec.get('stop_loss', 'N/A')}")
+            logger.info(f"   Risk/Reward: {rec.get('risk_reward', 'N/A')}")
+        
+        # 5. Execute advanced position setup (if not HOLD)
+        if signal.action != "HOLD":
+            logger.info(f"🚀 Step 5: Executing ADVANCED POSITION SETUP for {signal.action}...")
+            logger.info("🤖 AUTO-CONFIRMED via Celery (no user confirmation required)")
+            
+            # Use advanced setup_position with capital management, stop loss, take profit
+            trade_result = await bot.setup_position(signal, analysis)
+            
+            if trade_result.get('status') == 'success':
+                logger.info(f"✅ Advanced trade executed successfully!")
+                logger.info(f"   Order ID: {trade_result.get('main_order_id')}")
+                logger.info(f"   Position Value: ${trade_result.get('position_value', 0):.2f}")
+                logger.info(f"   Leverage: {trade_result.get('leverage', 'N/A')}x")
+                logger.info(f"   Stop Loss Order: {trade_result.get('stop_loss', {}).get('order_id', 'N/A')}")
+                logger.info(f"   Take Profit Order: {trade_result.get('take_profit', {}).get('order_id', 'N/A')}")
+                
+                # Save transaction to database (like main_execution)
+                bot.save_transaction_to_db(trade_result)
+                logger.info("💾 Transaction saved to database")
+            else:
+                logger.error(f"❌ Advanced trade execution failed: {trade_result}")
+        else:
+            logger.info("📊 Signal is HOLD - no position setup needed")
+        
+        # Return the signal (for compatibility with existing workflow)
+        logger.info(f"🎉 ADVANCED FUTURES WORKFLOW completed successfully")
+        return signal
+        
+    except Exception as e:
+        logger.error(f"❌ Error in advanced futures workflow: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        from bots.bot_sdk.Action import Action
+        return Action(action="HOLD", value=0.0, reason=f"Advanced workflow error: {e}")

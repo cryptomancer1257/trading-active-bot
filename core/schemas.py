@@ -436,9 +436,9 @@ class MarketplaceSubscriptionCreateV2(BaseModel):
     marketplace_user_telegram: Optional[str] = Field(None, description="User telegram from marketplace")
     marketplace_user_discord: Optional[str] = Field(None, description="User discord from marketplace") 
     
-    # Subscription timing
-    subscription_start: Optional[datetime] = Field(None, description="When subscription starts (UTC)")
-    subscription_end: Optional[datetime] = Field(None, description="When subscription ends (UTC)")
+    # Subscription timing - REQUIRED
+    subscription_start: datetime = Field(..., description="When subscription starts (UTC) - REQUIRED")
+    subscription_end: datetime = Field(..., description="When subscription ends (UTC) - REQUIRED")
     
     # Trading configuration
     exchange_type: ExchangeType = ExchangeType.BINANCE

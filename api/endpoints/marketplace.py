@@ -175,6 +175,18 @@ async def create_marketplace_subscription_v2(
                 detail="Bot not found or not approved"
             )
         
+        # Auto-detect trade_mode from bot type (using string comparison)
+        if bot.bot_type and bot.bot_type.upper() == "FUTURES":
+            trade_mode = models.TradeMode.FUTURES
+            logger.info(f"Bot {bot.id} is FUTURES bot, setting trade_mode to FUTURES")
+        elif bot.bot_type and bot.bot_type.upper() == "SPOT":
+            trade_mode = models.TradeMode.SPOT
+            logger.info(f"Bot {bot.id} is SPOT bot, setting trade_mode to SPOT")
+        else:
+            # Default to SPOT for unknown types
+            trade_mode = models.TradeMode.SPOT
+            logger.info(f"Bot {bot.id} has bot_type={bot.bot_type}, defaulting to SPOT")
+        
         # Check if user_principal_id has valid mapping (optional check)
         principal_mapping = db.query(models.UserPrincipal).filter(
             models.UserPrincipal.principal_id == request.user_principal_id,
@@ -218,14 +230,15 @@ async def create_marketplace_subscription_v2(
             trading_pair=request.trading_pair,
             timeframe=request.timeframe,
             is_testnet=request.is_testnet,
+            trade_mode=trade_mode,  # Auto-detected from bot type
             
             # Strategy configs
             strategy_config=request.strategy_config,
             execution_config=execution_config.dict(),
             risk_config=risk_config.dict(),
             
-            # Timing
-            started_at=request.subscription_start or datetime.utcnow(),
+            # Timing - both are now required
+            started_at=request.subscription_start,
             expires_at=request.subscription_end,
             
             status=models.SubscriptionStatus.ACTIVE
@@ -236,6 +249,16 @@ async def create_marketplace_subscription_v2(
         db.refresh(subscription)
         
         logger.info(f"Created marketplace subscription {subscription.id} for principal {request.user_principal_id}")
+        
+        # Trigger bot execution based on start and end time
+        now = datetime.utcnow()
+        if subscription.started_at <= now <= subscription.expires_at:
+            logger.info(f"Triggering immediate bot execution for marketplace subscription {subscription.id}")
+            run_bot_logic.apply_async(args=[subscription.id], countdown=10)
+        elif subscription.started_at > now:
+            logger.info(f"Marketplace subscription {subscription.id} will start later at {subscription.started_at}")
+        else:
+            logger.info(f"Marketplace subscription {subscription.id} has expired (ended at {subscription.expires_at})")
         
         # Return response
         return schemas.MarketplaceSubscriptionResponse(
