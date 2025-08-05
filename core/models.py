@@ -215,7 +215,7 @@ class Subscription(Base):
     __tablename__ = "subscriptions"
     id = Column(Integer, primary_key=True)
     instance_name = Column(String(255))  # User's custom name for this bot instance
-    user_id = Column(Integer, ForeignKey("users.id"))
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # Can be NULL for marketplace subscriptions
     bot_id = Column(Integer, ForeignKey("bots.id"))
     status = Column(Enum(SubscriptionStatus), default=SubscriptionStatus.ACTIVE)
     
@@ -238,6 +238,14 @@ class Subscription(Base):
     trade_evaluation_period = Column(Integer)  # Minutes for bot analysis period
     network_type = Column(Enum(NetworkType), default=NetworkType.TESTNET)
     trade_mode = Column(Enum(TradeMode), default=TradeMode.SPOT)
+    
+    # Marketplace subscription fields (for users without studio account)
+    is_marketplace_subscription = Column(Boolean, default=False)
+    marketplace_user_email = Column(String(255), nullable=True)
+    marketplace_user_telegram = Column(String(255), nullable=True)
+    marketplace_user_discord = Column(String(255), nullable=True)
+    marketplace_subscription_start = Column(DateTime, nullable=True)
+    marketplace_subscription_end = Column(DateTime, nullable=True)
     
     # Strategy configuration (overrides defaults)
     strategy_config = Column(JSON)

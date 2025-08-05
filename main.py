@@ -11,7 +11,7 @@ import uvicorn
 from core.database import engine
 from core.models import Base
 from api.endpoints import auth, bots, subscriptions, admin
-from api.endpoints import exchange_credentials, user_principals, futures_bot
+from api.endpoints import exchange_credentials, user_principals, futures_bot, marketplace
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
@@ -40,6 +40,7 @@ app.include_router(admin.router, prefix="/admin", tags=["Admin"])
 app.include_router(exchange_credentials.router, prefix="/exchange-credentials", tags=["Exchange Credentials"])
 app.include_router(user_principals.router, prefix="/user-principals", tags=["User Principals"])
 app.include_router(futures_bot.router, prefix="/api", tags=["Futures Bot"])  # Available in both modes
+app.include_router(marketplace.router, prefix="/marketplace", tags=["Marketplace"])
 
 @app.get("/")
 async def root():
