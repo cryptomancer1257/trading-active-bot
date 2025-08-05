@@ -12,7 +12,7 @@ import logging
 from core import crud, models, schemas
 from core.database import get_db
 from core.tasks import run_bot_logic
-# from core.security import get_api_key
+from core.security import validate_marketplace_api_key
 
 # Initialize logger
 logger = logging.getLogger(__name__)
@@ -152,7 +152,7 @@ def create_marketplace_subscription(
 async def create_marketplace_subscription_v2(
     request: schemas.MarketplaceSubscriptionCreateV2,
     db: Session = Depends(get_db),
-    api_key: str = Depends(get_api_key)
+    _: bool = Depends(validate_marketplace_api_key)
 ):
     """
     Create subscription for marketplace user (without studio account)
