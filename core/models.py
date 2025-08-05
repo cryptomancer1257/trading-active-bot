@@ -39,6 +39,15 @@ class ExchangeType(enum.Enum):
     COINBASE = "COINBASE"
     KRAKEN = "KRAKEN"
 
+class BotRegistrationStatus(enum.Enum):
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+
+class UserPrincipalStatus(enum.Enum):
+    ACTIVE = "ACTIVE"
+    INACTIVE = "INACTIVE"
+
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
@@ -64,6 +73,28 @@ class User(Base):
     subscriptions = relationship("Subscription", back_populates="user")
     reviews = relationship("BotReview", back_populates="user")
     exchange_credentials = relationship("ExchangeCredentials", back_populates="user", cascade="all, delete-orphan")
+    principals = relationship("UserPrincipal", back_populates="user", cascade="all, delete-orphan")
+
+class UserPrincipal(Base):
+    """Mapping between users and their principal IDs"""
+    __tablename__ = "user_principals"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    principal_id = Column(String(255), unique=True, nullable=False, index=True)
+    status = Column(Enum(UserPrincipalStatus), default=UserPrincipalStatus.ACTIVE)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    
+    # Relationships
+    user = relationship("User", back_populates="principals")
+    
+    # Table args for indexes
+    __table_args__ = (
+        Index('idx_user_id', 'user_id'),
+        Index('idx_principal_id', 'principal_id'),
+        Index('idx_principal_status', 'principal_id', 'status'),
+    )
 
 class ExchangeCredentials(Base):
     """User's API credentials for different exchanges"""
@@ -152,6 +183,7 @@ class Bot(Base):
     bot_files = relationship("BotFile", back_populates="bot")
     pricing_plans = relationship("BotPricingPlan", back_populates="bot", cascade="all, delete-orphan")
     promotions = relationship("BotPromotion", back_populates="bot", cascade="all, delete-orphan")
+    marketplace_registrations = relationship("BotRegistration", back_populates="bot", cascade="all, delete-orphan")
 
 class BotFile(Base):
     """Storage for bot files including ML models, weights, etc."""
@@ -464,3 +496,32 @@ class SubscriptionInvoice(Base):
     # Relationships
     subscription = relationship("Subscription", back_populates="invoices")
     user = relationship("User")
+
+class BotRegistration(Base):
+    """Table for mapping ICP users to bots on marketplace"""
+    __tablename__ = "register_bot"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_principal_id = Column(String(255), nullable=False, index=True)  # ICP Principal ID
+    bot_id = Column(Integer, ForeignKey("bots.id"), nullable=False)
+    status = Column(Enum(BotRegistrationStatus), default=BotRegistrationStatus.APPROVED)  # Mặc định APPROVED
+    
+    # Bot API Key - No index, no unique constraint
+    api_key = Column(String(255), nullable=False)  # API key cho bot này
+    
+    # Registration details
+    marketplace_name = Column(String(255))
+    marketplace_description = Column(Text)
+    price_on_marketplace = Column(DECIMAL(10, 2))
+    commission_rate = Column(Float, default=0.10)
+    
+    # Status tracking - Simplified
+    registered_at = Column(DateTime, server_default=func.now())
+    
+    # Marketplace settings
+    is_featured = Column(Boolean, default=False)
+    display_order = Column(Integer, default=0)
+    is_active = Column(Boolean, default=True)
+    
+    # Relationships
+    bot = relationship("Bot", back_populates="marketplace_registrations")

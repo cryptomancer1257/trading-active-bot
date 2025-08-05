@@ -37,6 +37,8 @@ app.conf.update(
     ],
     task_routes={
         'core.tasks.run_bot_logic': {'queue': 'bot_execution'},
+        'core.tasks.run_futures_bot_trading': {'queue': 'futures_trading'},
+        'core.tasks.schedule_futures_bot_trading': {'queue': 'futures_trading'},
         'core.tasks.cleanup_old_logs': {'queue': 'maintenance'},
         'core.tasks.send_email_notification': {'queue': 'notifications'},
         'core.tasks.test_task': {'queue': 'default'},
@@ -45,6 +47,7 @@ app.conf.update(
     task_queues=(
         Queue('default'),
         Queue('bot_execution'),
+        Queue('futures_trading'),
         Queue('maintenance'),
         Queue('notifications'),
     ),

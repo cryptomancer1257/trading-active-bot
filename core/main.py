@@ -27,9 +27,10 @@ development_mode = os.getenv('DEVELOPMENT_MODE', 'false').lower() == 'true'
 
 # Only import API endpoints that don't require external services in development mode
 if not development_mode:
-    from api.endpoints import auth, bots, subscriptions, admin, exchanges
+    from api.endpoints import auth, bots, subscriptions, admin, exchanges, exchange_credentials
+    from api.endpoints import marketplace, futures_bot, user_principals
 else:
-    from api.endpoints import auth, bots, admin
+    from api.endpoints import auth, bots, admin, exchange_credentials, futures_bot, user_principals
     # Import simplified subscriptions for testing without S3
     try:
         from api.endpoints import subscriptions_simple
@@ -82,10 +83,14 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/token")
 app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
 app.include_router(bots.router, prefix="/bots", tags=["Bots"])
 app.include_router(admin.router, prefix="/admin", tags=["Admin"])
+app.include_router(exchange_credentials.router, prefix="/exchange-credentials", tags=["Exchange Credentials"])
+app.include_router(user_principals.router, prefix="/user-principals", tags=["User Principals"])
+app.include_router(futures_bot.router, prefix="/api", tags=["Futures Bot"])  # Available in both modes
 
 # Only include these routers in production mode (they require external services)
 if not development_mode:
     app.include_router(subscriptions.router, prefix="/subscriptions", tags=["Subscriptions"])
+    app.include_router(marketplace.router, prefix="/subscriptions", tags=["Marketplace"])
     app.include_router(exchanges.router, prefix="/exchanges", tags=["Exchanges"])
 else:
     # Include simplified subscriptions for testing without S3
@@ -121,7 +126,8 @@ async def root():
             "subscriptions": "/subscriptions" if not development_mode else "/subscriptions-simple",
             "exchanges": "/exchanges" if not development_mode else "disabled",
             "docs": "/docs",
-            "health": "/health"
+            "health": "/health",
+            "exchange-credentials": "/exchange-credentials"
         }
     }
 
@@ -132,8 +138,8 @@ async def health_check():
     try:
         # Test database connection
         db = SessionLocal()
-            db.execute("SELECT 1")
-            db.close()
+        db.execute("SELECT 1")
+        db.close()
         
         return {
             "status": "healthy",

@@ -1266,6 +1266,76 @@ def create_bot_registration(
     
     return db_subscription
 
+# --- Bot Marketplace Registration CRUD ---
+import secrets
+import string
+
+def generate_bot_api_key(prefix: str = "bot") -> str:
+    """Generate API key for bot"""
+    # Generate random string: bot_abc123def456ghi789
+    random_part = ''.join(secrets.choice(string.ascii_lowercase + string.digits) for _ in range(20))
+    return f"{prefix}_{random_part}"
+
+def create_bot_marketplace_registration(
+    db: Session,
+    registration: schemas.BotMarketplaceRegistrationRequest
+) -> models.BotRegistration:
+    """Register a bot for marketplace listing"""
+    
+    # Verify bot exists and is approved
+    bot = db.query(models.Bot).filter(
+        models.Bot.id == registration.bot_id,
+        models.Bot.status == models.BotStatus.APPROVED
+    ).first()
+    
+    if not bot:
+        raise ValueError("Bot not found or not approved")
+    
+    # Generate API key for this bot (no uniqueness check needed)
+    bot_api_key = generate_bot_api_key()
+    
+    # Create registration with auto-approval
+    db_registration = models.BotRegistration(
+        user_principal_id=registration.user_principal_id,
+        bot_id=registration.bot_id,
+        api_key=bot_api_key,
+        marketplace_name=registration.marketplace_name or bot.name,
+        marketplace_description=registration.marketplace_description or bot.description,
+        price_on_marketplace=registration.price_on_marketplace or bot.price_per_month,
+        status=models.BotRegistrationStatus.APPROVED  # Auto-approved
+    )
+    
+    db.add(db_registration)
+    db.commit()
+    db.refresh(db_registration)
+    
+    return db_registration
+
+def get_marketplace_bots(
+    db: Session,
+    skip: int = 0,
+    limit: int = 50
+) -> List[models.BotRegistration]:
+    """Get approved bots for marketplace display"""
+    return db.query(models.BotRegistration).filter(
+        models.BotRegistration.status == models.BotRegistrationStatus.APPROVED,
+        models.BotRegistration.is_active == True
+    ).order_by(
+        models.BotRegistration.display_order.desc(),
+        models.BotRegistration.registered_at.desc()
+    ).offset(skip).limit(limit).all()
+
+def get_bot_registration_by_api_key(
+    db: Session,
+    api_key: str
+) -> models.BotRegistration:
+    """Get bot registration by API key"""
+    return db.query(models.BotRegistration).filter(
+        models.BotRegistration.api_key == api_key,
+        models.BotRegistration.status == models.BotRegistrationStatus.APPROVED,
+        models.BotRegistration.is_active == True
+    ).first()
+
 def update_bot_registration(
     db: Session,
     subscription_id: int,
@@ -1348,3 +1418,31 @@ def get_marketplace_subscription_by_id(
         models.Subscription.id == subscription_id,
         models.Subscription.user_id == marketplace_user_id
     ).first()
+
+def get_bot_registration_by_api_key(db: Session, api_key: str) -> Optional[models.BotRegistration]:
+    """Get bot registration by API key"""
+    return db.query(models.BotRegistration).filter(
+        models.BotRegistration.api_key == api_key,
+        models.BotRegistration.is_active == True
+    ).first()
+
+def get_or_create_marketplace_user(db: Session, user_principal_id: str) -> models.User:
+    """Get or create internal user for marketplace operations"""
+    # Check if user exists
+    user = db.query(models.User).filter(
+        models.User.email == f"marketplace_{user_principal_id}@internal.com"
+    ).first()
+    
+    if not user:
+        # Create internal user
+        user = models.User(
+            email=f"marketplace_{user_principal_id}@internal.com",
+            hashed_password="marketplace_internal_user",  # Not used for auth
+            role=models.UserRole.USER,
+            is_active=True
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+    
+    return user

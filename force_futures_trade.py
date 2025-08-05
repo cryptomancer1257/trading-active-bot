@@ -8,7 +8,7 @@ import os
 import json
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from binance_futures_bot import BinanceFuturesBot, BinanceFuturesIntegration
+from bot_files.binance_futures_bot import BinanceFuturesBot, BinanceFuturesIntegration
 from bots.bot_sdk.Action import Action
 import logging
 

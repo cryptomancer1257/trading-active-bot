@@ -1,6 +1,24 @@
 version: '3.8'
 
 services:
+  # Migration service - runs before all other services
+  migration:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python migrations/migration_runner.py
+    environment:
+      - DB_HOST=db
+      - DB_PORT=3306
+      - DB_USER=botuser
+      - DB_PASSWORD=botpassword123
+      - DB_NAME=bot_marketplace
+    depends_on:
+      - db
+    volumes:
+      - ./migrations:/app/migrations
+    restart: "no"  # Only run once, don't restart
+
   api:
     build:
       context: .
@@ -13,19 +31,21 @@ services:
     depends_on:
       - db
       - redis
+      - migration  # Wait for migration to complete
     volumes:
       - ./logs:/app/logs
     restart: unless-stopped
 
   celery:
     build: .
-    command: celery -A utils.celery_app worker --loglevel=info
+    command: celery -A utils.celery_app worker --loglevel=info --queues=default,bot_execution,futures_trading,maintenance,notifications
     environment:
       - DATABASE_URL=mysql+pymysql://botuser:botpassword123@db/bot_marketplace
       - REDIS_URL=redis://redis:6379/0
     depends_on:
       - db
       - redis
+      - migration  # Wait for migration to complete
     volumes:
       - ./logs:/app/logs
     restart: unless-stopped
@@ -39,6 +59,7 @@ services:
     depends_on:
       - db
       - redis
+      - migration  # Wait for migration to complete
     volumes:
       - ./logs:/app/logs
     restart: unless-stopped
