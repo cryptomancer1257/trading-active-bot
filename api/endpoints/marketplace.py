@@ -12,6 +12,7 @@ import logging
 from core import crud, models, schemas
 from core.database import get_db
 from core.tasks import run_bot_logic
+# from core.security import get_api_key
 
 # Initialize logger
 logger = logging.getLogger(__name__)
@@ -145,4 +146,118 @@ def create_marketplace_subscription(
         raise HTTPException(
             status_code=500,
             detail=f"Failed to create marketplace subscription: {str(e)}"
+        )
+
+@router.post("/subscription", response_model=schemas.MarketplaceSubscriptionResponse)
+async def create_marketplace_subscription_v2(
+    request: schemas.MarketplaceSubscriptionCreateV2,
+    db: Session = Depends(get_db),
+    api_key: str = Depends(get_api_key)
+):
+    """
+    Create subscription for marketplace user (without studio account)
+    
+    This endpoint allows marketplace to create subscriptions for users who:
+    - Only exist in marketplace, not in studio
+    - Are identified by principal_id 
+    - Have contact info stored for notifications
+    """
+    try:
+        # Validate bot exists and is approved
+        bot = db.query(models.Bot).filter(
+            models.Bot.id == request.bot_id,
+            models.Bot.status == models.BotStatus.APPROVED
+        ).first()
+        
+        if not bot:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Bot not found or not approved"
+            )
+        
+        # Check if user_principal_id has valid mapping (optional check)
+        principal_mapping = db.query(models.UserPrincipal).filter(
+            models.UserPrincipal.principal_id == request.user_principal_id,
+            models.UserPrincipal.status == models.UserPrincipalStatus.ACTIVE
+        ).first()
+        
+        # Set user_id if principal mapping exists, otherwise NULL
+        user_id = principal_mapping.user_id if principal_mapping else None
+        
+        # Create default configs if not provided
+        execution_config = request.execution_config or schemas.ExecutionConfig(
+            buy_order_type="PERCENTAGE",
+            buy_order_value=100.0,
+            sell_order_type="ALL",
+            sell_order_value=100.0
+        )
+        
+        risk_config = request.risk_config or schemas.RiskConfig(
+            stop_loss_percent=2.0,
+            take_profit_percent=4.0,
+            max_position_size=100.0
+        )
+        
+        # Create marketplace subscription
+        subscription = models.Subscription(
+            instance_name=request.instance_name,
+            user_id=user_id,  # Can be NULL
+            bot_id=request.bot_id,
+            user_principal_id=request.user_principal_id,
+            
+            # Marketplace-specific fields
+            is_marketplace_subscription=True,
+            marketplace_user_email=request.marketplace_user_email,
+            marketplace_user_telegram=request.marketplace_user_telegram,
+            marketplace_user_discord=request.marketplace_user_discord,
+            marketplace_subscription_start=request.subscription_start,
+            marketplace_subscription_end=request.subscription_end,
+            
+            # Trading config
+            exchange_type=request.exchange_type,
+            trading_pair=request.trading_pair,
+            timeframe=request.timeframe,
+            is_testnet=request.is_testnet,
+            
+            # Strategy configs
+            strategy_config=request.strategy_config,
+            execution_config=execution_config.dict(),
+            risk_config=risk_config.dict(),
+            
+            # Timing
+            started_at=request.subscription_start or datetime.utcnow(),
+            expires_at=request.subscription_end,
+            
+            status=models.SubscriptionStatus.ACTIVE
+        )
+        
+        db.add(subscription)
+        db.commit()
+        db.refresh(subscription)
+        
+        logger.info(f"Created marketplace subscription {subscription.id} for principal {request.user_principal_id}")
+        
+        # Return response
+        return schemas.MarketplaceSubscriptionResponse(
+            subscription_id=subscription.id,
+            user_principal_id=subscription.user_principal_id,
+            bot_id=subscription.bot_id,
+            instance_name=subscription.instance_name,
+            status=subscription.status,
+            is_marketplace_subscription=subscription.is_marketplace_subscription,
+            marketplace_user_email=subscription.marketplace_user_email,
+            marketplace_user_telegram=subscription.marketplace_user_telegram,
+            marketplace_user_discord=subscription.marketplace_user_discord,
+            started_at=subscription.started_at,
+            expires_at=subscription.expires_at
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to create marketplace subscription: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create marketplace subscription"
         )

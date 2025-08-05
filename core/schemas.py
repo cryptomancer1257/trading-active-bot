@@ -423,6 +423,63 @@ class MarketplaceSubscriptionCreate(BaseModel):
         max_position_size=100.0
     ))
 
+class MarketplaceSubscriptionCreateV2(BaseModel):
+    """Schema for creating subscription from marketplace (v2 - with contact info)"""
+    
+    # Required fields
+    user_principal_id: str = Field(..., description="ICP Principal ID of marketplace user")
+    bot_id: int = Field(..., description="ID of bot to subscribe to")
+    instance_name: str = Field(..., description="User's custom name for this bot instance")
+    
+    # Marketplace user contact info
+    marketplace_user_email: str = Field(..., description="User email from marketplace")
+    marketplace_user_telegram: Optional[str] = Field(None, description="User telegram from marketplace")
+    marketplace_user_discord: Optional[str] = Field(None, description="User discord from marketplace") 
+    
+    # Subscription timing
+    subscription_start: Optional[datetime] = Field(None, description="When subscription starts (UTC)")
+    subscription_end: Optional[datetime] = Field(None, description="When subscription ends (UTC)")
+    
+    # Trading configuration
+    exchange_type: ExchangeType = ExchangeType.BINANCE
+    trading_pair: str = "BTCUSDT"
+    timeframe: str = "1h"
+    is_testnet: bool = True
+    
+    # Optional configurations with defaults
+    strategy_config: Dict[str, Any] = Field(default_factory=dict)
+    execution_config: Optional[ExecutionConfig] = None
+    risk_config: Optional[RiskConfig] = None
+    
+    @validator('marketplace_user_email')
+    def validate_email(cls, v):
+        if not v or '@' not in v:
+            raise ValueError('Valid email required')
+        return v.lower().strip()
+    
+    @validator('user_principal_id')
+    def validate_principal_id(cls, v):
+        if not v or len(v.strip()) == 0:
+            raise ValueError('Principal ID cannot be empty')
+        return v.strip()
+
+class MarketplaceSubscriptionResponse(BaseModel):
+    """Response for marketplace subscription creation"""
+    subscription_id: int
+    user_principal_id: str
+    bot_id: int
+    instance_name: str
+    status: SubscriptionStatus
+    is_marketplace_subscription: bool
+    marketplace_user_email: str
+    marketplace_user_telegram: Optional[str]
+    marketplace_user_discord: Optional[str]
+    started_at: datetime
+    expires_at: Optional[datetime]
+    
+    class Config:
+        from_attributes = True
+
 class SubscriptionUpdate(BaseModel):
     instance_name: Optional[str] = None
     exchange_type: Optional[ExchangeType] = None
@@ -435,7 +492,7 @@ class SubscriptionUpdate(BaseModel):
 
 class SubscriptionInDB(SubscriptionBase):
     id: int
-    user_id: int
+    user_id: Optional[int]  # Can be None for marketplace subscriptions
     status: SubscriptionStatus
     started_at: datetime
     expires_at: Optional[datetime] = None
