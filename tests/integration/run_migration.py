@@ -13,7 +13,7 @@ def run_migration():
     try:
         with engine.connect() as connection:
             # Read migration file
-            with open('scripts/migrate_bot_registration.sql', 'r') as f:
+            with open('../../scripts/migrate_bot_registration.sql', 'r') as f:
                 sql_content = f.read()
             
             # Split by semicolon and execute each statement

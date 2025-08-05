@@ -1,6 +1,6 @@
 import os
 import sys
-sys.path.append('.')
+sys.path.append('../..')
 
 # Set database URL
 os.environ['DATABASE_URL'] = 'mysql+pymysql://botuser:botpassword123@localhost:3307/bot_marketplace'
@@ -11,7 +11,7 @@ from core.models import Subscription, ExchangeCredentials, User
 from sqlalchemy.orm import Session
 
 def check_keys():
-    print("🔍 KIỂM TRA DATABASE KEYS (FIXED VERSION)...")
+    print("🔍 KIỂM TRA DATABASE KEYS (CORRECT METHOD)...")
     
     # Get database session
     db_gen = get_db()
@@ -56,10 +56,10 @@ def check_keys():
                 print(f"   - API Key (encrypted): {credentials.api_key[:50]}...")
                 print(f"   - API Secret (encrypted): {credentials.api_secret[:50]}...")
                 
-                # Method 2: Use API Manager để decrypt
+                # Method 2: Use API Manager để decrypt với method đúng
                 print(f"\n🔓 Decrypt credentials using API Manager:")
                 try:
-                    decrypted = api_manager.get_credentials_by_principal_id(
+                    decrypted = api_manager.get_user_credentials_by_principal_id(
                         db, principal_id, "BINANCE", True
                     )
                     
@@ -77,6 +77,11 @@ def check_keys():
                         print(f"   - Actual API Key: {decrypted['api_key']}")
                         print(f"   - Keys match: {decrypted['api_key'] == expected_api_key}")
                         
+                        if decrypted['api_key'] == expected_api_key:
+                            print("✅ BINANCE API KEYS CHÍNH XÁC!")
+                        else:
+                            print("⚠️  BINANCE API KEYS KHÁC VỚI EXPECTED")
+                        
                     else:
                         print("❌ Failed to decrypt credentials")
                 except Exception as e:
@@ -89,12 +94,32 @@ def check_keys():
         else:
             print("❌ Không tìm thấy subscription cho Principal ID này")
             
-        # Check environment variables
+        # Check environment variables cho LLM keys
         print(f"\n🌍 ENVIRONMENT VARIABLES:")
         openai_key = os.getenv('OPENAI_API_KEY', 'Not set')
         claude_key = os.getenv('CLAUDE_API_KEY', 'Not set')
+        gemini_key = os.getenv('GEMINI_API_KEY', 'Not set')
+        
         print(f"   - OPENAI_API_KEY: {openai_key[:30]}..." if openai_key != 'Not set' else "   - OPENAI_API_KEY: Not set")
         print(f"   - CLAUDE_API_KEY: {claude_key[:30]}..." if claude_key != 'Not set' else "   - CLAUDE_API_KEY: Not set")
+        print(f"   - GEMINI_API_KEY: {gemini_key[:30]}..." if gemini_key != 'Not set' else "   - GEMINI_API_KEY: Not set")
+        
+        # Test OpenAI key validity
+        if openai_key != 'Not set':
+            print(f"\n🤖 TESTING OPENAI API KEY:")
+            try:
+                import openai
+                client = openai.OpenAI(api_key=openai_key)
+                
+                # Simple test call
+                response = client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[{"role": "user", "content": "Test"}],
+                    max_tokens=5
+                )
+                print("✅ OpenAI API key is VALID!")
+            except Exception as e:
+                print(f"❌ OpenAI API key is INVALID: {e}")
         
     except Exception as e:
         print(f"❌ Error: {e}")
