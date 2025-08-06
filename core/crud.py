@@ -592,9 +592,23 @@ def create_exchange_credentials(db: Session, credentials: schemas.ExchangeCreden
     return db_credentials
 
 def get_user_exchange_credentials(db: Session, user_id: int, exchange: str = None, is_testnet: bool = None):
-    """Get user's exchange credentials with optional filtering"""
+    """Get user's exchange credentials with optional filtering (legacy - use principal_id version)"""
     query = db.query(models.ExchangeCredentials).filter(
         models.ExchangeCredentials.user_id == user_id,
+        models.ExchangeCredentials.is_active == True
+    )
+    
+    if exchange:
+        query = query.filter(models.ExchangeCredentials.exchange == exchange)
+    if is_testnet is not None:
+        query = query.filter(models.ExchangeCredentials.is_testnet == is_testnet)
+    
+    return query.all()
+
+def get_exchange_credentials_by_principal_id(db: Session, principal_id: str, exchange: str = None, is_testnet: bool = None):
+    """Get exchange credentials by principal ID with optional filtering"""
+    query = db.query(models.ExchangeCredentials).filter(
+        models.ExchangeCredentials.principal_id == principal_id,
         models.ExchangeCredentials.is_active == True
     )
     
