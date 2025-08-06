@@ -9,10 +9,13 @@ from sqlalchemy.orm import Session
 from datetime import datetime, timezone
 import logging
 
+from core.api_key_manager import api_key_manager
 from core import crud, models, schemas
 from core.database import get_db
 from core.tasks import run_bot_logic
 from core.security import validate_marketplace_api_key
+
+from typing import Dict, Any
 
 # Initialize logger
 logger = logging.getLogger(__name__)
@@ -283,4 +286,70 @@ async def create_marketplace_subscription_v2(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create marketplace subscription"
+        )
+
+
+# Marketplace endpoint for storing credentials by principal ID
+@router.post("/store-by-principal", response_model=Dict[str, Any])
+async def store_credentials_by_principal_id(
+        request: schemas.ExchangeCredentialsByPrincipalRequest,
+        api_key: str = Depends(validate_marketplace_api_key),
+        db: Session = Depends(get_db)
+):
+    """
+    Marketplace: Store exchange credentials by ICP Principal ID
+    Allows marketplace users to provide their exchange API keys
+    Requires valid marketplace API key
+    """
+    try:
+        # Verify marketplace API key
+        # if api_key != security.MARKETPLACE_API_KEY:
+        #     raise HTTPException(
+        #         status_code=status.HTTP_401_UNAUTHORIZED,
+        #         detail="Invalid marketplace API key"
+        #     )
+
+        # Validate exchange
+        if request.exchange.upper() not in ["BINANCE", "COINBASE", "KRAKEN"]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Unsupported exchange. Supported: BINANCE, COINBASE, KRAKEN"
+            )
+
+        # Store credentials using principal ID
+        success = api_key_manager.store_user_exchange_credentials_by_principal_id(
+            db=db,
+            principal_id=request.principal_id,
+            exchange=request.exchange.upper(),
+            api_key=request.api_key,
+            api_secret=request.api_secret,
+            api_passphrase=request.api_passphrase,
+            is_testnet=request.is_testnet
+        )
+
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Failed to store credentials. Check if user exists and credentials are valid."
+            )
+
+        logger.info(f"Stored {request.exchange} credentials for principal ID: {request.principal_id}")
+
+        return {
+            "status": "success",
+            "message": "Exchange credentials stored successfully",
+            "principal_id": request.principal_id,
+            "exchange": request.exchange.upper(),
+            "is_testnet": request.is_testnet,
+            "created_at": "2025-08-03T12:00:00Z"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to store credentials by principal ID: {e}")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to store credentials"
         )
