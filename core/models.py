@@ -101,7 +101,8 @@ class ExchangeCredentials(Base):
     __tablename__ = "exchange_credentials"
     
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # Nullable for marketplace users
+    principal_id = Column(String(255), nullable=True)  # ICP Principal ID for marketplace users
     exchange = Column(Enum(ExchangeType), nullable=False)
     
     # Encrypted API credentials
@@ -122,9 +123,11 @@ class ExchangeCredentials(Base):
     # Relationships
     user = relationship("User", back_populates="exchange_credentials")
     
-    # Unique constraint: one credential set per user per exchange per testnet/mainnet
+    # Unique constraints: one credential set per user OR principal per exchange per testnet/mainnet
     __table_args__ = (
         Index('idx_unique_user_exchange_testnet', 'user_id', 'exchange', 'is_testnet', unique=True),
+        Index('idx_unique_principal_exchange_testnet', 'principal_id', 'exchange', 'is_testnet', unique=True),
+        Index('idx_principal_id', 'principal_id'),
     )
 
 class BotCategory(Base):

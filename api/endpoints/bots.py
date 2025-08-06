@@ -20,7 +20,6 @@ from core.bot_manager import BotManager
 from core.api_key_manager import api_key_manager
 from services.s3_manager import S3Manager
 import logging
-from typing import Dict, Any
 
 # Initialize managers
 bot_manager = BotManager()
@@ -554,67 +553,46 @@ def get_bot_registrations_by_principal_id(
             detail=f"Failed to get bot registrations: {str(e)}"
         )
 
-# Marketplace endpoint for storing credentials by principal ID
-@router.post("/marketplace/store-by-principal", response_model=Dict[str, Any])
-async def store_credentials_by_principal_id(
-    request: schemas.ExchangeCredentialsByPrincipalRequest,
-    api_key: str = Depends(security.api_key_header),
-    db: Session = Depends(get_db)
+@router.get("/marketplace/test-credentials")
+async def test_retrieve_credentials(
+    principal_id: str,
+    exchange: str = "BINANCE",
+    is_testnet: bool = True,
+    db: Session = Depends(get_db),
+    api_key: str = Depends(security.validate_marketplace_api_key)
 ):
     """
-    Marketplace: Store exchange credentials by ICP Principal ID
-    Allows marketplace users to provide their exchange API keys
-    Requires valid marketplace API key
+    Test endpoint to retrieve and verify credentials by principal ID
     """
     try:
-        # Verify marketplace API key
-        if api_key != security.MARKETPLACE_API_KEY:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid marketplace API key"
-            )
-        
-        # Validate exchange
-        if request.exchange.upper() not in ["BINANCE", "COINBASE", "KRAKEN"]:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Unsupported exchange. Supported: BINANCE, COINBASE, KRAKEN"
-            )
-        
-        # Store credentials using principal ID
-        success = api_key_manager.store_user_exchange_credentials_by_principal_id(
+        credentials = api_key_manager.get_user_credentials_by_principal_id(
             db=db,
-            principal_id=request.principal_id,
-            exchange=request.exchange.upper(),
-            api_key=request.api_key,
-            api_secret=request.api_secret,
-            api_passphrase=request.api_passphrase,
-            is_testnet=request.is_testnet
+            user_principal_id=principal_id,
+            exchange=exchange,
+            is_testnet=is_testnet
         )
         
-        if not success:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Failed to store credentials. Check if user exists and credentials are valid."
-            )
-        
-        logger.info(f"Stored {request.exchange} credentials for principal ID: {request.principal_id}")
-        
-        return {
-            "status": "success",
-            "message": "Exchange credentials stored successfully",
-            "principal_id": request.principal_id,
-            "exchange": request.exchange.upper(),
-            "is_testnet": request.is_testnet,
-            "created_at": "2025-08-03T12:00:00Z"
-        }
-        
-    except HTTPException:
-        raise
+        if credentials:
+            return {
+                "status": "success",
+                "principal_id": principal_id,
+                "exchange": exchange,
+                "is_testnet": is_testnet,
+                "api_key_found": bool(credentials.get('api_key')),
+                "api_secret_found": bool(credentials.get('api_secret')),
+                "api_key_preview": credentials['api_key'][:20] + "..." if credentials.get('api_key') else None
+            }
+        else:
+            return {
+                "status": "not_found",
+                "principal_id": principal_id,
+                "exchange": exchange,
+                "is_testnet": is_testnet
+            }
+            
     except Exception as e:
-        logger.error(f"Failed to store credentials by principal ID: {e}")
-        db.rollback()
+        logger.error(f"Failed to test credentials: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to store credentials"
+            detail=f"Failed to test credentials: {str(e)}"
         )

@@ -154,52 +154,96 @@ def initialize_bot(subscription):
                 'is_marketplace_subscription': getattr(subscription, 'is_marketplace_subscription', False)
             }
             
-            # Try to initialize bot with correct parameters (config, api_keys, user_principal_id)
-            try:
-                # Create api_keys dict for backward compatibility
-                api_keys = {
-                    'exchange': subscription_context['exchange'],
-                    'testnet': subscription_context['is_testnet']
-                }
+            # Try multiple initialization approaches for compatibility
+            bot_instance = None
+            init_success = False
+            
+            # Create api_keys dict for backward compatibility
+            api_keys = {
+                'exchange': subscription_context['exchange'],
+                'testnet': subscription_context['is_testnet']
+            }
+            
+            # Method 1: Try BinanceFuturesBot direct initialization (for Futures bots)
+            if hasattr(subscription.bot, 'bot_type') and subscription.bot.bot_type and subscription.bot.bot_type.upper() == 'FUTURES':
+                try:
+                    logger.info(f"Attempting FUTURES BOT direct initialization...")
+                    # Import BinanceFuturesBot directly for futures bots
+                    import sys
+                    import os
+                    bot_files_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'bot_files')
+                    if bot_files_path not in sys.path:
+                        sys.path.insert(0, bot_files_path)
+                    
+                    from binance_futures_bot import BinanceFuturesBot
+                    bot_instance = BinanceFuturesBot(bot_config, api_keys, subscription.user_principal_id)
+                    init_success = True
+                    logger.info(f"✅ FUTURES BOT initialized successfully with principal ID")
+                except Exception as e:
+                    logger.warning(f"FUTURES BOT direct init failed: {e}")
+            
+            # Method 2: Try downloaded bot with 3 arguments (config, api_keys, principal_id)
+            if not init_success:
+                try:
+                    bot_instance = bot_class(bot_config, api_keys, subscription.user_principal_id)
+                    init_success = True
+                    logger.info(f"✅ Downloaded bot initialized with 3 args: {bot_class.__name__}")
+                except TypeError as e:
+                    logger.warning(f"3-arg constructor failed: {e}")
+            
+            # Method 3: Try downloaded bot with 2 arguments (config, api_keys)
+            if not init_success:
+                try:
+                    bot_instance = bot_class(bot_config, api_keys)
+                    init_success = True
+                    logger.info(f"✅ Downloaded bot initialized with 2 args: {bot_class.__name__}")
+                except TypeError as e:
+                    logger.warning(f"2-arg constructor failed: {e}")
+            
+            # Method 4: Try downloaded bot with 1 argument (config)
+            if not init_success:
+                try:
+                    bot_instance = bot_class(bot_config)
+                    init_success = True
+                    logger.info(f"✅ Downloaded bot initialized with 1 arg: {bot_class.__name__}")
+                except TypeError as e:
+                    logger.warning(f"1-arg constructor failed: {e}")
+            
+            # Method 5: Try downloaded bot with no arguments
+            if not init_success:
+                try:
+                    bot_instance = bot_class()
+                    init_success = True
+                    logger.info(f"✅ Downloaded bot initialized with no args: {bot_class.__name__}")
+                except Exception as e:
+                    logger.error(f"No-arg constructor failed: {e}")
+            
+            # If initialization succeeded, manually inject context for non-futures bots
+            if init_success and bot_instance:
+                # Manually inject subscription context for downloaded bots
+                if hasattr(bot_instance, 'user_principal_id'):
+                    bot_instance.user_principal_id = subscription_context['user_principal_id']
+                if hasattr(bot_instance, 'subscription_id'):
+                    bot_instance.subscription_id = subscription_context['subscription_id']
+                if hasattr(bot_instance, 'trading_pair'):
+                    bot_instance.trading_pair = subscription_context['trading_pair']
+                if hasattr(bot_instance, 'timeframe'):
+                    bot_instance.timeframe = subscription_context['timeframe']
+                if hasattr(bot_instance, 'is_testnet'):
+                    bot_instance.is_testnet = subscription_context['is_testnet']
                 
-                # Initialize bot with principal ID
-                bot_instance = bot_class(bot_config, api_keys, subscription.user_principal_id)
-                logger.info(f"Successfully initialized bot with principal ID: {bot_class.__name__} v{latest_version}")
-                logger.info(f"Bot principal ID: {subscription.user_principal_id}")
-            except TypeError as e:
-                # Fallback to old constructor format and manually inject context
-                if "missing" in str(e) and "required positional arguments" in str(e):
-                    try:
-                        bot_instance = bot_class()
-                        logger.info(f"Successfully initialized bot with old constructor: {bot_class.__name__} v{latest_version}")
-                        
-                        # Manually inject subscription context
-                        if hasattr(bot_instance, 'user_principal_id'):
-                            bot_instance.user_principal_id = subscription_context['user_principal_id']
-                        if hasattr(bot_instance, 'subscription_id'):
-                            bot_instance.subscription_id = subscription_context['subscription_id']
-                        if hasattr(bot_instance, 'trading_pair'):
-                            bot_instance.trading_pair = subscription_context['trading_pair']
-                        if hasattr(bot_instance, 'timeframe'):
-                            bot_instance.timeframe = subscription_context['timeframe']
-                        if hasattr(bot_instance, 'is_testnet'):
-                            bot_instance.is_testnet = subscription_context['is_testnet']
-                        
-                        # Set config manually if the bot has attributes for it
-                        if hasattr(bot_instance, 'short_window'):
-                            bot_instance.short_window = bot_config.get('short_window', 50)
-                        if hasattr(bot_instance, 'long_window'):
-                            bot_instance.long_window = bot_config.get('long_window', 200)
-                        if hasattr(bot_instance, 'position_size'):
-                            bot_instance.position_size = bot_config.get('position_size', 0.3)
-                            
-                        logger.info(f"Manually injected principal ID: {subscription_context['user_principal_id']}")
-                    except Exception as fallback_error:
-                        logger.error(f"Both new and old constructor failed: {fallback_error}")
-                        return None
-                else:
-                    logger.error(f"Bot initialization failed: {e}")
-                    return None
+                # Set config manually if the bot has attributes for it
+                if hasattr(bot_instance, 'short_window'):
+                    bot_instance.short_window = bot_config.get('short_window', 50)
+                if hasattr(bot_instance, 'long_window'):
+                    bot_instance.long_window = bot_config.get('long_window', 200)
+                if hasattr(bot_instance, 'position_size'):
+                    bot_instance.position_size = bot_config.get('position_size', 0.3)
+                
+                logger.info(f"Context injected - Principal ID: {subscription_context['user_principal_id']}")
+            else:
+                logger.error(f"All bot initialization methods failed")
+                return None
             
             return bot_instance
             
