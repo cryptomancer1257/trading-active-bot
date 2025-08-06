@@ -87,7 +87,7 @@ class APIKeyManager:
                                     exchange: str = "BINANCE", 
                                     is_testnet: bool = True) -> Optional[Dict[str, str]]:
         """
-        Get decrypted exchange credentials for user
+        Get decrypted exchange credentials for user (legacy - use principal_id version)
         
         Args:
             db: Database session

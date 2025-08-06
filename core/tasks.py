@@ -490,36 +490,14 @@ def run_bot_logic(self, subscription_id: int):
             api_key = None
             api_secret = None
             
-            # Handle both studio users and marketplace users
-            if subscription.user_id:
-                # Studio user - existing logic
-                logger.info(f"Looking for exchange credentials for studio user {subscription.user.email}")
-                credentials = crud.get_user_exchange_credentials(
-                    db, 
-                    user_id=subscription.user.id, 
-                    exchange=exchange_type.value,
-                    is_testnet=use_testnet
-                )
-                if credentials:
-                    cred = credentials[0]  # Get first matching credential
-                    api_key = cred.api_key
-                    api_secret = cred.api_secret
-                    logger.info(f"Found exchange credentials for {exchange_type.value} (testnet={use_testnet})")
-                else:
-                    # Fallback to user's direct API credentials
-                    logger.info(f"No exchange credentials found, checking user direct credentials")
-                    api_key = subscription.user.api_key
-                    api_secret = subscription.user.api_secret
-                    if api_key and api_secret:
-                        logger.info(f"Using user direct API credentials")
-            else:
-                # Marketplace user - use principal_id
+            if subscription.user_principal_id:
+    # Marketplace user - use principal_id (PRIORITY)
                 logger.info(f"Looking for exchange credentials for marketplace user (principal: {subscription.user_principal_id})")
                 from core.api_key_manager import APIKeyManager
                 api_key_manager = APIKeyManager()
-                creds = api_key_manager.get_user_exchange_credentials_by_principal_id(
+                creds = api_key_manager.get_user_credentials_by_principal_id(
                     db=db,
-                    principal_id=subscription.user_principal_id,
+                    user_principal_id=subscription.user_principal_id,
                     exchange=exchange_type.value,
                     is_testnet=use_testnet
                 )
@@ -529,7 +507,30 @@ def run_bot_logic(self, subscription_id: int):
                     logger.info(f"Found exchange credentials for marketplace user (testnet={use_testnet})")
                 else:
                     logger.error(f"No exchange credentials found for marketplace user {subscription.user_principal_id}")
-            
+            elif subscription.user_id:
+                # Studio user - use user_id (FALLBACK)
+                logger.info(f"Looking for exchange credentials for studio user {subscription.user.email}")
+                from core.api_key_manager import APIKeyManager
+                api_key_manager = APIKeyManager()
+                creds = api_key_manager.get_user_exchange_credentials(
+                    db=db, 
+                    user_id=subscription.user.id, 
+                    exchange=exchange_type.value,
+                    is_testnet=use_testnet
+                )
+                if creds:
+                    api_key = creds['api_key']
+                    api_secret = creds['api_secret']
+                    logger.info(f"Found exchange credentials for {exchange_type.value} (testnet={use_testnet})")
+                else:
+                    # Fallback to user's direct API credentials
+                    logger.info(f"No exchange credentials found, checking user direct credentials")
+                    api_key = subscription.user.api_key
+                    api_secret = subscription.user.api_secret
+                    if api_key and api_secret:
+                        logger.info(f"Using user direct API credentials")
+            else:
+                logger.error(f"No user_id or user_principal_id found for subscription {subscription_id}")
             if not api_key or not api_secret:
                 logger.error(f"No valid API credentials for subscription {subscription_id}")
                 crud.log_bot_action(
