@@ -82,5 +82,26 @@
     "order_id": 5545885856,
     "confidence": 0.75,
     "reason": "[LLM-MULTI-TF] The current price is positioned between the 50% and 61.8% Fibonacci retracement levels, indicating potential for further upward movement. The RSI and MACD indicators across multiple timeframes suggest a bullish trend, supporting a buy recommendation. The stop loss is set at the 50% retracement level to minimize risk, while the take profit is set at the 78.6% level to capture potential gains."
+  },
+  {
+    "timestamp": "2025-08-07T08:04:26.181404",
+    "action": "BUY",
+    "symbol": "BTCUSDT",
+    "quantity": "0.028",
+    "entry_price": 115100.0,
+    "leverage": 10,
+    "stop_loss": {
+      "price": 115059.5,
+      "order_id": 5546080948,
+      "source": "recommendation"
+    },
+    "take_profit": {
+      "price": 115192.1,
+      "order_id": 5546080953,
+      "source": "recommendation"
+    },
+    "order_id": 5546080931,
+    "confidence": 0.75,
+    "reason": "[LLM-MULTI-TF] The price is in an uptrend across multiple timeframes, with the current price positioned between the 50% and 61.8% Fibonacci retracement levels, indicating potential for further upward movement. The MACD and RSI support a bullish outlook, and the volume trend is stable, suggesting consistent market interest."
   }
 ]

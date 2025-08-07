@@ -1,0 +1,28 @@
+{
+  "timestamp": "2025-08-07T07:43:25.131652",
+  "total_principals": 1,
+  "total_positions": 1,
+  "total_unrealized_pnl": -3.17855063,
+  "risk_summary": {
+    "CRITICAL": 0,
+    "HIGH": 0,
+    "PROFIT_READY": 0,
+    "NORMAL": 1
+  },
+  "detailed_positions": {
+    "ok7jr-d6ktf-idahj-ucbcb-pg5tt-2ayc4-kjkjm-xm6qd-h4uxv-vbnrz-bqe": [
+      {
+        "principal_id": "ok7jr-d6ktf-idahj-ucbcb-pg5tt-2ayc4-kjkjm-xm6qd-h4uxv-vbnrz-bqe",
+        "symbol": "BTCUSDT",
+        "side": "LONG",
+        "size": 0.039,
+        "entry_price": 114957.3,
+        "mark_price": 114875.79870155,
+        "unrealized_pnl": -3.17855063,
+        "pnl_percentage": 0.0,
+        "timestamp": "2025-08-07T07:43:25.131336",
+        "risk_level": "NORMAL"
+      }
+    ]
+  }
+}

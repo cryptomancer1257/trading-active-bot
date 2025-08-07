@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from bot_files.binance_futures_bot import BinanceFuturesBot, BinanceFuturesIntegration
 from bots.bot_sdk.Action import Action
 from services.llm_integration import create_llm_service
+from core.api_key_manager import get_bot_api_keys
 
 # Setup logging
 logging.basicConfig(
@@ -28,13 +29,27 @@ logger = logging.getLogger(__name__)
 class PositionMonitor:
     """Hệ thống monitoring tự động các vị thế futures"""
     
-    def __init__(self, api_key: str, api_secret: str, testnet: bool = True):
-        self.api_key = api_key
-        self.api_secret = api_secret
+    def __init__(self, user_principal_id: str, testnet: bool = True):
+        self.user_principal_id = user_principal_id
         self.testnet = testnet
         
+        # Load API keys from database
+        logger.info(f"Loading exchange API keys for principal ID: {user_principal_id}")
+        db_credentials = get_bot_api_keys(
+            user_principal_id=user_principal_id,
+            exchange="BINANCE",
+            is_testnet=testnet
+        )
+        
+        if not db_credentials:
+            raise ValueError(f"No exchange API credentials found in database for principal ID: {user_principal_id}. Please store your Binance API keys in the database first.")
+        
+        self.api_key = db_credentials['api_key']
+        self.api_secret = db_credentials['api_secret']
+        
         # Initialize Binance client
-        self.binance_client = BinanceFuturesIntegration(api_key, api_secret, testnet)
+        self.binance_client = BinanceFuturesIntegration(self.api_key, self.api_secret, testnet)
+        logger.info(f"✅ Position Monitor initialized with database keys for principal: {user_principal_id}")
         
         # Monitoring config
         self.check_interval = 60  # Check every 60 seconds
@@ -622,12 +637,11 @@ async def main():
     print("✅ Lưu log tất cả action")
     print()
     
-    # API keys (updated with real testnet keys)
-    api_key = "3a768bf1e6ac655e47395907c3c5c24fa2e9627128e8d9c5aabc9cbf29e8e49f"
-    api_secret = "a2da36f4c242e6a00d0940d9d101a75981f1c389aaae8017d0b394ede868d9aa"
+    # Use principal ID from database
+    user_principal_id = "ok7jr-d6ktf-idahj-ucbcb-pg5tt-2ayc4-kjkjm-xm6qd-h4uxv-vbnrz-bqe"
     
-    # Initialize monitor
-    monitor = PositionMonitor(api_key, api_secret, testnet=True)
+    # Initialize monitor with database keys
+    monitor = PositionMonitor(user_principal_id, testnet=True)
     
     try:
         # Start monitoring
