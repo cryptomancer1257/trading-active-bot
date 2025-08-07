@@ -940,3 +940,31 @@ class ExchangeCredentialsByPrincipalRequest(BaseModel):
         if not v or len(v.strip()) == 0:
             raise ValueError('API secret cannot be empty')
         return v.strip()
+
+class MarketplaceSubscriptionControlRequest(BaseModel):
+    """Request model for controlling marketplace subscriptions"""
+    subscription_id: int = Field(..., description="Subscription ID")
+    principal_id: str = Field(..., description="User Principal ID")
+    api_key: str = Field(..., description="Bot API key for authentication")
+    
+    @validator('principal_id')
+    def validate_principal_id(cls, v):
+        if not v or len(v.strip()) == 0:
+            raise ValueError('Principal ID cannot be empty')
+        return v.strip()
+    
+    @validator('api_key')
+    def validate_api_key(cls, v):
+        if not v or len(v.strip()) == 0:
+            raise ValueError('API key cannot be empty')
+        return v.strip()
+
+
+class MarketplaceSubscriptionControlResponse(BaseModel):
+    """Response model for marketplace subscription control actions"""
+    subscription_id: int
+    principal_id: str
+    action: str  # "paused", "cancelled", "resumed"
+    status: SubscriptionStatus
+    message: str
+    timestamp: datetime

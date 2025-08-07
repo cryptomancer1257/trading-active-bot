@@ -97,7 +97,7 @@ class LLMIntegrationService:
             logger.warning("Gemini client not available")
     
     def _get_analysis_prompt(self, timeframes: list = None) -> str:
-        """Get the trading analysis prompt template with Fibonacci instructions"""
+        """Get the high-quality trading analysis prompt with comprehensive technical analysis"""
         # Default timeframes if not provided
         if not timeframes:
             timeframes = ["1H", "4H", "1D"]
@@ -586,7 +586,7 @@ Please analyze this information and provide specific capital management recommen
                     request_data["prompt"],
                     generation_config={
                         "temperature": 0.3,
-                        "max_output_tokens": 1500,
+                        "max_output_tokens": 2000,
                     }
                 )
             )
