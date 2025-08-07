@@ -64,8 +64,8 @@ class LLMIntegrationService:
         # Initialize clients
         self._initialize_clients()
         
-        # Trading analysis prompt template with Fibonacci
-        self.analysis_prompt = self._get_analysis_prompt()
+        # Note: analysis_prompt is now generated dynamically based on timeframes
+        # in each analyze_with_* method
         
         logger.info("LLM Integration Service initialized")
     
@@ -96,15 +96,60 @@ class LLMIntegrationService:
             self.gemini_client = None
             logger.warning("Gemini client not available")
     
-    def _get_analysis_prompt(self) -> str:
+    def _get_analysis_prompt(self, timeframes: list = None) -> str:
         """Get the trading analysis prompt template with Fibonacci instructions"""
-        return """You are a professional crypto futures trading analyst.
-I will provide you OHLCV data for multiple timeframes (1H, 4H, 1D) in JSON format.
+        # Default timeframes if not provided
+        if not timeframes:
+            timeframes = ["1H", "4H", "1D"]
+        
+        # Format timeframes for display (e.g., ['5m', '30m', '1h'] -> "5M, 30M, 1H")
+        formatted_timeframes = ", ".join([tf.upper() for tf in timeframes])
+        
+        # Generate analysis structure for each timeframe in JSON format
+        analysis_section = ""
+        for i, tf in enumerate(timeframes):
+            tf_lower = tf.lower()
+            if i == 0:
+                # Full structure for first timeframe
+                analysis_section += f'    "{tf_lower}": {{\n'
+                analysis_section += '      "ma20": "value and position vs price",\n'
+                analysis_section += '      "ma50": "value and position vs price",\n'
+                analysis_section += '      "bollinger_bands": "position and signal",\n'
+                analysis_section += '      "rsi": "value and interpretation",\n'
+                analysis_section += '      "macd": "signal and trend",\n'
+                analysis_section += '      "stoch_rsi": "value and signal",\n'
+                analysis_section += '      "volume_trend": "rising/falling with analysis",\n'
+                analysis_section += '      "fibonacci": {\n'
+                analysis_section += '        "trend": "uptrend/downtrend",\n'
+                analysis_section += '        "swing_high": "price_value",\n'
+                analysis_section += '        "swing_low": "price_value",\n'
+                analysis_section += '        "current_position": "above_618/between_382_618/below_382/etc",\n'
+                analysis_section += '        "key_levels": {\n'
+                analysis_section += '          "support": "nearest_fib_level_price",\n'
+                analysis_section += '          "resistance": "nearest_fib_level_price"\n'
+                analysis_section += '        }\n'
+                analysis_section += '      }\n'
+                analysis_section += '    }'
+            else:
+                # Reference structure for other timeframes
+                analysis_section += f',\n    "{tf_lower}": {{ "similar structure as {timeframes[0].lower()}" }}'
+        
+        # Determine Fibonacci base timeframe (use longest available)
+        fib_base_timeframe = "1D"
+        if "1d" in [tf.lower() for tf in timeframes]:
+            fib_base_timeframe = "1D"
+        elif "1w" in [tf.lower() for tf in timeframes]:
+            fib_base_timeframe = "1W"
+        elif timeframes:
+            fib_base_timeframe = timeframes[-1].upper()
+        
+        return f"""You are a professional crypto futures trading analyst.
+I will provide you OHLCV data for multiple timeframes ({formatted_timeframes}) in JSON format.
 
 Based on this data, please:
 
 📊 Technical Indicator Analysis (per timeframe):
-Analyze these indicators for each timeframe (1H, 4H, 1D):
+Analyze these indicators for each timeframe ({formatted_timeframes}):
 
 MA20, MA50 (Moving Averages)
 Bollinger Bands (BB)
@@ -112,7 +157,7 @@ RSI(14)
 MACD (12,26,9)
 Stochastic RSI
 Volume trend (rising/falling)
-Fibonacci retracement levels (based on swing high/low in 1D)
+Fibonacci retracement levels (based on swing high/low in {fib_base_timeframe})
 
 📈 Fibonacci Analysis:
 From the OHLCV data, calculate and analyze:
@@ -142,31 +187,11 @@ Risk/Reward ratio
 Confidence score (0–100%)
 
 Please respond in JSON format:
-{
-  "analysis": {
-    "1h": {
-      "ma20": "value and position vs price",
-      "ma50": "value and position vs price", 
-      "bollinger_bands": "position and signal",
-      "rsi": "value and interpretation",
-      "macd": "signal and trend",
-      "stoch_rsi": "value and signal",
-      "volume_trend": "rising/falling with analysis",
-      "fibonacci": {
-        "trend": "uptrend/downtrend",
-        "swing_high": "price_value",
-        "swing_low": "price_value",
-        "current_position": "above_618/between_382_618/below_382/etc",
-        "key_levels": {
-          "support": "nearest_fib_level_price",
-          "resistance": "nearest_fib_level_price"
-        }
-      }
-    },
-    "4h": { "similar structure" },
-    "1d": { "similar structure" }
-  },
-  "recommendation": {
+{{
+  "analysis": {{
+{analysis_section}
+  }},
+  "recommendation": {{
     "action": "BUY/SELL/HOLD/CLOSE",
     "entry_price": "specific_price",
     "take_profit": "fibonacci_based_target", 
@@ -175,8 +200,8 @@ Please respond in JSON format:
     "risk_reward": "ratio_calculation",
     "confidence": "percentage_0_to_100",
     "reasoning": "detailed_analysis_reasoning"
-  }
-}"""
+  }}
+}}"""
     
     def _get_capital_management_prompt(self) -> str:
         """Get the capital management prompt template for position sizing advice"""
@@ -272,13 +297,19 @@ Please respond in JSON format:
             return {"error": "OpenAI client not available"}
         
         try:
-            prompt = f"{self.analysis_prompt}\n\nMarket Data:\n{json.dumps(market_data, indent=2)}"
+            # Extract timeframes from market_data
+            timeframes = list(market_data.get("timeframes", {}).keys())
+            
+            # Generate dynamic prompt based on actual timeframes
+            dynamic_prompt = self._get_analysis_prompt(timeframes)
+            
+            prompt = f"{dynamic_prompt}\n\nMarket Data:\n{json.dumps(market_data, indent=2)}"
             
             response = await asyncio.to_thread(
                 self.openai_client.chat.completions.create,
                 model=self.openai_model,
                 messages=[
-                    {"role": "system", "content": "You are a professional crypto futures trading analyst with expertise in Fibonacci retracement analysis."},
+                    {"role": "system", "content": f"You are a professional crypto futures trading analyst with expertise in Fibonacci retracement analysis. Analyze data for timeframes: {', '.join(timeframes)}."},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.2,
@@ -298,7 +329,13 @@ Please respond in JSON format:
             return {"error": "Claude client not available"}
         
         try:
-            prompt = f"{self.analysis_prompt}\n\nMarket Data:\n{json.dumps(market_data, indent=2)}"
+            # Extract timeframes from market_data
+            timeframes = list(market_data.get("timeframes", {}).keys())
+            
+            # Generate dynamic prompt based on actual timeframes
+            dynamic_prompt = self._get_analysis_prompt(timeframes)
+            
+            prompt = f"{dynamic_prompt}\n\nMarket Data:\n{json.dumps(market_data, indent=2)}"
             
             response = await asyncio.to_thread(
                 self.claude_client.messages.create,
@@ -322,7 +359,13 @@ Please respond in JSON format:
             return {"error": "Gemini client not available"}
         
         try:
-            prompt = f"{self.analysis_prompt}\n\nMarket Data:\n{json.dumps(market_data, indent=2)}"
+            # Extract timeframes from market_data
+            timeframes = list(market_data.get("timeframes", {}).keys())
+            
+            # Generate dynamic prompt based on actual timeframes
+            dynamic_prompt = self._get_analysis_prompt(timeframes)
+            
+            prompt = f"{dynamic_prompt}\n\nMarket Data:\n{json.dumps(market_data, indent=2)}"
             
             response = await asyncio.to_thread(
                 self.gemini_client.generate_content,
