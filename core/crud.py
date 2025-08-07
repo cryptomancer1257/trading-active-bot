@@ -1460,3 +1460,81 @@ def get_or_create_marketplace_user(db: Session, user_principal_id: str) -> model
         db.refresh(user)
     
     return user
+
+def get_subscription_by_id_and_principal(
+    db: Session, 
+    subscription_id: int, 
+    principal_id: str
+) -> Optional[models.Subscription]:
+    """Get subscription by ID and principal ID for marketplace users"""
+    return db.query(models.Subscription).filter(
+        models.Subscription.id == subscription_id,
+        models.Subscription.user_principal_id == principal_id,
+        models.Subscription.is_marketplace_subscription == True
+    ).first()
+
+
+def update_subscription_status_by_principal(
+    db: Session,
+    subscription_id: int,
+    principal_id: str,
+    new_status: models.SubscriptionStatus
+) -> Optional[models.Subscription]:
+    """Update subscription status for marketplace user"""
+    subscription = get_subscription_by_id_and_principal(db, subscription_id, principal_id)
+    if subscription:
+        subscription.status = new_status
+        db.commit()
+        db.refresh(subscription)
+    return subscription
+
+
+def validate_marketplace_subscription_access(
+    db: Session,
+    subscription_id: int,
+    principal_id: str,
+    api_key: str
+) -> tuple[models.Subscription, models.BotRegistration]:
+    """
+    Validate marketplace subscription access with enhanced security:
+    1. Verify API key exists and is active
+    2. Get subscription by ID and principal ID
+    3. Verify API key belongs to the subscription's bot
+    4. Verify principal ID matches bot registration (optional but recommended)
+    
+    Returns: (subscription, bot_registration) if valid
+    Raises: HTTPException if invalid
+    """
+    from fastapi import HTTPException, status
+    
+    # Step 1: Authenticate using bot API key
+    bot_registration = get_bot_registration_by_api_key(db, api_key)
+    if not bot_registration:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid bot API key - authentication failed"
+        )
+    
+    # Step 2: Get subscription by ID and principal ID
+    subscription = get_subscription_by_id_and_principal(
+        db, subscription_id, principal_id
+    )
+    if not subscription:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Subscription not found or access denied"
+        )
+    
+    # Step 3: Verify API key belongs to this subscription's bot (SECURITY CHECK)
+    if bot_registration.bot_id != subscription.bot_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="API key does not belong to this subscription's bot. Access denied."
+        )
+    
+    # Note: Skip principal ID validation because in marketplace:
+    # - Bot owner (bot_registration.user_principal_id) creates the bot
+    # - Subscription user (principal_id) rents the bot
+    # These are different users, which is expected in marketplace model
+    
+    return subscription, bot_registration

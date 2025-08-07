@@ -353,3 +353,161 @@ async def store_credentials_by_principal_id(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to store credentials"
         )
+
+
+# Marketplace Subscription Control Endpoints
+
+@router.post("/subscription/pause", response_model=schemas.MarketplaceSubscriptionControlResponse)
+async def pause_marketplace_subscription(
+    request: schemas.MarketplaceSubscriptionControlRequest,
+    db: Session = Depends(get_db)
+):
+    """Pause a marketplace subscription - temporarily stops bot execution"""
+    try:
+        # Validate subscription access with enhanced security
+        subscription, bot_registration = crud.validate_marketplace_subscription_access(
+            db, request.subscription_id, request.principal_id, request.api_key
+        )
+        
+        # Check if subscription is already paused
+        if subscription.status == models.SubscriptionStatus.PAUSED:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Subscription is already paused"
+            )
+        
+        # Check if subscription can be paused (only ACTIVE subscriptions)
+        if subscription.status != models.SubscriptionStatus.ACTIVE:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Cannot pause subscription with status: {subscription.status}"
+            )
+        
+        # Update subscription status to PAUSED
+        updated_subscription = crud.update_subscription_status_by_principal(
+            db, request.subscription_id, request.principal_id, models.SubscriptionStatus.PAUSED
+        )
+        
+        logger.info(f"Paused marketplace subscription {request.subscription_id} for principal {request.principal_id}")
+        
+        return schemas.MarketplaceSubscriptionControlResponse(
+            subscription_id=updated_subscription.id,
+            principal_id=updated_subscription.user_principal_id,
+            action="paused",
+            status=updated_subscription.status,
+            message="Subscription paused successfully",
+            timestamp=datetime.utcnow()
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to pause marketplace subscription: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to pause subscription"
+        )
+
+
+@router.post("/subscription/cancel", response_model=schemas.MarketplaceSubscriptionControlResponse)
+async def cancel_marketplace_subscription(
+    request: schemas.MarketplaceSubscriptionControlRequest,
+    db: Session = Depends(get_db)
+):
+    """Cancel a marketplace subscription - permanently stops bot and closes all trades"""
+    try:
+        # Validate subscription access with enhanced security
+        subscription, bot_registration = crud.validate_marketplace_subscription_access(
+            db, request.subscription_id, request.principal_id, request.api_key
+        )
+        
+        # Check if subscription is already cancelled
+        if subscription.status == models.SubscriptionStatus.CANCELLED:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Subscription is already cancelled"
+            )
+        
+        # Close any open trades before cancelling
+        crud.close_open_trades_for_subscription(db, request.subscription_id)
+        
+        # Update subscription status to CANCELLED
+        updated_subscription = crud.update_subscription_status_by_principal(
+            db, request.subscription_id, request.principal_id, models.SubscriptionStatus.CANCELLED
+        )
+        
+        logger.info(f"Cancelled marketplace subscription {request.subscription_id} for principal {request.principal_id}")
+        
+        return schemas.MarketplaceSubscriptionControlResponse(
+            subscription_id=updated_subscription.id,
+            principal_id=updated_subscription.user_principal_id,
+            action="cancelled",
+            status=updated_subscription.status,
+            message="Subscription cancelled successfully. All open trades have been closed.",
+            timestamp=datetime.utcnow()
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to cancel marketplace subscription: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to cancel subscription"
+        )
+
+
+@router.post("/subscription/resume", response_model=schemas.MarketplaceSubscriptionControlResponse)
+async def resume_marketplace_subscription(
+    request: schemas.MarketplaceSubscriptionControlRequest,
+    db: Session = Depends(get_db)
+):
+    """Resume a paused marketplace subscription - restarts bot execution"""
+    try:
+        # Validate subscription access with enhanced security
+        subscription, bot_registration = crud.validate_marketplace_subscription_access(
+            db, request.subscription_id, request.principal_id, request.api_key
+        )
+        
+        # Check if subscription is paused (only PAUSED subscriptions can be resumed)
+        if subscription.status != models.SubscriptionStatus.PAUSED:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Cannot resume subscription with status: {subscription.status}. Only PAUSED subscriptions can be resumed."
+            )
+        
+        # Check if subscription hasn't expired
+        now = datetime.utcnow()
+        if subscription.expires_at and subscription.expires_at < now:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot resume expired subscription"
+            )
+        
+        # Update subscription status to ACTIVE
+        updated_subscription = crud.update_subscription_status_by_principal(
+            db, request.subscription_id, request.principal_id, models.SubscriptionStatus.ACTIVE
+        )
+        
+        # Trigger bot execution immediately upon resume
+        run_bot_logic.apply_async(args=[updated_subscription.id], countdown=10)
+        
+        logger.info(f"Resumed marketplace subscription {request.subscription_id} for principal {request.principal_id}")
+        
+        return schemas.MarketplaceSubscriptionControlResponse(
+            subscription_id=updated_subscription.id,
+            principal_id=updated_subscription.user_principal_id,
+            action="resumed",
+            status=updated_subscription.status,
+            message="Subscription resumed successfully. Bot execution will restart shortly.",
+            timestamp=datetime.utcnow()
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to resume marketplace subscription: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to resume subscription"
+        )
