@@ -40,5 +40,47 @@
     "order_id": 5524185083,
     "confidence": 0.75,
     "reason": "[LLM-MULTI-TF] The price is near the lower Bollinger Band and key Fibonacci support level, indicating potential for a reversal. Rising volume supports the likelihood of a bounce. The oversold conditions in RSI and Stochastic RSI further suggest a potential upward move."
+  },
+  {
+    "timestamp": "2025-08-07T07:08:58.575975",
+    "action": "BUY",
+    "symbol": "BTCUSDT",
+    "quantity": "0.029",
+    "entry_price": 115100.0,
+    "leverage": 10,
+    "stop_loss": {
+      "price": 114500.0,
+      "order_id": 5545885763,
+      "source": "recommendation"
+    },
+    "take_profit": {
+      "price": 115500.0,
+      "order_id": 5545885766,
+      "source": "recommendation"
+    },
+    "order_id": 5545885762,
+    "confidence": 0.75,
+    "reason": "[LLM-MULTI-TF] The current price is near the 61.8% Fibonacci retracement level, which is a significant support level in an uptrend. Technical indicators suggest oversold conditions in shorter timeframes, while the daily trend remains bullish. This presents a potential buying opportunity with a favorable risk/reward ratio."
+  },
+  {
+    "timestamp": "2025-08-07T07:09:02.457148",
+    "action": "BUY",
+    "symbol": "BTCUSDT",
+    "quantity": "0.029",
+    "entry_price": 115037.5,
+    "leverage": 10,
+    "stop_loss": {
+      "price": 112736.75,
+      "order_id": 5545885868,
+      "source": "percentage"
+    },
+    "take_profit": {
+      "price": 119639.0,
+      "order_id": 5545885869,
+      "source": "percentage"
+    },
+    "order_id": 5545885856,
+    "confidence": 0.75,
+    "reason": "[LLM-MULTI-TF] The current price is positioned between the 50% and 61.8% Fibonacci retracement levels, indicating potential for further upward movement. The RSI and MACD indicators across multiple timeframes suggest a bullish trend, supporting a buy recommendation. The stop loss is set at the 50% retracement level to minimize risk, while the take profit is set at the 78.6% level to capture potential gains."
   }
 ]

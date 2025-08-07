@@ -95,36 +95,34 @@ def initialize_bot(subscription):
             if hasattr(subscription.bot, 'bot_type') and subscription.bot.bot_type and subscription.bot.bot_type.upper() == 'FUTURES':
                 # Rich configuration for Futures bots (like main_execution)
                 bot_config = {
-                    # Trading configuration
-                    'trading_pair': subscription.trading_pair or 'BTCUSDT',
-                    'testnet': subscription.is_testnet if subscription.is_testnet is not None else True,
-                    'leverage': 10,
-                    'stop_loss_pct': 0.02,  # 2% stop loss
-                    'take_profit_pct': 0.04,  # 4% take profit
-                    'position_size_pct': 0.05,  # 5% of balance
+                    'trading_pair': 'BTCUSDT',
+                    'testnet': True,
+                    'leverage': 5,
+                    'stop_loss_pct': 0.02,  # 2%
+                    'take_profit_pct': 0.04,  # 4%
+                    'position_size_pct': 0.1,  # 10% of balance
                     
-                    # Multi-timeframe configuration (enhanced from main_execution)
-                    'timeframes': ['5m', '30m', '1h', '4h', '1d'],  # 5 timeframes like main_execution
-                    'primary_timeframe': '1h',  # Primary timeframe for decision making
+                    # 🎯 Dynamic 5 timeframes - Bạn có thể thay đổi tùy ý!
+                    'timeframes': ['5m', '30m', '1h', '4h', '1d'],  
+                    'primary_timeframe': '1h',  # Primary timeframe for final decision
                     
-                    # LLM configuration
-                    'use_llm_analysis': True,  # Enable full LLM analysis
-                    'llm_model': 'openai',  # Primary LLM model
+                    'use_llm_analysis': True,  # Enable LLM analysis with full system
+                    'llm_model': 'openai',  # Primary LLM model to use
                     
-                    # Technical indicators config (fallback)
+                    # Technical indicators (fallback when LLM fails)
                     'rsi_period': 14,
-                    'rsi_oversold': 30,
-                    'rsi_overbought': 70,
+                    'rsi_oversold': 30,     # Buy signal threshold
+                    'rsi_overbought': 70,   # Sell signal threshold
                     
-                    # Capital management
-                    'base_position_size_pct': 0.02,  # 2% base
-                    'max_position_size_pct': 0.10,   # 10% max
-                    'max_portfolio_exposure': 0.30,  # 30% total
-                    'max_drawdown_threshold': 0.15,  # 15%
+                    # Capital management (CRITICAL for risk control)
+                    'base_position_size_pct': 0.02,    # 2% minimum position
+                    'max_position_size_pct': 0.10,     # 10% maximum position  
+                    'max_portfolio_exposure': 0.30,    # 30% total exposure limit
+                    'max_drawdown_threshold': 0.15,    # 15% stop-loss threshold
                     
-                    # Celery specific
+                    # Celery execution
                     'require_confirmation': False,  # No confirmation for Celery
-                    'auto_confirm': True  # Auto-confirm all trades
+                    'auto_confirm': True  # Auto-confirm trades (for Celery/automated execution)
                 }
                 logger.info(f"🚀 Applied RICH FUTURES CONFIG: {len(bot_config['timeframes'])} timeframes, {bot_config['leverage']}x leverage")
             else:
