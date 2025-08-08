@@ -10,12 +10,18 @@ from datetime import datetime, timezone
 import logging
 
 from core.api_key_manager import api_key_manager
-from core import crud, models, schemas
+from core import crud, models, schemas, security
 from core.database import get_db
 from core.tasks import run_bot_logic
 from core.security import validate_marketplace_api_key
 
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
+from decimal import Decimal
+from pydantic import BaseModel
+import os
+import time
+from jose import jwt
+from jose.exceptions import ExpiredSignatureError, JWTError
 
 # Initialize logger
 logger = logging.getLogger(__name__)
@@ -409,6 +415,198 @@ async def pause_marketplace_subscription(
         )
 
 
+# ============================
+# Studio → Marketplace Publish
+# ============================
+
+def _derive_trading_type(bot: models.Bot) -> str:
+    try:
+        if bot.bot_type and str(bot.bot_type).upper() == 'LLM':
+            return 'passive'
+        return 'active'
+    except Exception:
+        return 'active'
+
+def _extract_timeframes(bot: models.Bot) -> List[str]:
+    try:
+        cfg = bot.default_config or {}
+        tfs = cfg.get('timeframes') or cfg.get('timeframe')
+        if isinstance(tfs, list) and tfs:
+            return [str(x) for x in tfs]
+        if isinstance(tfs, str) and tfs:
+            return [tfs]
+    except Exception:
+        pass
+    return ['1H']
+
+
+@router.post("/publish-token", status_code=status.HTTP_200_OK)
+def create_publish_token(
+    bot_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(security.get_current_active_user),
+):
+    """Issue one-time JWT for marketplace publish redirect."""
+    bot = crud.get_bot_by_id(db, bot_id)
+    if not bot or bot.developer_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Bot not found or not owned by current user")
+
+    secret = os.getenv('STUDIO_JWT_SECRET', 'dev-secret')
+    ttl_seconds = int(os.getenv('PUBLISH_TOKEN_TTL', '600'))
+    payload = {
+        'bot_id': bot_id,
+        'owner_id': current_user.id,
+        'aud': 'ai-marketplace',
+        'iss': 'studio',
+        'exp': int(time.time()) + ttl_seconds,
+        'nonce': os.urandom(8).hex(),
+    }
+    token = jwt.encode(payload, secret, algorithm='HS256')
+
+    marketplace_url = os.getenv('MARKETPLACE_WEB_URL', 'http://localhost:3000/submit')
+    return {
+        'publish_url': f"{marketplace_url}?token={token}",
+        'expires_in': ttl_seconds,
+    }
+
+
+class RegisterByTokenRequest(BaseModel):
+    token: str
+    user_principal_id: str
+    marketplace_name: Optional[str] = None
+    marketplace_description: Optional[str] = None
+    price_on_marketplace: Optional[Decimal] = None
+
+
+@router.post("/register-by-token", response_model=schemas.BotMarketplaceRegistrationResponse, status_code=status.HTTP_201_CREATED)
+def register_by_token(body: RegisterByTokenRequest, db: Session = Depends(get_db)):
+    """Register bot for marketplace using short-lived JWT token (no X-API-Key).
+
+    - Verifies token (audience, expiry)
+    - Ensures caller owns the bot in token
+    - Creates registration and returns generated api_key
+    """
+    secret = os.getenv('STUDIO_JWT_SECRET', 'dev-secret')
+    try:
+        payload = jwt.decode(body.token, secret, algorithms=['HS256'], audience='ai-marketplace')
+    except ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail='Token expired')
+    except JWTError as e:
+        raise HTTPException(status_code=401, detail=f'Invalid token: {e}')
+
+    bot_id = int(payload.get('bot_id') or 0)
+    owner_id = int(payload.get('owner_id') or 0)
+    if not bot_id or not owner_id:
+        raise HTTPException(status_code=400, detail='Invalid token payload')
+
+    bot = crud.get_bot_by_id(db, bot_id)
+    if not bot or bot.developer_id != owner_id:
+        raise HTTPException(status_code=404, detail='Bot not found or not owned by token owner')
+
+    reg_req = schemas.BotMarketplaceRegistrationRequest(
+        user_principal_id=body.user_principal_id,
+        bot_id=bot_id,
+        marketplace_name=body.marketplace_name,
+        marketplace_description=body.marketplace_description,
+        price_on_marketplace=body.price_on_marketplace,
+    )
+
+    registration_record = crud.create_bot_marketplace_registration(db=db, registration=reg_req)
+    db.refresh(registration_record)
+
+    return schemas.BotMarketplaceRegistrationResponse(
+        registration_id=registration_record.id,
+        user_principal_id=registration_record.user_principal_id,
+        bot_id=registration_record.bot_id,
+        api_key=registration_record.api_key,
+        status="approved",
+        message="Bot registered successfully for marketplace with auto-generated API key",
+        registration_details={
+            "marketplace_name": registration_record.marketplace_name,
+            "marketplace_description": registration_record.marketplace_description,
+            "price_on_marketplace": str(registration_record.price_on_marketplace),
+            "commission_rate": registration_record.commission_rate,
+            "registered_at": registration_record.registered_at.isoformat() if registration_record.registered_at else None,
+            "status": registration_record.status.value if hasattr(registration_record.status, 'value') else str(registration_record.status),
+            "api_key": registration_record.api_key,
+        },
+    )
+
+@router.get("/bot-by-token/{token}")
+def bot_by_token(token: str, db: Session = Depends(get_db)):
+    """Return bot metadata for marketplace to submit to canisters."""
+    secret = os.getenv('STUDIO_JWT_SECRET', 'dev-secret')
+    try:
+        # Validate token audience to match issuance in create_publish_token
+        payload = jwt.decode(token, secret, algorithms=['HS256'], audience='ai-marketplace')
+    except ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail='Token expired')
+    except JWTError as e:
+        raise HTTPException(status_code=401, detail=f'Invalid token: {e}')
+
+    bot_id = payload.get('bot_id')
+    bot = crud.get_bot_by_id(db, bot_id)
+    if not bot:
+        raise HTTPException(status_code=404, detail='Bot not found')
+
+    price_month = float(bot.price_per_month or 0.0)
+    price_daily_icp = round(price_month / 30.0, 8) if price_month > 0 else 2.5
+    trading_type = _derive_trading_type(bot)
+    tags = ['Active Trading'] if trading_type == 'active' else ['Signal Provider']
+    timeframes = _extract_timeframes(bot)
+
+    base_url = os.getenv('STUDIO_BASE_URL', 'http://localhost:8000')
+    api_base = base_url
+    api_endpoints = {
+        'pause': '/marketplace/subscription/pause',
+        'cancel': '/marketplace/subscription/cancel',
+        'resume': '/marketplace/subscription/resume',
+    }
+
+    return {
+        'id_hint': f'studio_{bot.id}',
+        'name': bot.name,
+        'description': bot.description,
+        'price_daily_icp': price_daily_icp,
+        'trading_type': trading_type,
+        'timeframes': timeframes,
+        'strategies': [],
+        'supported_exchanges': ['Binance'],
+        'supported_pairs': ['BTC/USDT'],
+        'risk_level': 'medium',
+        'tags': tags,
+        'performance': { 'roi': 15.0, 'winRate': 75, 'maxDrawdown': 10, 'sharpeRatio': 1.5 },
+        'images': [],
+        'aiStudioBotId': bot.id,
+        'apiBaseUrl': api_base,
+        'apiEndpoints': api_endpoints,
+    }
+
+
+@router.post('/published', status_code=status.HTTP_200_OK)
+def published_callback(
+    body: Dict[str, Any],
+    db: Session = Depends(get_db),
+):
+    """Optional callback from marketplace to store mapping aiStudioBotId ↔ marketplaceBotId."""
+    studio_id = body.get('aiStudioBotId')
+    marketplace_bot_id = body.get('marketplaceBotId')
+    if not studio_id or not marketplace_bot_id:
+        raise HTTPException(status_code=400, detail='Missing ids')
+
+    try:
+        reg = db.query(models.BotRegistration).filter(models.BotRegistration.bot_id == studio_id).first()
+        if reg:
+            if hasattr(reg, 'marketplace_bot_id'):
+                setattr(reg, 'marketplace_bot_id', str(marketplace_bot_id))
+            if hasattr(reg, 'is_published'):
+                setattr(reg, 'is_published', True)
+            if hasattr(reg, 'published_at'):
+                setattr(reg, 'published_at', datetime.utcnow())
+            db.commit()
+    except Exception:
+        db.rollback()
+    return { 'ok': True }
 @router.post("/subscription/cancel", response_model=schemas.MarketplaceSubscriptionControlResponse)
 async def cancel_marketplace_subscription(
     request: schemas.MarketplaceSubscriptionControlRequest,
