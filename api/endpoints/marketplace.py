@@ -4,9 +4,9 @@ import os
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Header
 from sqlalchemy.orm import Session
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import logging
 
 from core.api_key_manager import api_key_manager
@@ -159,9 +159,9 @@ def create_marketplace_subscription(
 
 @router.post("/subscription", response_model=schemas.MarketplaceSubscriptionResponse)
 async def create_marketplace_subscription_v2(
-    request: schemas.MarketplaceSubscriptionCreateV2,
+    request: Dict[str, Any],
     db: Session = Depends(get_db),
-    _: bool = Depends(validate_marketplace_api_key)
+    x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
 ):
     """
     Create subscription for marketplace user (without studio account)
@@ -172,6 +172,68 @@ async def create_marketplace_subscription_v2(
     - Have contact info stored for notifications
     """
     try:
+        # Normalize request body: accept both Studio rent payload and Marketplace V2 schema
+        def parse_iso(ts: Optional[str]) -> Optional[datetime]:
+            if not ts:
+                return None
+            try:
+                # Support trailing 'Z'
+                if isinstance(ts, str) and ts.endswith('Z'):
+                    ts = ts.replace('Z', '+00:00')
+                return datetime.fromisoformat(ts)  # type: ignore[arg-type]
+            except Exception:
+                return None
+
+        normalized_payload: Dict[str, Any]
+        if isinstance(request, dict) and 'email' in request:
+            # Studio style payload
+            normalized_payload = {
+                'user_principal_id': request.get('user_principal_id'),
+                'bot_id': int(request.get('bot_id')) if request.get('bot_id') is not None else None,
+                'instance_name': request.get('instance_name') or f"studio_{request.get('bot_id')}_{int(time.time())}",
+                'marketplace_user_email': request.get('email'),
+                'marketplace_user_telegram': request.get('telegram'),
+                'marketplace_user_discord': request.get('discord'),
+                'subscription_start': parse_iso(request.get('start_time')) or datetime.utcnow(),
+                'subscription_end': parse_iso(request.get('end_time')) or (datetime.utcnow() + timedelta(days=30)),
+                'exchange_type': schemas.ExchangeType.BINANCE,
+                'trading_pair': 'BTCUSDT',
+                'timeframe': '1h',
+                'is_testnet': True,
+                'strategy_config': {},
+                'execution_config': None,
+                'risk_config': None,
+            }
+        else:
+            # Assume MarketplaceSubscriptionCreateV2 shape
+            normalized_payload = dict(request)
+
+        try:
+            request = schemas.MarketplaceSubscriptionCreateV2(**normalized_payload)  # type: ignore[assignment]
+        except Exception as e:
+            logger.error(f"Failed to validate subscription request: {e}; payload={normalized_payload}")
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid subscription payload")
+
+        # Validate API key: allow either marketplace API key or a valid bot API key
+        marketplace_key = os.getenv('MARKETPLACE_API_KEY', 'marketplace_dev_api_key_12345')
+        if not x_api_key:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="API key is required",
+                headers={"WWW-Authenticate": "ApiKey"},
+            )
+
+        is_marketplace_key = x_api_key == marketplace_key
+        bot_registration = None
+        if not is_marketplace_key:
+            bot_registration = crud.get_bot_registration_by_api_key(db, x_api_key)
+            if not bot_registration:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid marketplace API key",
+                    headers={"WWW-Authenticate": "ApiKey"},
+                )
+
         # Validate bot exists and is approved
         bot = db.query(models.Bot).filter(
             models.Bot.id == request.bot_id,
@@ -184,6 +246,13 @@ async def create_marketplace_subscription_v2(
                 detail="Bot not found or not approved"
             )
         
+        # If authorized via bot API key, ensure the registration is for this bot
+        if bot_registration and bot_registration.bot_id != request.bot_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="API key does not match the requested bot",
+            )
+
         # Auto-detect trade_mode from bot type (using string comparison)
         if bot.bot_type and bot.bot_type.upper() == "FUTURES":
             trade_mode = models.TradeMode.FUTURES
