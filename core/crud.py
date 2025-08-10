@@ -1336,20 +1336,42 @@ def create_bot_marketplace_registration(
     db: Session,
     registration: schemas.BotMarketplaceRegistrationRequest
 ) -> models.BotRegistration:
-    """Register a bot for marketplace listing"""
-    
+    """Register a bot for marketplace listing (idempotent per principal+bot).
+
+    - If a record exists for (user_principal_id, bot_id), update api_key and metadata.
+    - Else, create a new registration.
+    """
+
     # Verify bot exists and is approved
     bot = db.query(models.Bot).filter(
         models.Bot.id == registration.bot_id,
         models.Bot.status == models.BotStatus.APPROVED
     ).first()
-    
+
     if not bot:
         raise ValueError("Bot not found or not approved")
-    
-    # Generate API key for this bot (no uniqueness check needed)
+
+    # Generate a new API key
     bot_api_key = generate_bot_api_key()
-    
+
+    # Check existing registration by (principal, bot)
+    existing = db.query(models.BotRegistration).filter(
+        models.BotRegistration.user_principal_id == registration.user_principal_id,
+        models.BotRegistration.bot_id == registration.bot_id
+    ).first()
+
+    if existing:
+        # Update in-place (rotate API key and metadata)
+        existing.api_key = bot_api_key
+        existing.marketplace_name = registration.marketplace_name or existing.marketplace_name or bot.name
+        existing.marketplace_description = registration.marketplace_description or existing.marketplace_description or bot.description
+        if registration.price_on_marketplace is not None:
+            existing.price_on_marketplace = registration.price_on_marketplace
+        existing.status = models.BotRegistrationStatus.APPROVED
+        db.commit()
+        db.refresh(existing)
+        return existing
+
     # Create registration with auto-approval
     db_registration = models.BotRegistration(
         user_principal_id=registration.user_principal_id,
@@ -1358,13 +1380,13 @@ def create_bot_marketplace_registration(
         marketplace_name=registration.marketplace_name or bot.name,
         marketplace_description=registration.marketplace_description or bot.description,
         price_on_marketplace=registration.price_on_marketplace or bot.price_per_month,
-        status=models.BotRegistrationStatus.APPROVED  # Auto-approved
+        status=models.BotRegistrationStatus.APPROVED
     )
-    
+
     db.add(db_registration)
     db.commit()
     db.refresh(db_registration)
-    
+
     return db_registration
 
 def get_marketplace_bots(
