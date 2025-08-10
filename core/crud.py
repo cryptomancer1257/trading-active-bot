@@ -671,6 +671,48 @@ def update_credentials_validation(db: Session, credentials_id: int, is_valid: bo
     
     return db_credentials
 
+# === User Settings CRUD ===
+def get_user_settings_by_principal(db: Session, principal_id: str):
+    return db.query(models.UserSettings).filter(models.UserSettings.principal_id == principal_id).first()
+
+def upsert_user_settings_by_principal(db: Session, settings: "schemas.MarketplaceUserSettings") -> models.UserSettings:
+    rec = get_user_settings_by_principal(db, settings.principal_id)
+    if rec is None:
+        rec = models.UserSettings(
+            principal_id=settings.principal_id,
+            email=settings.email,
+            social_telegram=settings.social_telegram,
+            social_discord=settings.social_discord,
+            social_twitter=settings.social_twitter,
+            social_whatsapp=settings.social_whatsapp,
+            default_channel=settings.default_channel or "email",
+            display_dark_mode=bool(settings.display_dark_mode),
+            display_currency=settings.display_currency or "ICP",
+            display_language=settings.display_language or "en",
+            display_timezone=settings.display_timezone or "UTC",
+        )
+        db.add(rec)
+    else:
+        rec.email = settings.email
+        rec.social_telegram = settings.social_telegram
+        rec.social_discord = settings.social_discord
+        rec.social_twitter = settings.social_twitter
+        rec.social_whatsapp = settings.social_whatsapp
+        if settings.default_channel is not None:
+            rec.default_channel = settings.default_channel
+        if settings.display_dark_mode is not None:
+            rec.display_dark_mode = bool(settings.display_dark_mode)
+        if settings.display_currency is not None:
+            rec.display_currency = settings.display_currency
+        if settings.display_language is not None:
+            rec.display_language = settings.display_language
+        if settings.display_timezone is not None:
+            rec.display_timezone = settings.display_timezone
+
+    db.commit()
+    db.refresh(rec)
+    return rec
+
 def get_subscription_with_bot(db: Session, subscription_id: int):
     return db.query(models.Subscription).options(
         joinedload(models.Subscription.bot)

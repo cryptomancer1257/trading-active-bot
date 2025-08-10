@@ -178,6 +178,47 @@ class ExchangeCredentialsValidation(BaseModel):
     exchange: ExchangeType
     is_testnet: bool
 
+# === Marketplace user settings (for marketplace Settings page) ===
+class MarketplaceUserSettings(BaseModel):
+    principal_id: str = Field(..., description="ICP Principal ID (unique)")
+    email: Optional[str] = None
+    social_telegram: Optional[str] = None
+    social_discord: Optional[str] = None
+    social_twitter: Optional[str] = None
+    social_whatsapp: Optional[str] = None
+    default_channel: Optional[str] = "email"
+    display_dark_mode: Optional[bool] = False
+    display_currency: Optional[str] = "ICP"
+    display_language: Optional[str] = "en"
+    display_timezone: Optional[str] = "UTC"
+
+    @validator('principal_id')
+    def validate_settings_principal_id(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Principal ID cannot be empty')
+        return v.strip()
+
+class MarketplaceUserSettingsInDB(MarketplaceUserSettings):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# Payload version (without principal_id) for nested usage in bulk endpoint
+class MarketplaceUserSettingsPayload(BaseModel):
+    email: Optional[str] = None
+    social_telegram: Optional[str] = None
+    social_discord: Optional[str] = None
+    social_twitter: Optional[str] = None
+    social_whatsapp: Optional[str] = None
+    default_channel: Optional[str] = "email"
+    display_dark_mode: Optional[bool] = False
+    display_currency: Optional[str] = "ICP"
+    display_language: Optional[str] = "en"
+    display_timezone: Optional[str] = "UTC"
+
 class Token(BaseModel):
     access_token: str
     token_type: str
@@ -928,17 +969,30 @@ class ExchangeCredentialsByPrincipalRequest(BaseModel):
         if not v or len(v.strip()) == 0:
             raise ValueError('Principal ID cannot be empty')
         return v.strip()
-    
-    @validator('api_key')
-    def validate_api_key(cls, v):
-        if not v or len(v.strip()) == 0:
-            raise ValueError('API key cannot be empty')
+
+# === Bulk credentials + optional user settings ===
+class ExchangeCredentialItemByPrincipal(BaseModel):
+    exchange: ExchangeType
+    api_key: str
+    api_secret: str
+    api_passphrase: Optional[str] = None
+    is_testnet: bool = True
+
+    @validator('api_key', 'api_secret')
+    def _not_empty(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Field cannot be empty')
         return v.strip()
-    
-    @validator('api_secret')
-    def validate_api_secret(cls, v):
-        if not v or len(v.strip()) == 0:
-            raise ValueError('API secret cannot be empty')
+
+class ExchangeCredentialsBulkByPrincipalRequest(BaseModel):
+    principal_id: str = Field(..., description="ICP Principal ID")
+    credentials: List[ExchangeCredentialItemByPrincipal]
+    user_settings: Optional[MarketplaceUserSettingsPayload] = None
+
+    @validator('principal_id')
+    def validate_bulk_principal(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Principal ID cannot be empty')
         return v.strip()
 
 class MarketplaceSubscriptionControlRequest(BaseModel):

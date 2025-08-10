@@ -130,6 +130,39 @@ class ExchangeCredentials(Base):
         Index('idx_principal_id', 'principal_id'),
     )
 
+
+# NEW: Marketplace user settings keyed by principal_id (unique)
+class UserSettings(Base):
+    __tablename__ = "user_settings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    principal_id = Column(String(255), nullable=False, unique=True, index=True)
+
+    # Contact
+    email = Column(String(255))
+
+    # Social channels
+    social_telegram = Column(String(255))
+    social_discord = Column(String(255))
+    social_twitter = Column(String(255))
+    social_whatsapp = Column(String(255))
+
+    # Default signal channel
+    default_channel = Column(String(50), default="email")
+
+    # Display settings
+    display_dark_mode = Column(Boolean, default=False)
+    display_currency = Column(String(10), default="ICP")
+    display_language = Column(String(10), default="en")
+    display_timezone = Column(String(64), default="UTC")
+
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index('idx_user_settings_principal', 'principal_id', unique=True),
+    )
+
 class BotCategory(Base):
     __tablename__ = "bot_categories"
     id = Column(Integer, primary_key=True, index=True)

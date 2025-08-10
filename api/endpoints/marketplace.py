@@ -509,6 +509,139 @@ def _extract_timeframes(bot: models.Bot) -> List[str]:
     return ['1H']
 
 
+@router.post("/store-by-principal/bulk", response_model=Dict[str, Any])
+async def store_credentials_bulk_by_principal_id(
+    request: schemas.ExchangeCredentialsBulkByPrincipalRequest,
+    api_key: str = Depends(validate_marketplace_api_key),
+    db: Session = Depends(get_db)
+):
+    """
+    Bulk store credentials and optionally upsert user settings for a marketplace principal.
+    - Upsert user_settings first if provided (keyed by principal_id)
+    - Deduplicate per-request items by (exchange, is_testnet) – last one wins
+    - Upsert credentials by pair (principal_id, exchange, is_testnet)
+    """
+    try:
+        allowed = {"BINANCE", "COINBASE", "KRAKEN"}
+        def _norm_exchange(e: Any) -> str:
+            try:
+                return (e.value if hasattr(e, 'value') else str(e)).upper()
+            except Exception:
+                return str(e).upper()
+        results: List[Dict[str, Any]] = []
+
+        # Upsert user settings if provided
+        if request.user_settings:
+            # Convert payload (without principal_id) to full settings
+            settings_full = schemas.MarketplaceUserSettings(
+                principal_id=request.principal_id,
+                **request.user_settings.dict()
+            )
+            rec = crud.upsert_user_settings_by_principal(db, settings=settings_full)
+            results.append({
+                "type": "user_settings",
+                "status": "success",
+                "principal_id": rec.principal_id,
+                "message": "User settings upserted"
+            })
+
+        # Deduplicate credentials by (exchange, is_testnet): last one wins
+        last_by_pair: Dict[tuple, schemas.ExchangeCredentialItemByPrincipal] = {}
+        for item in request.credentials:
+            exch = _norm_exchange(item.exchange)
+            last_by_pair[(exch, bool(item.is_testnet))] = item
+
+        success = 0
+        failed = 0
+        for (exch, is_testnet), item in last_by_pair.items():
+            if exch not in allowed:
+                failed += 1
+                results.append({
+                    "type": "credentials",
+                    "exchange": exch,
+                    "is_testnet": is_testnet,
+                    "status": "failed",
+                    "message": f"Unsupported exchange. Supported: {', '.join(sorted(allowed))}"
+                })
+                continue
+
+            ok = api_key_manager.store_user_exchange_credentials_by_principal_id(
+                db=db,
+                principal_id=request.principal_id,
+                exchange=exch,
+                api_key=item.api_key,
+                api_secret=item.api_secret,
+                api_passphrase=item.api_passphrase,
+                is_testnet=is_testnet,
+            )
+
+            if ok:
+                success += 1
+                results.append({
+                    "type": "credentials",
+                    "exchange": exch,
+                    "is_testnet": is_testnet,
+                    "status": "success",
+                    "message": "Stored/updated credentials for principal/exchange/is_testnet pair"
+                })
+            else:
+                failed += 1
+                results.append({
+                    "type": "credentials",
+                    "exchange": exch,
+                    "is_testnet": is_testnet,
+                    "status": "failed",
+                    "message": "Failed to store credentials"
+                })
+
+        return {
+            "status": "ok",
+            "principal_id": request.principal_id,
+            "summary": {
+                "total_received": len(request.credentials),
+                "processed_pairs": len(last_by_pair),
+                "success": success,
+                "failed": failed
+            },
+            "results": results
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to bulk store credentials/settings by principal ID: {e}")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to store credentials/settings (bulk)"
+        )
+
+@router.get("/user-settings/{principal_id}", response_model=schemas.MarketplaceUserSettingsInDB)
+def get_user_settings(
+    principal_id: str,
+    db: Session = Depends(get_db),
+):
+    """
+    Get marketplace user settings by ICP principal_id.
+    """
+    rec = crud.get_user_settings_by_principal(db, principal_id)
+    if not rec:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User settings not found")
+    return rec
+
+@router.post("/user-settings", response_model=schemas.MarketplaceUserSettingsInDB)
+def upsert_user_settings(
+    body: schemas.MarketplaceUserSettings,
+    api_key: bool = Depends(validate_marketplace_api_key),
+    db: Session = Depends(get_db),
+):
+    """
+    Create/update marketplace user settings by principal_id (unique).
+    Requires X-API-Key.
+    """
+    rec = crud.upsert_user_settings_by_principal(db, body)
+    return rec
+
 @router.post("/publish-token", status_code=status.HTTP_200_OK)
 def create_publish_token(
     bot_id: int,
