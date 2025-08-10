@@ -199,7 +199,7 @@ async def create_marketplace_subscription_v2(
                 'exchange_type': schemas.ExchangeType.BINANCE,
                 'trading_pair': 'BTCUSDT',
                 'timeframe': '1h',
-                'is_testnet': True,
+                'is_testnet': request.get('is_testnet'),
                 'strategy_config': {},
                 'execution_config': None,
                 'risk_config': None,
