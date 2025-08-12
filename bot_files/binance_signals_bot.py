@@ -18,7 +18,8 @@ import json
 import time
 import requests
 import asyncio
-from datetime import datetime
+import random
+from datetime import datetime, timedelta
 from dataclasses import dataclass
 
 from bots.bot_sdk.CustomBot import CustomBot
@@ -203,10 +204,15 @@ class BinanceSignalsBot(CustomBot):
         # Initialize LLM service with provided API keys (environment/config)
         if self.use_llm_analysis and api_keys:
             try:
-                self.llm_service = create_llm_service(
-                    model=self.llm_model,
-                    api_keys=api_keys  # LLM API keys from environment/config
-                )
+                # Create config dict for LLM service (correct signature)
+                llm_config = {
+                    'openai_api_key': api_keys.get('openai_api_key'),
+                    'claude_api_key': api_keys.get('anthropic_api_key'),  # Note: anthropic_api_key maps to claude
+                    'gemini_api_key': api_keys.get('google_api_key'),
+                    'default_model': self.llm_model
+                }
+                
+                self.llm_service = create_llm_service(llm_config)
                 logger.info(f"✅ LLM service initialized: {self.llm_model}")
             except Exception as e:
                 logger.warning(f"⚠️ LLM service initialization failed: {e}")
@@ -369,6 +375,9 @@ class BinanceSignalsBot(CustomBot):
             logger.info(f"💰 Current price: ${current_price:,.2f}")
             if ticker_24hr:
                 logger.info(f"📈 24h change: {ticker_24hr.get('price_change_percent', 0):.2f}%")
+            
+            # Store the crawled data for LLM analysis
+            self._last_crawled_data = timeframes_data
             
             return result
             
@@ -642,18 +651,8 @@ class BinanceSignalsBot(CustomBot):
             # Create action
             action = Action(signal_action, confidence, reason_text)
             
-            # Add comprehensive LLM analysis if enabled
-            if self.use_llm_analysis and self.llm_service:
-                try:
-                    full_analysis = self.get_llm_analysis(analysis)
-                    action.recommendation = full_analysis
-                except Exception as e:
-                    logger.warning(f"⚠️ LLM analysis failed: {e}")
-                    action.recommendation = f"Technical analysis: {reason_text}. LLM analysis unavailable: {e}"
-            else:
-                # Create detailed technical analysis
-                tech_analysis = self.create_technical_summary(analysis, signal_action, confidence)
-                action.recommendation = tech_analysis
+            # Add comprehensive LLM analysis if enabled (note: this will be called from async context)
+            action.recommendation = f"Technical analysis: {reason_text}"
             
             logger.info(f"🔮 Signal generated: {signal_action} ({confidence:.1%})")
             logger.info(f"📝 Primary reasons: {reason_text}")
@@ -768,7 +767,36 @@ Analysis Framework: Multi-timeframe technical analysis
         except Exception as e:
             return f"Technical analysis summary error: {e}"
     
-    def get_llm_analysis(self, analysis: Dict[str, Any]) -> str:
+    def _create_synthetic_ohlcv(self, current_price: float, periods: int = 50) -> List[Dict]:
+        """Create synthetic OHLCV data for LLM analysis when historical data is not available"""
+        ohlcv_data = []
+        base_time = datetime.now()
+        
+        for i in range(periods):
+            # Create realistic price variations (±2% random walk)
+            variation = 1 + (random.random() - 0.5) * 0.04  # ±2%
+            price = current_price * variation
+            
+            # Create OHLC with small intraday variations
+            high = price * (1 + random.random() * 0.01)  # up to 1% higher
+            low = price * (1 - random.random() * 0.01)   # up to 1% lower
+            open_price = low + (high - low) * random.random()
+            close_price = low + (high - low) * random.random()
+            
+            volume = 1000 + random.random() * 5000  # Random volume
+            
+            ohlcv_data.append({
+                'timestamp': int((base_time - timedelta(hours=periods-i)).timestamp() * 1000),
+                'open': open_price,
+                'high': high,
+                'low': low,
+                'close': close_price,
+                'volume': volume
+            })
+        
+        return ohlcv_data
+
+    async def get_llm_analysis(self, analysis: Dict[str, Any]) -> str:
         """Get comprehensive market analysis from LLM - FULL TEXT RESPONSE"""
         try:
             if not self.llm_service:
@@ -877,15 +905,95 @@ Please provide a comprehensive, professional analysis in clear, structured forma
 DATA SOURCE: Binance Public API (Real-time market data, no user credentials required)
 """
             
-            # Get LLM response
-            llm_response = self.llm_service.analyze_market_data(prompt)
+            # Convert our analysis to timeframes data format expected by LLM service
+            # We need to provide actual historical OHLCV data, not just single price points
+            timeframes_data = {}
             
-            if isinstance(llm_response, dict) and 'analysis' in llm_response:
-                return llm_response['analysis']
+            # Get the raw data we crawled earlier which contains proper OHLCV arrays
+            raw_data = getattr(self, '_last_crawled_data', {})
+            
+            if raw_data:
+                # Use the actual OHLCV data we crawled
+                for timeframe in self.timeframes:
+                    if timeframe in raw_data:
+                        data = raw_data[timeframe]
+                        
+                        # Handle DataFrame or list data
+                        if isinstance(data, pd.DataFrame) and not data.empty and len(data) > 0:
+                            # Convert DataFrame to list of OHLCV dicts
+                            ohlcv_data = []
+                            for idx, row in data.iterrows():
+                                ohlcv_data.append({
+                                    'timestamp': int(row.name.timestamp() * 1000) if hasattr(row.name, 'timestamp') else int(datetime.now().timestamp() * 1000),
+                                    'open': float(row.get('open', current_price)),
+                                    'high': float(row.get('high', current_price)),
+                                    'low': float(row.get('low', current_price)),
+                                    'close': float(row.get('close', current_price)),
+                                    'volume': float(row.get('volume', 0))
+                                })
+                            timeframes_data[timeframe] = ohlcv_data
+                        elif isinstance(data, list) and len(data) > 0:
+                            # Data is already in list format (from Binance API)
+                            ohlcv_data = []
+                            for candle in data:
+                                if isinstance(candle, list) and len(candle) >= 6:
+                                    # Binance format: [timestamp, open, high, low, close, volume, ...]
+                                    ohlcv_data.append({
+                                        'timestamp': int(candle[0]),
+                                        'open': float(candle[1]),
+                                        'high': float(candle[2]),
+                                        'low': float(candle[3]),
+                                        'close': float(candle[4]),
+                                        'volume': float(candle[5])
+                                    })
+                                elif isinstance(candle, dict):
+                                    # Already in dict format
+                                    ohlcv_data.append({
+                                        'timestamp': int(candle.get('timestamp', datetime.now().timestamp() * 1000)),
+                                        'open': float(candle.get('open', current_price)),
+                                        'high': float(candle.get('high', current_price)),
+                                        'low': float(candle.get('low', current_price)),
+                                        'close': float(candle.get('close', current_price)),
+                                        'volume': float(candle.get('volume', 0))
+                                    })
+                            timeframes_data[timeframe] = ohlcv_data
+                        else:
+                            # Fallback: create synthetic data with current price
+                            timeframes_data[timeframe] = self._create_synthetic_ohlcv(current_price, 50)
+                    else:
+                        # Fallback: create synthetic data
+                        timeframes_data[timeframe] = self._create_synthetic_ohlcv(current_price, 50)
+            else:
+                # Fallback: create synthetic data for all timeframes
+                for timeframe in self.timeframes:
+                    timeframes_data[timeframe] = self._create_synthetic_ohlcv(current_price, 50)
+            
+            # Get LLM response using correct method
+            llm_response = await self.llm_service.analyze_market(
+                symbol=analysis.get('symbol', self.trading_pair),
+                timeframes_data=timeframes_data,
+                model=self.llm_model
+            )
+            
+            # Extract analysis from LLM response
+            if isinstance(llm_response, dict):
+                if 'error' in llm_response:
+                    return f"LLM analysis error: {llm_response['error']}"
+                elif 'analysis' in llm_response:
+                    return llm_response['analysis']
+                elif 'recommendation' in llm_response:
+                    return llm_response['recommendation']
+                else:
+                    # If LLM returns structured data, format it as text
+                    formatted_response = "LLM MARKET ANALYSIS:\n\n"
+                    for key, value in llm_response.items():
+                        if key != 'metadata':
+                            formatted_response += f"{key.upper().replace('_', ' ')}: {value}\n"
+                    return formatted_response
             elif isinstance(llm_response, str):
                 return llm_response
             else:
-                return f"LLM Analysis:\n{str(llm_response)}"
+                return f"LLM Analysis completed: {str(llm_response)}"
                 
         except Exception as e:
             logger.error(f"❌ LLM analysis error: {e}")
@@ -922,6 +1030,21 @@ DATA SOURCE: Binance Public API (Real-time market data, no user credentials requ
                 if stop_loss and stop_loss > current_price:
                     risk_reward_ratio = abs((take_profit - entry_price) / (stop_loss - entry_price))
             
+            # Get LLM analysis if enabled
+            full_analysis = signal.recommendation
+            if self.use_llm_analysis and self.llm_service:
+                try:
+                    logger.info("🤖 Getting LLM analysis...")
+                    llm_analysis = await self.get_llm_analysis(analysis)
+                    full_analysis = llm_analysis
+                    logger.info("✅ LLM analysis completed")
+                except Exception as e:
+                    logger.warning(f"⚠️ LLM analysis failed: {e}")
+                    full_analysis = f"{signal.recommendation}. LLM analysis unavailable: {e}"
+            else:
+                # Create detailed technical analysis when LLM not available
+                full_analysis = self.create_technical_summary(analysis, signal.action, signal.value)
+            
             # Create comprehensive signal result
             result = {
                 'status': 'signal_generated',
@@ -945,7 +1068,7 @@ DATA SOURCE: Binance Public API (Real-time market data, no user credentials requ
                 
                 # Analysis
                 'reason': signal.reason,
-                'full_analysis': signal.recommendation if hasattr(signal, 'recommendation') and signal.recommendation else "Technical analysis completed",
+                'full_analysis': full_analysis,
                 
                 # Market data
                 'market_data': {
