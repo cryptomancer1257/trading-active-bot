@@ -1,0 +1,44 @@
+[
+  {
+    "timestamp": "2025-08-03T11:16:57.116141",
+    "action": "BUY",
+    "symbol": "BTCUSDT",
+    "quantity": "0.024",
+    "entry_price": 113590.2,
+    "leverage": 10,
+    "stop_loss": {
+      "price": 111318.4,
+      "order_id": 5524594326,
+      "source": "recommendation"
+    },
+    "take_profit": {
+      "price": 118133.81,
+      "order_id": 5524594328,
+      "source": "recommendation"
+    },
+    "order_id": 5524594314,
+    "confidence": 0.515625,
+    "reason": "[MULTI-TF] [FUTURES] The current price is in an uptrend across all timeframes, supported by rising volume and bullish technical indicators. The price is positioned between the 50% and 61.8% Fibonacci retracement levels, suggesting potential for further upward movement. The strategy aims to capitalize on the continuation of the uptrend with a favorable risk/reward ratio. | Confirmation: 1/4 timeframes"
+  },
+  {
+    "timestamp": "2025-08-07T06:27:33.225480",
+    "action": "SELL",
+    "symbol": "BTCUSDT",
+    "quantity": "0.065",
+    "entry_price": 51050.0,
+    "leverage": 10,
+    "stop_loss": {
+      "price": 51169.42,
+      "order_id": 5545739052,
+      "source": "recommendation"
+    },
+    "take_profit": {
+      "price": 50925.98,
+      "order_id": 5545739062,
+      "source": "recommendation"
+    },
+    "order_id": 5545739044,
+    "confidence": 0.85,
+    "reason": "[LLM-MULTI-TF] The price is currently in a downtrend and is positioned between the 50% and 61.8% Fibonacci retracement levels, indicating a potential reversal. The RSI and Stochastic RSI are both in overbought territory across multiple timeframes, suggesting a correction is likely. Volume is rising, but this could be a sign of a final push before a reversal. Therefore, a short position is recommended with a close stop loss above the recent resistance."
+  }
+]

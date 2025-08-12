@@ -134,7 +134,6 @@ ehthumbs.db
 Thumbs.db
 
 # Bot marketplace specific
-bot_files/
 ml_models/
 *.db
 *.sqlite
