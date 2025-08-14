@@ -220,48 +220,72 @@ async def upload_bot_code(
 ):
     """Upload bot code file to S3"""
     try:
+        logger.debug(f"[UPLOAD] Start upload for bot_id={bot_id}, user_id={current_user.id}, filename={file.filename}")
         db_bot = crud.get_bot_by_id(db, bot_id)
         if not db_bot:
+            logger.error(f"[UPLOAD] Bot not found: bot_id={bot_id}")
             raise HTTPException(status_code=404, detail="Bot not found")
         if db_bot.developer_id != current_user.id and current_user.role != schemas.UserRole.ADMIN:
+            logger.error(f"[UPLOAD] Permission denied: bot_id={bot_id}, user_id={current_user.id}, dev_id={db_bot.developer_id}, role={current_user.role}")
             raise HTTPException(status_code=403, detail="Not enough permissions")
-        
+
         # Validate file type
         if not file.filename or not file.filename.endswith('.py'):
+            logger.error(f"[UPLOAD] Invalid file type: {file.filename}")
             raise HTTPException(status_code=400, detail="Only Python files are allowed")
-        
+
         # Read file content
-        content = await file.read()
-        code_content = content.decode('utf-8')
-        
+        try:
+            content = await file.read()
+            code_content = content.decode('utf-8')
+        except UnicodeDecodeError as ude:
+            logger.error(f"[UPLOAD] Unicode decode error: {ude}")
+            raise HTTPException(status_code=400, detail="File must be valid UTF-8 text")
+
+        logger.debug(f"[UPLOAD] File read successfully: {file.filename}, size={len(content)} bytes")
+
         # Validate bot code
         validation_result = bot_manager.validate_bot_code(code_content)
         if not validation_result["valid"]:
+            logger.error(f"[UPLOAD] Bot code validation failed: {validation_result['error']}")
             raise HTTPException(
                 status_code=400, 
                 detail=f"Bot code validation failed: {validation_result['error']}"
             )
-        
+
+        logger.debug(f"[UPLOAD] Bot code validated successfully for bot_id={bot_id}")
+
         # Upload to S3
-        upload_result = crud.save_bot_file_to_s3(
-            db=db,
-            bot_id=bot_id,
-            file_content=content,
-            file_name=file.filename,
-            version=version or None
-        )
-        
+        try:
+            upload_result = crud.save_bot_file_to_s3(
+                db=db,
+                bot_id=bot_id,
+                file_content=content,
+                file_name=file.filename,
+                version=version or None
+            )
+            logger.debug(f"[UPLOAD] S3 upload result: {upload_result}")
+        except Exception as s3e:
+            logger.error(f"[UPLOAD] S3 upload failed: {s3e}")
+            raise HTTPException(status_code=500, detail=f"S3 upload failed: {str(s3e)}")
+
         # Update bot status back to PENDING for review
-        crud.update_bot_status(db=db, bot_id=bot_id, status=schemas.BotStatus.PENDING)
-        
+        try:
+            crud.update_bot_status(db=db, bot_id=bot_id, status=schemas.BotStatus.PENDING)
+            logger.debug(f"[UPLOAD] Bot status updated to PENDING for bot_id={bot_id}")
+        except Exception as stse:
+            logger.error(f"[UPLOAD] Failed to update bot status: {stse}")
+
         # Get updated bot
         updated_bot = crud.get_bot_by_id(db, bot_id)
-        
+        logger.info(f"[UPLOAD] Bot upload completed successfully for bot_id={bot_id}, user_id={current_user.id}")
         return updated_bot
-        
-    except UnicodeDecodeError:
-        raise HTTPException(status_code=400, detail="File must be valid UTF-8 text")
+
+    except HTTPException as he:
+        logger.error(f"[UPLOAD] HTTPException: {he.detail}")
+        raise
     except Exception as e:
+        logger.error(f"[UPLOAD] Unexpected error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to upload bot code: {str(e)}")
 
 @router.get("/{bot_id}/versions", response_model=List[str])
