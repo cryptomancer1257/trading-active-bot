@@ -662,7 +662,8 @@ def run_bot_logic(self, subscription_id: int):
                 try:
                     from datetime import datetime
                     from services.email_templates import send_combined_notification
-                    
+                    from services.telegram_service import TelegramService 
+                    telegram_service = TelegramService()
                     # Different emoji for different actions
                     action_emoji = {
                         "BUY": "🟢",
@@ -673,12 +674,7 @@ def run_bot_logic(self, subscription_id: int):
                     # Send combined notification with trade result
                     # Get email for notification (studio user or marketplace user)
                     user_email = subscription.user.email if subscription.user_id else subscription.marketplace_user_email
-                    
-                    send_combined_notification(
-                        user_email,
-                        subscription.bot.name,
-                        final_action.action,
-                        {
+                    body_details = {
                             'trading_pair': trading_pair,
                             'current_price': current_price,
                             'reason': final_action.reason,
@@ -689,7 +685,44 @@ def run_bot_logic(self, subscription_id: int):
                             'subscription_id': subscription_id,
                             'trade_details': trade_details
                         }
+                    send_combined_notification(
+                        user_email,
+                        subscription.bot.name,
+                        final_action.action,
+                        body_details
                     )
+
+                    telegram_chat_id = None
+                    # Studio user: get from user.user_settings
+                    if hasattr(subscription.user, 'user_settings') and subscription.user.user_settings:
+                        telegram_chat_id = getattr(subscription.user.user_settings, 'telegram_chat_id', None)
+                    # Marketplace user: get from UserSettings by principal_id
+                    if not telegram_chat_id and subscription.user_principal_id:
+                        from core import crud
+                        telegram_settings = crud.get_user_settings_by_principal(db, subscription.user_principal_id)
+                        if telegram_settings:
+                            telegram_chat_id = getattr(telegram_settings, 'telegram_chat_id', None)
+                    if telegram_chat_id:
+                        # Format Telegram message template similar to email
+                        telegram_message = (
+                            f"🚨 Trade Signal: {subscription.bot.name}\n"
+                            f"Action: {final_action.action} | Confidence: {final_action.value or 'N/A'}\n"
+                            f"Pair: {trading_pair} | Timeframe: {subscription.timeframe}\n"
+                            f"Price: ${current_price}\n"
+                            f"Reason: {final_action.reason}\n"
+                            f"Testnet: {'Yes' if bool(subscription.is_testnet) else 'No'}\n"
+                            f"Subscription ID: {subscription_id}\n"
+                            f"---\n"
+                            f"Balance Info:{balance_info}\n"
+                            f"Trade Details: {trade_details}"
+                        )
+                        telegram_service.send_telegram_message_v2(
+                            chat_id=telegram_chat_id,
+                            text=telegram_message,
+                        )
+                    else:
+                        logger.warning(f"No telegram_chat_id found in user settings for user {subscription.user.id if subscription.user else subscription.user_principal_id or 'N/A'}")
+
                 except Exception as e:
                     logger.error(f"Failed to send signal notification: {e}")
                 

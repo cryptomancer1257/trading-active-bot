@@ -134,6 +134,25 @@ class TelegramService:
         except Exception as e:
             print(f"❌ Failed to send Telegram message: {e}")
             raise
+    def send_telegram_message_v2(self, chat_id: str | int, text: str, parse_mode=None, reply_markup=None):
+        url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
+        payload = {
+            "chat_id": chat_id,
+            "text": text
+        }
+        if parse_mode:
+            payload["parse_mode"] = parse_mode
+
+        if reply_markup:
+            payload["reply_markup"] = reply_markup
+
+        try:
+            response = requests.post(url, json=payload)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            print(f"❌ Failed to send Telegram message: {e}")
+            raise
     def send_message_safe_telegram(self, chat_id: str | int, text: str, use_markdown: bool = True):
         print(f"[{datetime.datetime.now(datetime.timezone.utc)}] ✅ Telegram sent")
         MAX_LENGTH = 4000
