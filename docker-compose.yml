@@ -29,8 +29,9 @@ services:
       - DATABASE_URL=mysql+pymysql://botuser:botpassword123@db/bot_marketplace
       - REDIS_URL=redis://redis:6379/0
       - TELEGRAM_BOT_TOKEN=8132382349:AAHF_jUv0xAUmUO1fPULmWc-WiWdgJ7reWA
-      - TELEGRAM_WEBHOOK_URL=https://9c9a8ea43d62.ngrok-free.app/webhook
-      - MODE=prod
+      - TELEGRAM_WEBHOOK_URL=https://7ec8707aa8ab.ngrok-free.app/webhook
+      - DISCORD_BOT_TOKEN=your-bot-token
+      - OPENAI_API_KEY=your-openai-api-key
     depends_on:
       - db
       - redis
