@@ -48,6 +48,22 @@ class UserPrincipalStatus(enum.Enum):
     ACTIVE = "ACTIVE"
     INACTIVE = "INACTIVE"
 
+class PayPalPaymentStatus(enum.Enum):
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    COMPLETED = "COMPLETED"
+    CANCELLED = "CANCELLED"
+    FAILED = "FAILED"
+    COMPLETED_PENDING_RENTAL = "COMPLETED_PENDING_RENTAL"
+
+class PaymentMethod(enum.Enum):
+    STRIPE = "STRIPE"
+    PAYPAL = "PAYPAL"
+
+class PayPalEnvironment(enum.Enum):
+    SANDBOX = "sandbox"
+    LIVE = "live"
+
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
@@ -569,3 +585,77 @@ class BotRegistration(Base):
     
     # Relationships
     bot = relationship("Bot", back_populates="marketplace_registrations")
+
+class PayPalPayment(Base):
+    """PayPal payment tracking table"""
+    __tablename__ = "paypal_payments"
+    
+    id = Column(String(255), primary_key=True)
+    order_id = Column(String(255), unique=True, nullable=False)
+    user_principal_id = Column(String(255), nullable=False, index=True)
+    bot_id = Column(Integer, ForeignKey("bots.id"), nullable=False)
+    
+    # Rental configuration
+    duration_days = Column(Integer, nullable=False)
+    pricing_tier = Column(String(50), nullable=False)
+    
+    # Pricing information
+    amount_usd = Column(DECIMAL(10, 2), nullable=False)
+    amount_icp_equivalent = Column(DECIMAL(18, 8), nullable=False)
+    exchange_rate_usd_to_icp = Column(DECIMAL(18, 8), nullable=False)
+    
+    # PayPal specific fields
+    status = Column(Enum(PayPalPaymentStatus), default=PayPalPaymentStatus.PENDING)
+    paypal_order_id = Column(String(255), index=True)
+    paypal_payment_id = Column(String(255))
+    paypal_payer_id = Column(String(255))
+    paypal_approval_url = Column(String(500))
+    
+    # Payer information (for guest checkout)
+    payer_email = Column(String(255))
+    payer_name = Column(String(255))
+    payer_country_code = Column(String(5))
+    
+    # Timestamps
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    expires_at = Column(DateTime)
+    completed_at = Column(DateTime)
+    
+    # Rental linking
+    rental_id = Column(String(255))
+    
+    # Error handling
+    error_message = Column(Text)
+    retry_count = Column(Integer, default=0)
+    
+    # Relationships
+    bot = relationship("Bot")
+
+class PayPalConfig(Base):
+    """PayPal configuration table"""
+    __tablename__ = "paypal_config"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    environment = Column(Enum(PayPalEnvironment), default=PayPalEnvironment.SANDBOX)
+    client_id = Column(String(255), nullable=False)
+    client_secret = Column(String(500), nullable=False)
+    webhook_id = Column(String(255))
+    webhook_secret = Column(String(255))
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+class PayPalWebhookEvent(Base):
+    """PayPal webhook events for audit"""
+    __tablename__ = "paypal_webhook_events"
+    
+    id = Column(String(255), primary_key=True)
+    event_type = Column(String(100), nullable=False)
+    event_data = Column(JSON, nullable=False)
+    payment_id = Column(String(255), ForeignKey("paypal_payments.id"))
+    processed = Column(Boolean, default=False)
+    created_at = Column(DateTime, server_default=func.now())
+    
+    # Relationships
+    payment = relationship("PayPalPayment")

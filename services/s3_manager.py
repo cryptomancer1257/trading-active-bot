@@ -74,6 +74,13 @@ class S3Manager:
     def initialize(self):
         """Initialize S3 bucket and verify connection"""
         try:
+            # Skip S3 initialization if no credentials available or using fake credentials
+            if (not self.aws_access_key_id or not self.aws_secret_access_key or 
+                self.aws_access_key_id == 'fake_access_key'):
+                logger.warning("AWS credentials not configured or using fake credentials. S3 features will be disabled.")
+                self.s3_client = None
+                return
+                
             # Test connection by listing buckets
             self.s3_client.list_buckets()
             logger.info("S3 connection successful")
@@ -85,14 +92,14 @@ class S3Manager:
             self._setup_bucket_policy()
             
         except NoCredentialsError:
-            logger.error("AWS credentials not found. Please configure AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY")
-            raise
+            logger.warning("AWS credentials not found. S3 features will be disabled.")
+            self.s3_client = None
         except ClientError as e:
-            logger.error(f"AWS S3 client error: {e}")
-            raise
+            logger.warning(f"AWS S3 client error: {e}. S3 features will be disabled.")
+            self.s3_client = None
         except Exception as e:
-            logger.error(f"Failed to initialize S3: {e}")
-            raise
+            logger.warning(f"Failed to initialize S3: {e}. S3 features will be disabled.")
+            self.s3_client = None
     
     def _create_bucket_if_not_exists(self):
         """Create S3 bucket if it doesn't exist"""
@@ -353,6 +360,10 @@ class S3Manager:
         Returns:
             Bot code content as string
         """
+        if not self.s3_client:
+            logger.warning("S3 client not available. Cannot download bot code.")
+            raise Exception("S3 service not available")
+            
         try:
             # Get version if not specified
             if not version:
