@@ -449,6 +449,7 @@ def run_bot_logic(self, subscription_id: int):
         db = SessionLocal()
         
         try:
+            logger.info(f"Running bot logic for subscription {subscription_id}")
             # Get subscription
             subscription = crud.get_subscription_by_id(db, subscription_id)
             if not subscription:
@@ -841,6 +842,19 @@ def send_email_notification(email: str, subject: str, body: str):
         
     except Exception as e:
         logger.error(f"Error sending email notification: {e}")
+
+@app.task
+def send_telegram_notification(chat_id: str | int, text: str):
+    try:
+        from services.telegram_service import TelegramService
+        telegram_service = TelegramService()
+    except Exception as e:
+        logger.error(f"Error sending email notification: {e}")
+
+    
+@app.task
+def send_discord_notification():
+    return
 
 @app.task
 def send_sendgrid_notification(email: str, bot_name: str, action: str, details: dict):

@@ -147,6 +147,9 @@ class UserSettings(Base):
     social_twitter = Column(String(255))
     social_whatsapp = Column(String(255))
 
+    telegram_chat_id = Column(String(255))
+    discord_user_id = Column(String(255))
+
     # Default signal channel
     default_channel = Column(String(50), default="email")
 

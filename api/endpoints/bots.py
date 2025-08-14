@@ -1,6 +1,8 @@
 import sys
 import os
 
+from services.telegram_service import TelegramService
+
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

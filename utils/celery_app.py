@@ -41,6 +41,8 @@ app.conf.update(
         'core.tasks.schedule_futures_bot_trading': {'queue': 'futures_trading'},
         'core.tasks.cleanup_old_logs': {'queue': 'maintenance'},
         'core.tasks.send_email_notification': {'queue': 'notifications'},
+        'core.tasks.send_telegram_notification': {'queue': 'notifications'},
+        'core.tasks.send_discord_notification': {'queue': 'notifications'},
         'core.tasks.test_task': {'queue': 'default'},
     },
     task_default_queue='default',
