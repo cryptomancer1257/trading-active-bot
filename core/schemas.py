@@ -48,8 +48,8 @@ class TradeStatus(str, Enum):
     CLOSED = "CLOSED"
 
 class NetworkType(str, Enum):
-    TESTNET = "testnet"
-    MAINNET = "mainnet"
+    TESTNET = "TESTNET"
+    MAINNET = "MAINNET"
 
 class TradeMode(str, Enum):
     SPOT = "Spot"
@@ -197,6 +197,12 @@ class MarketplaceUserSettings(BaseModel):
         if not v or not v.strip():
             raise ValueError('Principal ID cannot be empty')
         return v.strip()
+
+    @validator('social_telegram', 'social_discord', 'social_twitter', 'social_whatsapp', pre=True)
+    def remove_at_prefix(cls, v):
+        if v and isinstance(v, str) and v.startswith('@'):
+            return v[1:]
+        return v
 
 class MarketplaceUserSettingsInDB(MarketplaceUserSettings):
     id: int
@@ -486,7 +492,8 @@ class MarketplaceSubscriptionCreateV2(BaseModel):
     trading_pair: str = "BTCUSDT"
     timeframe: str = "1h"
     is_testnet: bool = True
-    
+    network_type: NetworkType = NetworkType.TESTNET
+
     # Optional configurations with defaults
     strategy_config: Dict[str, Any] = Field(default_factory=dict)
     execution_config: Optional[ExecutionConfig] = None

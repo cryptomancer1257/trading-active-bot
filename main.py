@@ -3,9 +3,13 @@
 Trading Bot Marketplace - Main Application
 """
 
-from fastapi import FastAPI
+import asyncio
+from fastapi import FastAPI, logger, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
+from sqlalchemy.orm import Session
+from core.database import get_db
+from services.telegram_service import TelegramService
 
 # Import from new structure
 from core.database import engine
@@ -22,6 +26,11 @@ app = FastAPI(
     description="A comprehensive marketplace for trading bot rental",
     version="2.0.0"
 )
+
+telegram_service = TelegramService()
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(telegram_service.run())
 
 # Add CORS middleware
 app.add_middleware(
@@ -41,6 +50,16 @@ app.include_router(exchange_credentials.router, prefix="/exchange-credentials", 
 app.include_router(user_principals.router, prefix="/user-principals", tags=["User Principals"])
 app.include_router(futures_bot.router, prefix="/api", tags=["Futures Bot"])  # Available in both modes
 app.include_router(marketplace.router, prefix="/marketplace", tags=["Marketplace"])
+
+@app.post("/webhook")
+async def webhook(req: Request, db: Session = Depends(get_db)):
+    try:
+        body = await req.json()
+        return await telegram_service.handle_telegram_message(body)
+    except Exception as e:
+        db.rollback()
+        logger.error("Telegram webhook error: %s", str(e), exc_info=True)
+        return {"ok": False}
 
 @app.get("/")
 async def root():

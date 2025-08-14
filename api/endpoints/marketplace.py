@@ -203,6 +203,7 @@ async def create_marketplace_subscription_v2(
                 'strategy_config': {},
                 'execution_config': None,
                 'risk_config': None,
+                'network_type': request.get('network_type') or schemas.NetworkType.TESTNET
             }
         else:
             # Assume MarketplaceSubscriptionCreateV2 shape
@@ -287,6 +288,20 @@ async def create_marketplace_subscription_v2(
             take_profit_percent=4.0,
             max_position_size=100.0
         )
+ 
+        # Normalize network_type to models.NetworkType
+        try:
+            if isinstance(request.network_type, schemas.NetworkType):
+                network_type_model = models.NetworkType[request.network_type.name]
+            elif isinstance(request.network_type, models.NetworkType):
+                network_type_model = request.network_type
+            else:
+                network_type_model = models.NetworkType(str(request.network_type).upper())
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Invalid network_type; must be TESTNET or MAINNET",
+            )
         
         # Create marketplace subscription
         subscription = models.Subscription(
@@ -309,7 +324,8 @@ async def create_marketplace_subscription_v2(
             timeframe=request.timeframe,
             is_testnet=request.is_testnet,
             trade_mode=trade_mode,  # Auto-detected from bot type
-            
+            network_type=network_type_model,
+
             # Strategy configs
             strategy_config=request.strategy_config,
             execution_config=execution_config.dict(),
