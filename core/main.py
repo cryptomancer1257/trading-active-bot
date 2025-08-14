@@ -28,7 +28,7 @@ development_mode = os.getenv('DEVELOPMENT_MODE', 'false').lower() == 'true'
 # Only import API endpoints that don't require external services in development mode
 if not development_mode:
     from api.endpoints import auth, bots, subscriptions, admin, exchanges, exchange_credentials
-    from api.endpoints import marketplace, futures_bot, user_principals
+    from api.endpoints import marketplace, futures_bot, user_principals, paypal_payments
 else:
     from api.endpoints import auth, bots, admin, exchange_credentials, futures_bot, user_principals
     # Import simplified subscriptions for testing without S3
@@ -92,6 +92,7 @@ if not development_mode:
     app.include_router(subscriptions.router, prefix="/subscriptions", tags=["Subscriptions"])
     app.include_router(marketplace.router, prefix="/subscriptions", tags=["Marketplace"])
     app.include_router(exchanges.router, prefix="/exchanges", tags=["Exchanges"])
+    app.include_router(paypal_payments.router, prefix="/payments", tags=["PayPal Payments"])
 else:
     # Include simplified subscriptions for testing without S3
     try:
