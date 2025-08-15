@@ -28,10 +28,10 @@ services:
     environment:
       - DATABASE_URL=mysql+pymysql://botuser:botpassword123@db/bot_marketplace
       - REDIS_URL=redis://redis:6379/0
-      - TELEGRAM_BOT_TOKEN=8132382349:AAHF_jUv0xAUmUO1fPULmWc-WiWdgJ7reWA
-      - TELEGRAM_WEBHOOK_URL=https://76ce1966fefb.ngrok-free.app/webhook
-      - DISCORD_BOT_TOKEN=your-dis-token
-      - OPENAI_API_KEY=your-api-key
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_WEBHOOK_URL=${TELEGRAM_WEBHOOK_URL}
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
       - MODE=dev
     depends_on:
       - db
