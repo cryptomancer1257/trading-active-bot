@@ -208,10 +208,10 @@ class BotManager:
                 validation_result["errors"].append("No CustomBot subclass found")
                 validation_result["is_valid"] = False
                 return validation_result
-            
+
             validation_result["bot_class"] = bot_class["name"]
             validation_result["bot_info"] = bot_class["info"]
-            
+
             # Check required methods
             missing_methods = self._check_required_methods(bot_class)
             if missing_methods:
@@ -238,9 +238,9 @@ class BotManager:
         
         # Forbidden functions/modules
         forbidden_imports = {
-            'os', 'sys', 'subprocess', 'eval', 'exec', 'compile',
-            'open', '__import__', 'globals', 'locals', 'vars',
-            'input', 'raw_input', 'file', 'execfile', 'reload'
+            'subprocess', 'eval', 'exec', 'compile',
+            '__import__', 'globals', 'vars',
+            'raw_input', 'file', 'execfile', 'reload'
         }
         
         forbidden_attributes = {

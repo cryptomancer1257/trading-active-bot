@@ -450,7 +450,7 @@ class BinanceFuturesBot(CustomBot):
             'base_position_size_pct': config.get('base_position_size_pct', 0.02),  # 2% base
             'max_position_size_pct': config.get('max_position_size_pct', 0.10),   # 10% max
             'max_portfolio_exposure': config.get('max_portfolio_exposure', 0.30), # 30% total
-            'max_drawdown_threshold': config.get('max_drawdown_threshold', 0.15), # 15%
+            'max_drawdown_threshold': config.get('max_drawdown_threshold', 0.20), # 20%
             'volatility_threshold_low': config.get('volatility_threshold_low', 0.02),
             'volatility_threshold_high': config.get('volatility_threshold_high', 0.08),
             'kelly_multiplier': config.get('kelly_multiplier', 0.25),

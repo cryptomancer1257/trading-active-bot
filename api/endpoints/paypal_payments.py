@@ -115,23 +115,39 @@ async def execute_paypal_payment(
             payer_id=execution_data.payer_id
         )
         
-        # Schedule rental creation and Studio sync in background
+        logger.info(f"PayPal service execution result: {result}")
+        logger.info(f"Result type: {type(result)}")
+        logger.info(f"Result keys: {result.keys() if isinstance(result, dict) else 'Not a dict'}")
+        
+        # Schedule subscription creation, rental creation and Studio sync using Celery
+        from core.tasks import create_subscription_from_paypal_task, sync_payment_to_studio_task
+        
+        # Create subscription immediately (higher priority)
+        create_subscription_from_paypal_task.apply_async(
+            args=[execution_data.payment_id], 
+            countdown=5
+        )
+        
+        # Sync to Studio (can be delayed)
+        sync_payment_to_studio_task.apply_async(
+            args=[execution_data.payment_id], 
+            countdown=10
+        )
+        
+        # Create ICP rental (can be delayed, less critical for dashboard)
         background_tasks.add_task(
             create_rental_in_canister,
             execution_data.payment_id,
             db
         )
         
-        # Schedule Studio subscription sync
-        background_tasks.add_task(
-            sync_payment_to_studio,
-            execution_data.payment_id,
-            db
-        )
-        
         logger.info(f"PayPal payment executed successfully: {execution_data.payment_id}")
         
-        return schemas.PayPalExecutionResponse(**result)
+        # Create response object
+        response = schemas.PayPalExecutionResponse(**result)
+        logger.info(f"Response object created: {response}")
+        
+        return response
         
     except HTTPException:
         raise
@@ -542,3 +558,77 @@ async def process_webhook_event(event_data: Dict[str, Any], db: Session):
             
     except Exception as e:
         logger.error(f"Webhook event processing failed: {e}")
+
+async def create_subscription_from_paypal_payment(payment_id: str, db_session: Session):
+    """Background task to create subscription from successful PayPal payment"""
+    try:
+        # Get fresh database session
+        from core.database import SessionLocal
+        db = SessionLocal()
+        
+        try:
+            # Get payment details
+            payment = crud.get_paypal_payment(db, payment_id)
+            if not payment:
+                logger.error(f"PayPal payment {payment_id} not found for subscription creation")
+                return
+            
+            if payment.status != models.PayPalPaymentStatus.COMPLETED:
+                logger.error(f"PayPal payment {payment_id} not completed (status: {payment.status})")
+                return
+            
+            # Check if subscription already exists
+            existing_subscription = db.query(models.Subscription).filter(
+                models.Subscription.user_principal_id == payment.user_principal_id,
+                models.Subscription.bot_id == payment.bot_id,
+                models.Subscription.status == models.SubscriptionStatus.ACTIVE
+            ).first()
+            
+            if existing_subscription:
+                logger.info(f"Active subscription already exists for user {payment.user_principal_id}, bot {payment.bot_id}")
+                return
+            
+            # Get bot details  
+            bot = crud.get_bot_by_id(db, payment.bot_id)
+            if not bot:
+                logger.error(f"Bot {payment.bot_id} not found for subscription creation")
+                return
+            
+            # Calculate subscription dates
+            from datetime import datetime, timedelta
+            now = datetime.utcnow()
+            expires_at = now + timedelta(days=payment.duration_days)
+            
+            # Create subscription
+            subscription_data = {
+                "user_principal_id": payment.user_principal_id,
+                "bot_id": payment.bot_id,
+                "status": models.SubscriptionStatus.ACTIVE,
+                "pricing_plan_id": None,  # PayPal doesn't use pricing plans
+                "started_at": now,
+                "expires_at": expires_at,
+                "is_marketplace_subscription": True,
+                "trading_pair": "BTCUSDT",  # Default trading pair
+                "timeframes": ["1h"]  # Default timeframe
+            }
+            
+            subscription = models.Subscription(**subscription_data)
+            db.add(subscription)
+            db.commit()
+            db.refresh(subscription)
+            
+            logger.info(f"Created subscription {subscription.id} from PayPal payment {payment_id}")
+            
+            # Schedule bot execution
+            try:
+                from core.tasks import run_bot_logic
+                run_bot_logic.apply_async(args=[subscription.id], countdown=30)
+                logger.info(f"Scheduled bot execution for subscription {subscription.id}")
+            except Exception as e:
+                logger.warning(f"Failed to schedule bot execution for subscription {subscription.id}: {e}")
+                
+        finally:
+            db.close()
+            
+    except Exception as e:
+        logger.error(f"Failed to create subscription from PayPal payment {payment_id}: {e}")

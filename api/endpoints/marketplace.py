@@ -911,3 +911,116 @@ async def resume_marketplace_subscription(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to resume subscription"
         )
+
+@router.post("/subscription/paypal")
+async def create_subscription_from_paypal(
+    request: Dict[str, Any],
+    db: Session = Depends(get_db),
+    x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
+    authorization: Optional[str] = Header(default=None)
+):
+    """Create subscription from PayPal payment data"""
+    try:
+        logger.info(f"Received PayPal subscription request: {request}")
+        
+        # Extract bot API key from headers
+        bot_api_key = None
+        if x_api_key:
+            bot_api_key = x_api_key
+        elif authorization and authorization.startswith("Bearer "):
+            bot_api_key = authorization[7:]  # Remove "Bearer " prefix
+        
+        if not bot_api_key:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Bot API key required (X-API-Key or Authorization header)"
+            )
+        
+        # Extract required fields from PayPal payload
+        user_principal_id = request.get("user_principal_id")
+        bot_id = request.get("bot_id") or request.get("bot_studio_id")
+        duration_days = request.get("duration_days", 30)
+        payment_method = request.get("payment_method", "PAYPAL")
+        payment_id = request.get("payment_id")
+        subscription_type = request.get("subscription_type", "daily")
+        
+        if not user_principal_id or not bot_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Missing required fields: user_principal_id, bot_id"
+            )
+        
+        logger.info(f"Creating subscription for user {user_principal_id}, bot {bot_id}, duration {duration_days} days")
+        
+        # Find bot registration by API key
+        bot_registration = db.query(models.BotRegistration).filter(
+            models.BotRegistration.api_key == bot_api_key
+        ).first()
+        
+        if not bot_registration:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Bot registration not found for provided API key"
+            )
+        
+        # Get bot details
+        bot = db.query(models.Bot).filter(models.Bot.id == bot_registration.bot_id).first()
+        if not bot:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Bot not found"
+            )
+        
+        # Calculate subscription dates
+        now = datetime.utcnow()
+        expires_at = now + timedelta(days=duration_days)
+        
+        # Create subscription
+        subscription_data = {
+            "user_principal_id": user_principal_id,
+            "bot_id": bot.id,
+            "status": models.SubscriptionStatus.ACTIVE,
+            "pricing_plan_id": None,  # PayPal doesn't use pricing plans
+            "starts_at": now,
+            "expires_at": expires_at,
+            "created_at": now,
+            "updated_at": now
+        }
+        
+        subscription = models.Subscription(**subscription_data)
+        db.add(subscription)
+        db.commit()
+        db.refresh(subscription)
+        
+        logger.info(f"Created subscription {subscription.id} for PayPal payment {payment_id}")
+        
+        # Trigger bot execution
+        try:
+            from core.tasks import run_bot_logic
+            run_bot_logic.apply_async(args=[subscription.id], countdown=30)
+            logger.info(f"Scheduled bot execution for subscription {subscription.id}")
+        except Exception as e:
+            logger.warning(f"Failed to schedule bot execution: {e}")
+        
+        return {
+            "success": True,
+            "message": "Subscription created successfully from PayPal payment",
+            "subscription_id": subscription.id,
+            "user_principal_id": user_principal_id,
+            "bot_id": bot.id,
+            "bot_name": bot.name,
+            "status": subscription.status.value,
+            "expires_at": expires_at.isoformat(),
+            "payment_id": payment_id,
+            "payment_method": payment_method
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to create subscription from PayPal: {e}")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create subscription: {str(e)}"
+        )
