@@ -1121,3 +1121,114 @@ async def run_advanced_futures_workflow(bot, subscription_id: int, subscription_
         logger.error(traceback.format_exc())
         from bots.bot_sdk.Action import Action
         return Action(action="HOLD", value=0.0, reason=f"Advanced workflow error: {e}")
+
+@app.task(bind=True, max_retries=3)
+def create_subscription_from_paypal_task(self, payment_id: str):
+    """Celery task to create subscription from PayPal payment"""
+    try:
+        from core.database import SessionLocal
+        from core import crud, models
+        
+        # Get fresh database session
+        db = SessionLocal()
+        
+        try:
+            # Get payment details
+            payment = crud.get_paypal_payment(db, payment_id)
+            if not payment:
+                logger.error(f"PayPal payment {payment_id} not found for subscription creation")
+                return
+            
+            if payment.status != models.PayPalPaymentStatus.COMPLETED:
+                logger.error(f"PayPal payment {payment_id} not completed (status: {payment.status})")
+                return
+            
+            # Check if subscription already exists
+            existing_subscription = db.query(models.Subscription).filter(
+                models.Subscription.user_principal_id == payment.user_principal_id,
+                models.Subscription.bot_id == payment.bot_id,
+                models.Subscription.status == models.SubscriptionStatus.ACTIVE
+            ).first()
+            
+            if existing_subscription:
+                logger.info(f"Active subscription already exists for user {payment.user_principal_id}, bot {payment.bot_id}")
+                return existing_subscription.id
+            
+            # Get bot details  
+            bot = crud.get_bot_by_id(db, payment.bot_id)
+            if not bot:
+                logger.error(f"Bot {payment.bot_id} not found for subscription creation")
+                return
+            
+            # Calculate subscription dates
+            now = datetime.utcnow()
+            expires_at = now + timedelta(days=payment.duration_days)
+            
+            # Create subscription
+            subscription_data = {
+                "user_principal_id": payment.user_principal_id,
+                "bot_id": payment.bot_id,
+                "status": models.SubscriptionStatus.ACTIVE,
+                "pricing_plan_id": None,  # PayPal doesn't use pricing plans
+                "started_at": now,
+                "expires_at": expires_at,
+                "is_marketplace_subscription": True,
+                "trading_pair": "BTCUSDT",  # Default trading pair
+                "timeframes": ["1h"]  # Default timeframe
+            }
+            
+            subscription = models.Subscription(**subscription_data)
+            db.add(subscription)
+            db.commit()
+            db.refresh(subscription)
+            
+            logger.info(f"Created subscription {subscription.id} from PayPal payment {payment_id}")
+            
+            # Schedule bot execution
+            try:
+                run_bot_logic.apply_async(args=[subscription.id], countdown=30)
+                logger.info(f"Scheduled bot execution for subscription {subscription.id}")
+            except Exception as e:
+                logger.warning(f"Failed to schedule bot execution for subscription {subscription.id}: {e}")
+            
+            return subscription.id
+                
+        finally:
+            db.close()
+            
+    except Exception as e:
+        logger.error(f"Failed to create subscription from PayPal payment {payment_id}: {e}")
+        # Retry with exponential backoff
+        raise self.retry(countdown=60 * (2 ** self.request.retries))
+
+@app.task(bind=True, max_retries=3)
+def sync_payment_to_studio_task(self, payment_id: str):
+    """Celery task to sync PayPal payment to Studio subscription API"""
+    try:
+        from core.database import SessionLocal
+        from services.paypal_service import get_paypal_service
+        
+        # Get fresh database session
+        db = SessionLocal()
+        
+        try:
+            paypal_service = get_paypal_service(db)
+            result = paypal_service.sync_subscription_to_studio(payment_id)
+            
+            if result["status"] == "success":
+                logger.info(f"Studio sync successful for payment {payment_id}")
+                return result
+            elif result["status"] == "skipped":
+                logger.info(f"Studio sync skipped for payment {payment_id}: {result['reason']}")
+                return result
+            else:
+                logger.error(f"Studio sync failed for payment {payment_id}: {result}")
+                raise Exception(f"Studio sync failed: {result.get('error', 'Unknown error')}")
+                
+        finally:
+            db.close()
+            
+    except Exception as e:
+        logger.error(f"Failed to sync payment {payment_id} to Studio: {e}")
+        # Retry with exponential backoff
+        raise self.retry(countdown=60 * (2 ** self.request.retries))

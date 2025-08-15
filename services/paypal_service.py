@@ -106,11 +106,8 @@ class PayPalService:
                 "application_context": {
                     "brand_name": "AI Trading Bot Marketplace",
                     "landing_page": "BILLING",  # Start with billing for guest checkout
-                    "user_action": "PAY_NOW",   # Show "Pay Now" button
-                    "payment_method": {
-                        "payer_selected": "PAYPAL",
-                        "payee_preferred": "IMMEDIATE_PAYMENT_REQUIRED"
-                    }
+                    "user_action": "CONTINUE",   # Valid user action
+                    "shipping_preference": "NO_SHIPPING"  # No shipping required
                 },
                 "redirect_urls": {
                     "return_url": f"{frontend_url}/payment/success?payment_id={payment_id}",
@@ -203,8 +200,27 @@ class PayPalService:
             if not db_payment:
                 raise Exception("Payment not found")
             
-            if db_payment.status != models.PayPalPaymentStatus.PENDING:
-                raise Exception(f"Payment already processed. Status: {db_payment.status}")
+            # If payment is already completed, return success response
+            if db_payment.status == models.PayPalPaymentStatus.COMPLETED:
+                logger.info(f"Payment {payment_id} already completed, returning success")
+                return {
+                    "success": True,
+                    "payment_id": payment_id,
+                    "paypal_payment_id": db_payment.paypal_payment_id,
+                    "message": "Payment already completed successfully",
+                    "rental_status": "processing"
+                }
+            
+            # If payment failed, reset to pending and retry
+            if db_payment.status == models.PayPalPaymentStatus.FAILED:
+                logger.info(f"Payment {payment_id} was failed, resetting to pending for retry")
+                db_payment.status = models.PayPalPaymentStatus.PENDING
+                db_payment.error_message = None
+                self.db.commit()
+            
+            # If payment has other status (not PENDING), throw error
+            elif db_payment.status != models.PayPalPaymentStatus.PENDING:
+                raise Exception(f"Payment already processed with status: {db_payment.status}")
             
             # Check expiration
             if datetime.utcnow() > db_payment.expires_at:
@@ -217,23 +233,70 @@ class PayPalService:
             payment = paypalrestsdk.Payment.find(db_payment.paypal_order_id)
             
             if not payment.execute({"payer_id": payer_id}):
-                error_msg = f"PayPal execution failed: {payment.error}"
+                error_details = payment.error
+                error_msg = f"PayPal execution failed: {error_details}"
+                
+                # Check if payment was already executed or payer ID expired (common cases)
+                if (isinstance(error_details, dict) and 
+                    error_details.get('name') in ['PAYMENT_ALREADY_DONE', 'INVALID_PAYER_ID']):
+                    logger.info(f"Payment {payment_id} already executed, treating as success")
+                    # Don't mark as failed, try to get payment info
+                    try:
+                        payment_info = paypalrestsdk.Payment.find(db_payment.paypal_order_id)
+                        if payment_info and payment_info.state == 'approved':
+                            logger.info(f"Payment {payment_id} found as approved, marking as completed")
+                            db_payment.status = models.PayPalPaymentStatus.COMPLETED
+                            db_payment.paypal_payment_id = payment_info.id
+                            db_payment.completed_at = datetime.utcnow()
+                            
+                            # Safely extract payer info for already executed payments
+                            if payment_info.payer and hasattr(payment_info.payer, 'payer_info') and payment_info.payer.payer_info:
+                                payer_info = payment_info.payer.payer_info
+                                if isinstance(payer_info, dict):
+                                    db_payment.payer_email = payer_info.get('email')
+                                    first_name = payer_info.get('first_name', '')
+                                    last_name = payer_info.get('last_name', '')
+                                    db_payment.payer_name = f"{first_name} {last_name}".strip() or None
+                                    db_payment.payer_country_code = payer_info.get('country_code')
+                            
+                            self.db.commit()
+                            return {
+                                "success": True,
+                                "payment_id": payment_id,
+                                "paypal_payment_id": payment_info.id,
+                                "message": "Payment completed successfully (already executed)",
+                                "rental_status": "processing"
+                            }
+                    except Exception as e:
+                        logger.warning(f"Could not verify already executed payment: {e}")
+                
+                # Mark as failed for other errors
                 db_payment.status = models.PayPalPaymentStatus.FAILED
                 db_payment.error_message = error_msg
                 self.db.commit()
                 raise Exception(error_msg)
             
-            # Extract payer information
-            payer_info = payment.payer.payer_info if payment.payer else {}
+            # Extract payer information safely
+            payer_info = {}
+            if payment.payer and hasattr(payment.payer, 'payer_info') and payment.payer.payer_info:
+                payer_info = payment.payer.payer_info
             
             # Update payment status
             db_payment.status = models.PayPalPaymentStatus.COMPLETED
             db_payment.paypal_payment_id = payment.id
             db_payment.paypal_payer_id = payer_id
             db_payment.completed_at = datetime.utcnow()
-            db_payment.payer_email = payer_info.get('email')
-            db_payment.payer_name = f"{payer_info.get('first_name', '')} {payer_info.get('last_name', '')}".strip()
-            db_payment.payer_country_code = payer_info.get('country_code')
+            
+            # Safely extract payer details
+            db_payment.payer_email = payer_info.get('email') if isinstance(payer_info, dict) else None
+            if isinstance(payer_info, dict):
+                first_name = payer_info.get('first_name', '')
+                last_name = payer_info.get('last_name', '')
+                db_payment.payer_name = f"{first_name} {last_name}".strip() or None
+                db_payment.payer_country_code = payer_info.get('country_code')
+            else:
+                db_payment.payer_name = None
+                db_payment.payer_country_code = None
             
             self.db.commit()
             
@@ -402,6 +465,18 @@ class PayPalService:
             if not bot:
                 raise Exception(f"Bot {db_payment.bot_id} not found")
             
+            # Get bot's API key from BotRegistration (any registration for this bot)
+            bot_registration = self.db.query(models.BotRegistration).filter(
+                models.BotRegistration.bot_id == db_payment.bot_id
+            ).first()
+            
+            if not bot_registration or not bot_registration.api_key:
+                logger.warning(f"No bot registration or API key found for bot {db_payment.bot_id}")
+                return {"status": "skipped", "reason": "No bot API key found"}
+            
+            bot_api_key = bot_registration.api_key
+            logger.info(f"Using bot API key from registration: {bot_api_key[:8]}...")
+            
             # Prepare Studio API payload
             studio_payload = {
                 "user_principal_id": db_payment.user_principal_id,
@@ -424,23 +499,19 @@ class PayPalService:
             
             # Get Studio API configuration
             studio_api_base = os.getenv('STUDIO_API_BASE', 'http://localhost:3000')
-            studio_api_key = os.getenv('STUDIO_API_KEY', '')
             
-            if not studio_api_key:
-                logger.warning("STUDIO_API_KEY not configured, skipping Studio sync")
-                return {"status": "skipped", "reason": "No Studio API key"}
-            
-            # Call Studio subscription API
+            # Use bot's API key instead of STUDIO_API_KEY
             headers = {
                 'Content-Type': 'application/json',
-                'Authorization': f'Bearer {studio_api_key}',
-                'X-API-Key': studio_api_key  # Some APIs might use this header instead
+                'Authorization': f'Bearer {bot_api_key}',
+                'X-API-Key': bot_api_key  # Use bot's API key
             }
             
-            studio_url = f"{studio_api_base}/api/marketplace/subscription/paypal"
+            studio_url = f"{studio_api_base}/marketplace/subscription"
             
             logger.info(f"Syncing PayPal payment to Studio: {studio_url}")
             logger.debug(f"Studio payload: {studio_payload}")
+            logger.info(f"Using bot API key: {bot_api_key[:8]}...")
             
             response = requests.post(
                 studio_url,
