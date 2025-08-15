@@ -32,7 +32,7 @@ services:
       - TELEGRAM_WEBHOOK_URL=https://76ce1966fefb.ngrok-free.app/webhook
       - DISCORD_BOT_TOKEN=your-dis-token
       - OPENAI_API_KEY=your-api-key
-      - MODE=prod
+      - MODE=dev
     depends_on:
       - db
       - redis
