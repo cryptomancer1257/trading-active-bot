@@ -477,39 +477,43 @@ class PayPalService:
             bot_api_key = bot_registration.api_key
             logger.info(f"Using bot API key from registration: {bot_api_key[:8]}...")
             
-            # Prepare Studio API payload
+            # Prepare Studio API payload (Studio format)
+            from datetime import datetime, timedelta
+            now = datetime.utcnow()
+            end_time = now + timedelta(days=db_payment.duration_days)
+            
             studio_payload = {
                 "user_principal_id": db_payment.user_principal_id,
                 "bot_id": str(db_payment.bot_id),
-                "bot_studio_id": getattr(bot, 'ai_studio_bot_id', None) or str(db_payment.bot_id),
-                "subscription_type": db_payment.pricing_tier,
-                "duration_days": db_payment.duration_days,
+                "instance_name": f"paypal_{db_payment.id}_{int(now.timestamp())}",
+                "email": db_payment.payer_email or "noreply@marketplace.com",
+                "telegram": None,
+                "discord": None,
+                "start_time": db_payment.completed_at.isoformat() if db_payment.completed_at else now.isoformat(),
+                "end_time": end_time.isoformat(),
+                "is_testnet": False,
+                # Additional PayPal info for tracking
                 "payment_method": "PAYPAL",
                 "payment_id": db_payment.id,
                 "paypal_payment_id": db_payment.paypal_payment_id,
                 "paypal_order_id": db_payment.paypal_order_id,
                 "amount_usd": float(db_payment.amount_usd),
                 "amount_icp_equivalent": float(db_payment.amount_icp_equivalent),
-                "exchange_rate": float(db_payment.exchange_rate_usd_to_icp),
-                "payment_completed_at": db_payment.completed_at.isoformat() if db_payment.completed_at else None,
-                "rental_id": db_payment.rental_id,
-                "payer_email": db_payment.payer_email,
                 "payer_name": db_payment.payer_name
             }
             
-            # Get Studio API configuration
-            studio_api_base = os.getenv('STUDIO_API_BASE', 'http://localhost:3000')
+            # Call Studio API like ICP payment does (localhost:8000)
+            studio_api_base = os.getenv('STUDIO_API_BASE', 'http://localhost:8000')
             
             # Use bot's API key instead of STUDIO_API_KEY
             headers = {
                 'Content-Type': 'application/json',
-                'Authorization': f'Bearer {bot_api_key}',
                 'X-API-Key': bot_api_key  # Use bot's API key
             }
             
-            studio_url = f"{studio_api_base}/marketplace/subscription"
+            studio_url = f"{studio_api_base}/marketplace/subscription/paypal"
             
-            logger.info(f"Syncing PayPal payment to Studio: {studio_url}")
+            logger.info(f"Calling Studio API to create subscription: {studio_url}")
             logger.debug(f"Studio payload: {studio_payload}")
             logger.info(f"Using bot API key: {bot_api_key[:8]}...")
             

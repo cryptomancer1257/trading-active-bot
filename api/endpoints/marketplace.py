@@ -981,10 +981,12 @@ async def create_subscription_from_paypal(
             "bot_id": bot.id,
             "status": models.SubscriptionStatus.ACTIVE,
             "pricing_plan_id": None,  # PayPal doesn't use pricing plans
-            "starts_at": now,
+            "started_at": now,
             "expires_at": expires_at,
-            "created_at": now,
-            "updated_at": now
+            "is_marketplace_subscription": True,
+            "trading_pair": "BTCUSDT",
+            "timeframes": ["1h"],
+            "instance_name": f"paypal_{payment_id}_{int(now.timestamp())}"
         }
         
         subscription = models.Subscription(**subscription_data)
