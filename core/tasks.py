@@ -910,7 +910,7 @@ def run_bot_logic(self, subscription_id: int):
                     
                     # Send combined notification with trade result
                     # Get email for notification (studio user or marketplace user)
-                    user_email = subscription.user.email if subscription.user_id else subscription.marketplace_user_email
+                    user_email = subscription.user.email if subscription.user_id else None
                     body_details = {
                             'trading_pair': trading_pair,
                             'current_price': current_price,

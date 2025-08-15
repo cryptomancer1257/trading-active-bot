@@ -478,11 +478,6 @@ class MarketplaceSubscriptionCreateV2(BaseModel):
     bot_id: int = Field(..., description="ID of bot to subscribe to")
     instance_name: str = Field(..., description="User's custom name for this bot instance")
     
-    # Marketplace user contact info
-    marketplace_user_email: str = Field(..., description="User email from marketplace")
-    marketplace_user_telegram: Optional[str] = Field(None, description="User telegram from marketplace")
-    marketplace_user_discord: Optional[str] = Field(None, description="User discord from marketplace") 
-    
     # Subscription timing - REQUIRED
     subscription_start: datetime = Field(..., description="When subscription starts (UTC) - REQUIRED")
     subscription_end: datetime = Field(..., description="When subscription ends (UTC) - REQUIRED")
@@ -492,18 +487,11 @@ class MarketplaceSubscriptionCreateV2(BaseModel):
     trading_pair: str = "BTCUSDT"
     timeframe: str = "1h"
     is_testnet: bool = True
-    network_type: NetworkType = NetworkType.TESTNET
 
     # Optional configurations with defaults
     strategy_config: Dict[str, Any] = Field(default_factory=dict)
     execution_config: Optional[ExecutionConfig] = None
     risk_config: Optional[RiskConfig] = None
-    
-    @validator('marketplace_user_email')
-    def validate_email(cls, v):
-        if not v or '@' not in v:
-            raise ValueError('Valid email required')
-        return v.lower().strip()
     
     @validator('user_principal_id')
     def validate_principal_id(cls, v):
@@ -519,9 +507,6 @@ class MarketplaceSubscriptionResponse(BaseModel):
     instance_name: str
     status: SubscriptionStatus
     is_marketplace_subscription: bool
-    marketplace_user_email: str
-    marketplace_user_telegram: Optional[str]
-    marketplace_user_discord: Optional[str]
     started_at: datetime
     expires_at: Optional[datetime]
     

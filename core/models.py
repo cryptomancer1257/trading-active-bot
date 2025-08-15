@@ -280,9 +280,6 @@ class Subscription(Base):
     
     # Marketplace subscription fields (for users without studio account)
     is_marketplace_subscription = Column(Boolean, default=False)
-    marketplace_user_email = Column(String(255), nullable=True)
-    marketplace_user_telegram = Column(String(255), nullable=True)
-    marketplace_user_discord = Column(String(255), nullable=True)
     marketplace_subscription_start = Column(DateTime, nullable=True)
     marketplace_subscription_end = Column(DateTime, nullable=True)
     
