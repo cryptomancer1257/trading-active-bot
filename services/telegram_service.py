@@ -46,10 +46,16 @@ class TelegramService:
         logger.info(f"✅ Webhook configured for URL: {self.webhook_url}")
 
     async def run_polling(self):
-        app = ApplicationBuilder().token(self.bot_token).build()
-        self.add_handlers(app)
-        logger.info("🤖 Bot running in polling mode (dev)")
-        await app.run_polling()
+        try:
+            app = ApplicationBuilder().token(self.bot_token).build()
+            self.add_handlers(app)
+            logger.info("🤖 Bot running in polling mode (dev)")
+            await app.initialize() 
+            await app.start()
+            await app.updater.start_polling()
+        except Exception as e:
+            logger.error(f"❌ Error starting bot: {e}")
+            raise
 
     def add_handlers(self, app):
         app.add_handler(MessageHandler(filters.TEXT, self.on_message))
@@ -80,7 +86,7 @@ class TelegramService:
                 chat_id = body["callback_query"]["message"]["chat"]["id"]
                 print(f"🔘 Processing callback query: {data} from chat {chat_id}")
 
-                # Implement your callback query handling logic here
+            # Implement your callback query handling logic here
             message = body.get("message", {})
             chat_id = str(message.get("chat", {}).get("id"))
             user_name = message.get("from", {}).get("username")
