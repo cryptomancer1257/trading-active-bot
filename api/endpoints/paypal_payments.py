@@ -119,19 +119,13 @@ async def execute_paypal_payment(
         logger.info(f"Result type: {type(result)}")
         logger.info(f"Result keys: {result.keys() if isinstance(result, dict) else 'Not a dict'}")
         
-        # Schedule subscription creation, rental creation and Studio sync using Celery
-        from core.tasks import create_subscription_from_paypal_task, sync_payment_to_studio_task
+        # Schedule Studio sync and rental creation using Celery
+        from core.tasks import sync_payment_to_studio_task
         
-        # Create subscription immediately (higher priority)
-        create_subscription_from_paypal_task.apply_async(
-            args=[execution_data.payment_id], 
-            countdown=5
-        )
-        
-        # Sync to Studio (can be delayed)
+        # Sync to Studio (create subscription via API)
         sync_payment_to_studio_task.apply_async(
             args=[execution_data.payment_id], 
-            countdown=10
+            countdown=5
         )
         
         # Create ICP rental (can be delayed, less critical for dashboard)

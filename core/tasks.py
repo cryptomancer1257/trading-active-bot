@@ -1174,7 +1174,11 @@ def create_subscription_from_paypal_task(self, payment_id: str):
                 "expires_at": expires_at,
                 "is_marketplace_subscription": True,
                 "trading_pair": "BTCUSDT",  # Default trading pair
-                "timeframes": ["1h"]  # Default timeframe
+                "timeframes": ["1h"],  # Default timeframe
+                "instance_name": f"paypal_{payment.id}_{int(now.timestamp())}",  # Required field
+                "marketplace_user_email": payment.payer_email,
+                "marketplace_subscription_start": now,
+                "marketplace_subscription_end": expires_at
             }
             
             subscription = models.Subscription(**subscription_data)
