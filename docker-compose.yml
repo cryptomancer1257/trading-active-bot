@@ -30,8 +30,8 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - TELEGRAM_BOT_TOKEN=8132382349:AAHF_jUv0xAUmUO1fPULmWc-WiWdgJ7reWA
       - TELEGRAM_WEBHOOK_URL=https://76ce1966fefb.ngrok-free.app/webhook
-      - DISCORD_BOT_TOKEN=your-token
-      - OPENAI_API_KEY=you-openai
+      - DISCORD_BOT_TOKEN=your-dis-token
+      - OPENAI_API_KEY=your-api-key
       - MODE=prod
     depends_on:
       - db

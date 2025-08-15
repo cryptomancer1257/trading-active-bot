@@ -676,6 +676,10 @@ def get_user_setting_by_telegram_username(db: Session, telegram_username: int) -
     """Get user settings by Telegram ID"""
     return db.query(models.UserSettings).filter(models.UserSettings.social_telegram == telegram_username).first()
 
+def get_user_setting_by_discord_username(db: Session, discord_username: int) -> models.UserSettings:
+    """Get user settings by Discord ID"""
+    return db.query(models.UserSettings).filter(models.UserSettings.social_discord == discord_username).first()
+
 def get_user_settings_by_principal(db: Session, principal_id: str):
     return db.query(models.UserSettings).filter(models.UserSettings.principal_id == principal_id).first()
 
