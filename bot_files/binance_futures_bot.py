@@ -719,8 +719,7 @@ class BinanceFuturesBot(CustomBot):
                 # Boost confidence slightly for futures (more aggressive)
                 confidence = min(confidence * 1.1, 1.0)
                 
-                logger.info(f"LLM Futures Recommendation: {action} (confidence: {confidence*100:.1f}%)")
-                logger.info(f"LLM Reasoning: {reasoning}")
+                logger.info(f"🤖 LLM: {action} ({confidence*100:.1f}%) - {reasoning[:50]}...")
                 
                 return Action(action=action, value=confidence, reason=f"[FUTURES] {reasoning}")
             else:
@@ -955,10 +954,7 @@ class BinanceFuturesBot(CustomBot):
             
             # Log recommendation usage
             if action.recommendation:
-                logger.info(f"🎯 Using LLM recommendation:")
-                logger.info(f"   Entry: ${entry_price:.2f}")
-                logger.info(f"   TP: ${take_profit_target or 'Default'}")
-                logger.info(f"   SL: ${stop_loss_target or 'Default'}")
+                            logger.info(f"🎯 LLM Targets: Entry=${entry_price:.2f}, TP=${take_profit_target or 'Default'}, SL=${stop_loss_target or 'Default'}")
             
             # Place market order
             order = self.futures_client.create_market_order(symbol, action.action, quantity_str)
@@ -1602,8 +1598,7 @@ class BinanceFuturesBot(CustomBot):
                     confidence = 0.0
                     reasoning = f"Invalid LLM action: {action}"
                 
-                logger.info(f"LLM Multi-Timeframe Recommendation: {action} (confidence: {confidence*100:.1f}%)")
-                logger.info(f"LLM Reasoning: {reasoning}")
+                logger.info(f"🤖 LLM Multi-TF: {action} ({confidence*100:.1f}%) - {reasoning[:50]}...")
                 
                 # Store full recommendation details
                 full_recommendation = {
