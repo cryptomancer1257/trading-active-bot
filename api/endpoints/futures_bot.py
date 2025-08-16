@@ -21,7 +21,7 @@ class FuturesBotConfig(BaseModel):
     stop_loss_pct: float = 0.02
     take_profit_pct: float = 0.04
     position_size_pct: float = 0.05
-    timeframes: list = ["5m", "30m", "1h", "4h", "1d"]
+    timeframes: list = ["30m", "1h", "4h"]
     primary_timeframe: str = "1h"
     use_llm_analysis: bool = True
     llm_model: str = "openai"

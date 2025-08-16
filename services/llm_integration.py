@@ -98,9 +98,9 @@ class LLMIntegrationService:
     
     def _get_analysis_prompt(self, timeframes: list = None) -> str:
         """Get the high-quality trading analysis prompt with comprehensive technical analysis"""
-        # Default timeframes if not provided
+        # Default timeframes if not provided - Optimized 3 timeframes
         if not timeframes:
-            timeframes = ["1H", "4H", "1D"]
+            timeframes = ["30M", "1H", "4H"]
         
         # Format timeframes for display (e.g., ['5m', '30m', '1h'] -> "5M, 30M, 1H")
         formatted_timeframes = ", ".join([tf.upper() for tf in timeframes])
@@ -148,55 +148,66 @@ I will provide you OHLCV data for multiple timeframes ({formatted_timeframes}) i
 
 Based on this data, please:
 
-📊 Technical Indicator Analysis (per timeframe):
-Analyze these indicators for each timeframe ({formatted_timeframes}):
+Bạn là một trading engine. Phân tích Market Data (OHLCV) tôi cung cấp để TỰ CHỌN hành động BUY hoặc SELL hoặc HOLD. 
 
-MA20, MA50 (Moving Averages)
-Bollinger Bands (BB)
-RSI(14)
-MACD (12,26,9)
-Stochastic RSI
-Volume trend (rising/falling)
-Fibonacci retracement levels (based on swing high/low in {fib_base_timeframe})
+YÊU CẦU:
+- Chỉ chọn BUY/SELL nếu tìm được điểm vào lệnh đẹp theo các điều kiện bên dưới. Nếu không đủ tín hiệu hoặc volume không xác nhận → trả về HOLD.
+- Output DUY NHẤT là JSON, theo đúng schema dưới đây. Không kèm bất kỳ chữ nào khác ngoài JSON.
+- Giá entry/take profit/stop loss làm tròn 1 chữ số thập phân.
 
-📈 Fibonacci Analysis:
-From the OHLCV data, calculate and analyze:
+QUY TẮC PHÂN TÍCH:
+1) MA (Moving Average):
+   - BUY: MA5 > MA10 > MA20 → xu hướng tăng.
+   - SELL: MA5 < MA10 < MA20 → xu hướng giảm.
 
-1. **Swing High/Low Detection**: 
-   - Find the highest high and lowest low in the data
-   - Determine trend direction (uptrend: low->high, downtrend: high->low)
+2) MACD:
+   - BUY: MACD cắt lên Signal và hướng lên.
+   - SELL: MACD cắt xuống Signal và hướng xuống.
 
-2. **Fibonacci Retracement Levels**:
-   - Calculate: 0%, 23.6%, 38.2%, 50%, 61.8%, 78.6%, 100%
-   - Formula: Level = Start + (Range × Fibonacci Ratio)
-   - For uptrend: Start = Swing Low, Range = Swing High - Swing Low
-   - For downtrend: Start = Swing High, Range = Swing High - Swing Low
+3) RSI(14):
+   - BUY: RSI trong vùng 45–70, không quá mua (>70).
+   - SELL: RSI trong vùng 30–55, không quá bán (<30).
 
-3. **Current Price Analysis**:
-   - Where is current price relative to Fibonacci levels?
-   - Nearest support/resistance levels
-   - Golden ratio (61.8%) significance
+4) Bollinger Bands:
+   - BUY: Giá bật lên từ Lower BB hoặc breakout qua MA20 kèm volume mạnh.
+   - SELL: Giá bật xuống từ Upper BB hoặc breakdown dưới MA20 kèm volume mạnh.
 
-📈 Based on your analysis, provide ONLY a strategic recommendation in this exact JSON format:
+5) Fibonacci Retracement:
+   - Entry ưu tiên tại vùng 0.382–0.618 (hỗ trợ/kháng cự).
+   - Nếu không khớp vùng Fibonacci → bỏ qua.
 
+6) Volume (bắt buộc):
+   - BUY: breakout lên đi kèm volume > trung bình 20 nến trước.
+   - SELL: breakdown xuống đi kèm volume > trung bình 20 nến trước.
+   - Nếu tín hiệu giá có nhưng volume yếu → trả về HOLD.
+
+7) Stop-loss & Take-profit:
+   - SL đặt tại swing gần nhất hoặc ngoài dải BB.
+   - TP đặt tại kháng cự/hỗ trợ kế tiếp hoặc đảm bảo R:R ≥ 1.5.
+
+8) Confidence:
+   - Dựa trên số lượng chỉ báo đồng thuận + xác nhận volume.
+   - Nếu < 55 → HOLD.
+
+SCHEMA JSON:
 {{
   "recommendation": {{
-    "action": "BUY/SELL/HOLD/CLOSE",
-    "entry_price": "specific_price_number",
-    "take_profit": "fibonacci_based_target_number", 
-    "stop_loss": "fibonacci_based_stop_number",
-    "strategy": "brief_strategy_name",
-    "risk_reward": "ratio_number",
-    "confidence": "percentage_number_0_to_100",
-    "reasoning": "concise_reasoning_max_100_words"
+    "action": "BUY" | "SELL" | "HOLD",
+    "entry_price": "<string or null>",
+    "take_profit": "<string or null>",
+    "stop_loss": "<string or null>",
+    "strategy": "<MA, MACD, RSI, BollingerBands, Fibonacci_Retracement hoặc kết hợp>",
+    "risk_reward": "<string hoặc null>",
+    "confidence": "<0-100>",
+    "reasoning": "<ngắn gọn 1-2 câu giải thích tại sao>"
   }}
 }}
 
-IMPORTANT: 
-- Return ONLY the JSON recommendation object above
-- Do NOT include detailed analysis data
-- Keep reasoning under 100 words
-- Use numeric values for prices (no currency symbols)"""
+ĐẦU RA:
+- Nếu HOLD: entry_price, take_profit, stop_loss, risk_reward = null.
+- Chỉ output JSON hợp lệ theo schema trên, không có text ngoài JSON.
+
+DỮ LIỆU:"""
     
     def _get_capital_management_prompt(self) -> str:
         """Get the capital management prompt template for position sizing advice"""
@@ -304,7 +315,7 @@ Please respond in JSON format:
                 self.openai_client.chat.completions.create,
                 model=self.openai_model,
                 messages=[
-                    {"role": "system", "content": f"You are a professional crypto futures trading analyst with expertise in Fibonacci retracement analysis. Analyze data for timeframes: {', '.join(timeframes)}."},
+                    {"role": "system", "content": f"You are a professional trading engine. Analyze OHLCV data for timeframes: {', '.join(timeframes)}. Focus on volume confirmation and quality entry points. Return ONLY valid JSON."},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.2,
