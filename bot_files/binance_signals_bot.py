@@ -975,25 +975,20 @@ DATA SOURCE: Binance Public API (Real-time market data, no user credentials requ
                 model=self.llm_model
             )
             
-            # Extract analysis from LLM response
+            # Extract ONLY recommendation from LLM response
             if isinstance(llm_response, dict):
                 if 'error' in llm_response:
                     return f"LLM analysis error: {llm_response['error']}"
-                elif 'analysis' in llm_response:
-                    return llm_response['analysis']
                 elif 'recommendation' in llm_response:
-                    return llm_response['recommendation']
+                    # Return only the recommendation part, formatted concisely
+                    rec = llm_response['recommendation']
+                    return f"Action: {rec.get('action', 'HOLD')} | Confidence: {rec.get('confidence', 'N/A')}% | Reasoning: {rec.get('reasoning', 'N/A')[:100]}..."
                 else:
-                    # If LLM returns structured data, format it as text
-                    formatted_response = "LLM MARKET ANALYSIS:\n\n"
-                    for key, value in llm_response.items():
-                        if key != 'metadata':
-                            formatted_response += f"{key.upper().replace('_', ' ')}: {value}\n"
-                    return formatted_response
+                    return "LLM recommendation not found in response"
             elif isinstance(llm_response, str):
-                return llm_response
+                return llm_response[:200] + "..." if len(llm_response) > 200 else llm_response
             else:
-                return f"LLM Analysis completed: {str(llm_response)}"
+                return "LLM Analysis completed"
                 
         except Exception as e:
             logger.error(f"❌ LLM analysis error: {e}")

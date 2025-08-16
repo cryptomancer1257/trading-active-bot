@@ -177,31 +177,26 @@ From the OHLCV data, calculate and analyze:
    - Nearest support/resistance levels
    - Golden ratio (61.8%) significance
 
-📈 Then provide a strategic recommendation:
-Action: BUY / SELL / HOLD / CLOSE (for futures)
-Entry price
-Take profit price (use Fibonacci levels)
-Stop loss price (use Fibonacci levels)
-Strategy used (e.g., trend-following, breakout, mean reversion, Fibonacci retracement)
-Risk/Reward ratio
-Confidence score (0–100%)
+📈 Based on your analysis, provide ONLY a strategic recommendation in this exact JSON format:
 
-Please respond in JSON format:
 {{
-  "analysis": {{
-{analysis_section}
-  }},
   "recommendation": {{
     "action": "BUY/SELL/HOLD/CLOSE",
-    "entry_price": "specific_price",
-    "take_profit": "fibonacci_based_target", 
-    "stop_loss": "fibonacci_based_stop",
-    "strategy": "detailed_strategy_explanation",
-    "risk_reward": "ratio_calculation",
-    "confidence": "percentage_0_to_100",
-    "reasoning": "detailed_analysis_reasoning"
+    "entry_price": "specific_price_number",
+    "take_profit": "fibonacci_based_target_number", 
+    "stop_loss": "fibonacci_based_stop_number",
+    "strategy": "brief_strategy_name",
+    "risk_reward": "ratio_number",
+    "confidence": "percentage_number_0_to_100",
+    "reasoning": "concise_reasoning_max_100_words"
   }}
-}}"""
+}}
+
+IMPORTANT: 
+- Return ONLY the JSON recommendation object above
+- Do NOT include detailed analysis data
+- Keep reasoning under 100 words
+- Use numeric values for prices (no currency symbols)"""
     
     def _get_capital_management_prompt(self) -> str:
         """Get the capital management prompt template for position sizing advice"""
