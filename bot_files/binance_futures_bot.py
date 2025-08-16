@@ -302,6 +302,71 @@ class BinanceFuturesIntegration:
             logger.error(f"Failed to create take profit order: {e}")
             raise
     
+    def create_oco_order(self, symbol: str, side: str, quantity: str, 
+                        stop_price: str, take_profit_price: str, 
+                        reduce_only: bool = True) -> Dict[str, Any]:
+        """Create OCO (One-Cancels-Other) order with STOP_MARKET and TAKE_PROFIT_MARKET"""
+        try:
+            # For futures, we need to place separate orders since OCO is not directly supported
+            # We'll create both orders and track them together
+            
+            # Create stop loss order
+            stop_params = {
+                'symbol': symbol,
+                'side': side,
+                'type': 'STOP_MARKET',
+                'quantity': quantity,
+                'stopPrice': stop_price,
+                'timeInForce': 'GTC'
+            }
+            
+            if reduce_only:
+                stop_params['reduceOnly'] = 'true'
+            
+            stop_response = self._make_request("POST", "/fapi/v1/order", stop_params, signed=True)
+            
+            # Create take profit order
+            tp_params = {
+                'symbol': symbol,
+                'side': side,
+                'type': 'TAKE_PROFIT_MARKET',
+                'quantity': quantity,
+                'stopPrice': take_profit_price,
+                'timeInForce': 'GTC'
+            }
+            
+            if reduce_only:
+                tp_params['reduceOnly'] = 'true'
+            
+            tp_response = self._make_request("POST", "/fapi/v1/order", tp_params, signed=True)
+            
+            logger.info(f"🔗 OCO Orders created: SL={stop_response['orderId']}, TP={tp_response['orderId']}")
+            
+            return {
+                'stop_loss_order': {
+                    'order_id': stop_response['orderId'],
+                    'symbol': stop_response['symbol'],
+                    'side': stop_response['side'],
+                    'type': stop_response['type'],
+                    'quantity': stop_response['origQty'],
+                    'stop_price': stop_response['stopPrice'],
+                    'status': stop_response['status']
+                },
+                'take_profit_order': {
+                    'order_id': tp_response['orderId'],
+                    'symbol': tp_response['symbol'],
+                    'side': tp_response['side'],
+                    'type': tp_response['type'],
+                    'quantity': tp_response['origQty'],
+                    'stop_price': tp_response['stopPrice'],
+                    'status': tp_response['status']
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to create OCO order: {e}")
+            raise
+    
     def get_klines(self, symbol: str, interval: str, limit: int = 100) -> pd.DataFrame:
         """Get futures kline data"""
         try:
@@ -666,11 +731,11 @@ class BinanceFuturesBot(CustomBot):
             logger.error(f"Error in LLM futures signal generation: {e}")
             return Action(action="HOLD", value=0.0, reason=f"LLM futures signal error: {e}")
 
-    def _generate_futures_signal(self, analysis: Dict[str, Any], data: pd.DataFrame) -> Action:
+    def _generate_futures_signal(self, analysis: Dict[str, Any], data: pd.DataFrame, allow_llm: bool = True) -> Action:
         """Generate futures trading signal (uses LLM if available, falls back to technical analysis)"""
         try:
             # If LLM is enabled and we have historical data, use LLM analysis
-            if self.use_llm_analysis and self.llm_service and 'historical_data' in analysis:
+            if allow_llm and self.use_llm_analysis and self.llm_service and 'historical_data' in analysis:
                 logger.info("Generating futures signal using LLM analysis...")
                 
                 try:
@@ -695,7 +760,7 @@ class BinanceFuturesBot(CustomBot):
                     with concurrent.futures.ThreadPoolExecutor() as executor:
                         future = executor.submit(run_llm_signal)
                         try:
-                            llm_action = future.result(timeout=30)  # 30 second timeout
+                            llm_action = future.result(timeout=300)  # 60 second timeout for LLM
                             if llm_action:
                                 return llm_action
                         except concurrent.futures.TimeoutError:
@@ -937,17 +1002,14 @@ class BinanceFuturesBot(CustomBot):
                 sl_side = "BUY"
                 tp_side = "BUY"
             
-            # Validate and place stop loss order with safety checks
+            # 🔗 Place OCO order (One-Cancels-Other) with STOP_MARKET and TAKE_PROFIT_MARKET
             try:
                 # Get current market price for validation
                 current_ticker = self.futures_client.get_ticker(symbol)
                 current_market_price = float(current_ticker['price'])
                 
-                # Validate stop loss price to prevent "Order would immediately trigger" error
+                # Validate and adjust stop loss price
                 min_distance = current_market_price * 0.001  # 0.1% minimum distance
-                
-                # Validate stop loss direction and distance
-                is_valid_stop = False
                 adjusted_stop_price = stop_loss_price
                 
                 if action.action == "BUY":  # Long position
@@ -961,8 +1023,6 @@ class BinanceFuturesBot(CustomBot):
                         adjusted_stop_price = current_market_price - min_distance
                         logger.warning(f"⚠️ Stop loss distance adjusted for safety: {adjusted_stop_price:.2f}")
                     
-                    is_valid_stop = adjusted_stop_price < current_market_price
-                    
                 else:  # SELL - Short position  
                     # Stop loss should be ABOVE current market price
                     if stop_loss_price <= current_market_price:
@@ -973,33 +1033,8 @@ class BinanceFuturesBot(CustomBot):
                     if adjusted_stop_price - current_market_price < min_distance:
                         adjusted_stop_price = current_market_price + min_distance
                         logger.warning(f"⚠️ Stop loss distance adjusted for safety: {adjusted_stop_price:.2f}")
-                    
-                    is_valid_stop = adjusted_stop_price > current_market_price
                 
-                if is_valid_stop:
-                    sl_order = self.futures_client.create_stop_loss_order(
-                        symbol, sl_side, quantity_str, f"{adjusted_stop_price:.2f}"
-                    )
-                    logger.info(f"🛡️ Stop loss placed: {sl_order.order_id} @ ${adjusted_stop_price:.2f} (Market: ${current_market_price:.2f})")
-                else:
-                    logger.error(f"❌ Invalid stop loss price calculation: {adjusted_stop_price:.2f} vs Market: {current_market_price:.2f}")
-                    sl_order = None
-                    
-            except Exception as e:
-                logger.error(f"Failed to place stop loss: {e}")
-                if "would immediately trigger" in str(e).lower():
-                    logger.error("💡 Tip: Stop loss price too close to market price. Consider wider stop loss percentage.")
-                sl_order = None
-            
-            # Validate and place take profit order with safety checks
-            try:
-                # Use the same current market price from stop loss validation
-                if 'current_market_price' not in locals():
-                    current_ticker = self.futures_client.get_ticker(symbol)
-                    current_market_price = float(current_ticker['price'])
-                
-                # Validate take profit price direction
-                is_valid_tp = False
+                # Validate and adjust take profit price
                 adjusted_tp_price = take_profit_price
                 min_tp_distance = current_market_price * 0.002  # 0.2% minimum for TP
                 
@@ -1014,8 +1049,6 @@ class BinanceFuturesBot(CustomBot):
                         adjusted_tp_price = current_market_price + min_tp_distance
                         logger.warning(f"⚠️ Take profit distance adjusted: {adjusted_tp_price:.2f}")
                     
-                    is_valid_tp = adjusted_tp_price > current_market_price
-                    
                 else:  # SELL - Short position
                     # Take profit should be BELOW current market price
                     if take_profit_price >= current_market_price:
@@ -1026,22 +1059,29 @@ class BinanceFuturesBot(CustomBot):
                     if current_market_price - adjusted_tp_price < min_tp_distance:
                         adjusted_tp_price = current_market_price - min_tp_distance
                         logger.warning(f"⚠️ Take profit distance adjusted: {adjusted_tp_price:.2f}")
-                    
-                    is_valid_tp = adjusted_tp_price < current_market_price
                 
-                if is_valid_tp:
-                    tp_order = self.futures_client.create_take_profit_order(
-                        symbol, tp_side, quantity_str, f"{adjusted_tp_price:.2f}"
-                    )
-                    logger.info(f"🎯 Take profit placed: {tp_order.order_id} @ ${adjusted_tp_price:.2f} (Market: ${current_market_price:.2f})")
-                else:
-                    logger.error(f"❌ Invalid take profit price: {adjusted_tp_price:.2f} vs Market: {current_market_price:.2f}")
-                    tp_order = None
-                    
+                # Create OCO order with reduceOnly=true
+                oco_orders = self.futures_client.create_oco_order(
+                    symbol=symbol,
+                    side=sl_side,  # Same side for both SL and TP (opposite of entry)
+                    quantity=quantity_str,
+                    stop_price=f"{adjusted_stop_price:.2f}",
+                    take_profit_price=f"{adjusted_tp_price:.2f}",
+                    reduce_only=True
+                )
+                
+                sl_order = oco_orders['stop_loss_order']
+                tp_order = oco_orders['take_profit_order']
+                
+                logger.info(f"🔗 OCO Orders placed successfully:")
+                logger.info(f"🛡️ Stop Loss: {sl_order.get('order_id', 'N/A')} @ ${adjusted_stop_price:.2f} (Market: ${current_market_price:.2f})")
+                logger.info(f"🎯 Take Profit: {tp_order.get('order_id', 'N/A')} @ ${adjusted_tp_price:.2f} (Market: ${current_market_price:.2f})")
+                
             except Exception as e:
-                logger.error(f"Failed to place take profit: {e}")
+                logger.error(f"Failed to place OCO orders: {e}")
                 if "would immediately trigger" in str(e).lower():
-                    logger.error("💡 Tip: Take profit price too close to market price. Consider wider take profit percentage.")
+                    logger.error("💡 Tip: Order prices too close to market price. Consider wider stop/profit percentages.")
+                sl_order = None
                 tp_order = None
             
             result = {
@@ -1055,12 +1095,12 @@ class BinanceFuturesBot(CustomBot):
                 'main_order_id': order.order_id,
                 'stop_loss': {
                     'price': stop_loss_price,
-                    'order_id': sl_order.order_id if sl_order else None,
+                    'order_id': sl_order.get('order_id') if sl_order else None,
                     'source': 'recommendation' if stop_loss_target else 'percentage'
                 },
                 'take_profit': {
                     'price': take_profit_price,
-                    'order_id': tp_order.order_id if tp_order else None,
+                    'order_id': tp_order.get('order_id') if tp_order else None,
                     'source': 'recommendation' if take_profit_target else 'percentage'
                 },
                 'confidence': action.value,
@@ -1393,7 +1433,7 @@ class BinanceFuturesBot(CustomBot):
                     with concurrent.futures.ThreadPoolExecutor() as executor:
                         future = executor.submit(run_llm_signal)
                         try:
-                            llm_action = future.result(timeout=30)  # 30 second timeout
+                            llm_action = future.result(timeout=60)  # 60 second timeout for LLM
                             if llm_action:
                                 return llm_action
                         except concurrent.futures.TimeoutError:
@@ -1418,7 +1458,7 @@ class BinanceFuturesBot(CustomBot):
             
             # Start with primary timeframe signal
             primary_df = pd.DataFrame({'close': [primary_analysis.get('current_price', 50000)], 'volume': [100]})
-            primary_signal = self._generate_futures_signal(primary_analysis, primary_df)
+            primary_signal = self._generate_futures_signal(primary_analysis, primary_df, allow_llm=False)
             
             # Analyze other timeframes for confirmation
             confirmations = 0
@@ -1430,7 +1470,7 @@ class BinanceFuturesBot(CustomBot):
                     
                 total_timeframes += 1
                 tf_df = pd.DataFrame({'close': [tf_analysis.get('current_price', 50000)], 'volume': [100]})
-                tf_signal = self._generate_futures_signal(tf_analysis, tf_df)
+                tf_signal = self._generate_futures_signal(tf_analysis, tf_df, allow_llm=False)
                 
                 # Check if signals align
                 if tf_signal.action == primary_signal.action:
@@ -1547,8 +1587,8 @@ class BinanceFuturesBot(CustomBot):
                 
                 # Extract additional recommendation details
                 entry_price = recommendation.get("entry_price", "Market")
-                take_profit = recommendation.get("take_profit", recommendation.get("take_profit_price", "N/A"))
-                stop_loss = recommendation.get("stop_loss", recommendation.get("stop_loss_price", "N/A"))
+                take_profit = recommendation.get("take_profit", "N/A")
+                stop_loss = recommendation.get("stop_loss", "N/A")
                 strategy = recommendation.get("strategy", "Multi-timeframe analysis")
                 risk_reward = recommendation.get("risk_reward", "N/A")
                 

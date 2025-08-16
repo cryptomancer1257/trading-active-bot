@@ -103,5 +103,68 @@
     "order_id": 5546080931,
     "confidence": 0.75,
     "reason": "[LLM-MULTI-TF] The price is in an uptrend across multiple timeframes, with the current price positioned between the 50% and 61.8% Fibonacci retracement levels, indicating potential for further upward movement. The MACD and RSI support a bullish outlook, and the volume trend is stable, suggesting consistent market interest."
+  },
+  {
+    "timestamp": "2025-08-16T06:24:26.278087",
+    "action": "BUY",
+    "symbol": "BTCUSDT",
+    "quantity": "0.014",
+    "entry_price": 117000.0,
+    "leverage": 5,
+    "stop_loss": {
+      "price": 116000.0,
+      "order_id": 5588203274,
+      "source": "recommendation"
+    },
+    "take_profit": {
+      "price": 120000.0,
+      "order_id": 5588203285,
+      "source": "recommendation"
+    },
+    "order_id": 5588203243,
+    "confidence": 0.75,
+    "reason": "[LLM-MULTI-TF] The price is near the 61.8% Fibonacci retracement level, which is a strong support level. The RSI and Stochastic RSI indicate oversold conditions across multiple timeframes, suggesting a potential reversal. The risk/reward ratio is favorable, and the confidence score reflects the potential for a bounce from current levels."
+  },
+  {
+    "timestamp": "2025-08-16T06:33:55.132888",
+    "action": "SELL",
+    "symbol": "BTCUSDT",
+    "quantity": "0.014",
+    "entry_price": 117200.0,
+    "leverage": 5,
+    "stop_loss": {
+      "price": 117538.1,
+      "order_id": 5588236497,
+      "source": "recommendation"
+    },
+    "take_profit": {
+      "price": 116300.0,
+      "order_id": 5588236513,
+      "source": "recommendation"
+    },
+    "order_id": 5588236479,
+    "confidence": 0.85,
+    "reason": "[LLM-MULTI-TF] The analysis across multiple timeframes indicates a consistent downtrend with oversold conditions on higher timeframes. The price is below key moving averages and near lower Bollinger Bands, suggesting further downside potential. The Fibonacci levels provide clear targets for take profit and stop loss."
+  },
+  {
+    "timestamp": "2025-08-16T06:45:42.036227",
+    "action": "SELL",
+    "symbol": "BTCUSDT",
+    "quantity": "0.014",
+    "entry_price": 117500.0,
+    "leverage": 5,
+    "stop_loss": {
+      "price": 118000.0,
+      "order_id": 5588262833,
+      "source": "recommendation"
+    },
+    "take_profit": {
+      "price": 116300.0,
+      "order_id": 5588262838,
+      "source": "recommendation"
+    },
+    "order_id": 5588262815,
+    "confidence": 0.75,
+    "reason": "[LLM-MULTI-TF] The analysis across multiple timeframes shows overbought conditions with the price near significant Fibonacci resistance levels. The RSI and Stochastic RSI indicate overbought conditions, suggesting a potential pullback. The MACD shows bullish momentum, but the proximity to resistance levels and overbought indicators suggest caution."
   }
 ]

@@ -284,6 +284,8 @@ def execute_trade_action(db, subscription, exchange, action, current_price):
             
         except Exception as e:
             logger.warning(f"Could not get balance info: {e}")
+            base_asset = trading_pair.split('/')[0] if '/' in trading_pair else 'BTC'
+            quote_asset = trading_pair.split('/')[1] if '/' in trading_pair else 'USDT'
             base_total = 0
             quote_total = 0
             portfolio_value = 0
@@ -379,13 +381,27 @@ def execute_trade_action(db, subscription, exchange, action, current_price):
                 )
                 sell_quantity = float(quantity_str)
             
-            # Check if we have enough base currency
-            if sell_quantity > base_total:
-                logger.warning(f"Insufficient {base_asset} balance for sell order")
-                return {
-                    'success': False,
-                    'error': f"Insufficient {base_asset} balance"
-                }
+            # 🎯 FUTURES vs SPOT: Different balance requirements
+            is_futures = hasattr(subscription.bot, 'bot_type') and subscription.bot.bot_type and subscription.bot.bot_type.upper() == 'FUTURES'
+            
+            if is_futures:
+                # FUTURES: For SELL (SHORT), only need USDT margin, not base currency
+                required_margin = sell_quantity * current_price * 0.1  # Assume 10x leverage
+                if required_margin > quote_total:
+                    logger.warning(f"Insufficient {quote_asset} margin for futures SELL order (need ${required_margin:.2f}, have ${quote_total:.2f})")
+                    return {
+                        'success': False,
+                        'error': f"Insufficient {quote_asset} margin for futures SELL"
+                    }
+                logger.info(f"✅ Futures SELL: Using ${required_margin:.2f} USDT margin to SHORT {sell_quantity} {base_asset}")
+            else:
+                # SPOT: Need actual base currency to sell
+                if sell_quantity > base_total:
+                    logger.warning(f"Insufficient {base_asset} balance for spot sell order")
+                    return {
+                        'success': False,
+                        'error': f"Insufficient {base_asset} balance"
+                    }
             
             # Place sell order
             try:
@@ -436,8 +452,30 @@ def execute_trade_action(db, subscription, exchange, action, current_price):
 @app.task(bind=True, autoretry_for=(Exception,), retry_kwargs={'max_retries': 3, 'countdown': 60})
 def run_bot_logic(self, subscription_id: int):
     """
-    Main task to run bot logic
+    Main task to run bot logic with duplicate execution prevention
     """
+    # 🔒 LOCK: Prevent duplicate execution by multiple workers
+    lock_key = f"bot_execution_lock_{subscription_id}"
+    redis_client = None
+    
+    try:
+        # Try to acquire Redis lock
+        from redis import Redis
+        redis_client = Redis(host='localhost', port=6379, db=0, decode_responses=True)
+        
+        # Set lock with 5-minute expiration (longer than typical bot execution)
+        lock_acquired = redis_client.set(lock_key, "locked", nx=True, ex=300)
+        
+        if not lock_acquired:
+            logger.info(f"🔒 Bot execution for subscription {subscription_id} already in progress by another worker, skipping")
+            return {"status": "skipped", "reason": "duplicate_execution_prevented"}
+            
+        logger.info(f"🔓 Acquired execution lock for subscription {subscription_id}")
+        
+    except Exception as e:
+        logger.warning(f"Failed to acquire Redis lock, proceeding without lock: {e}")
+        redis_client = None  # Disable lock cleanup if Redis unavailable
+    
     try:
         # Import here to avoid circular imports
         from core import models
@@ -718,6 +756,15 @@ def run_bot_logic(self, subscription_id: int):
             db.close()
         except:
             pass
+    
+    finally:
+        # 🔓 CLEANUP: Release Redis lock
+        try:
+            if redis_client:
+                redis_client.delete(lock_key)
+                logger.info(f"🔓 Released execution lock for subscription {subscription_id}")
+        except Exception as e:
+            logger.warning(f"Failed to release Redis lock: {e}")
 
 @app.task
 def schedule_active_bots():
