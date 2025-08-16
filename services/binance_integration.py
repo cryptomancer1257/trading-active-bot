@@ -193,17 +193,33 @@ class BinanceIntegration:
         """Get balance for specific asset"""
         try:
             account_info = self.get_account_info()
-            for balance in account_info['balances']:
-                if balance['asset'] == asset:
+            
+            # Check if balances exist and is a list
+            if 'balances' not in account_info:
+                logger.warning(f"No 'balances' key in account info for {asset}")
+                return BalanceInfo(asset=asset, free="0", locked="0")
+                
+            balances = account_info['balances']
+            if not isinstance(balances, list) or len(balances) == 0:
+                logger.warning(f"Empty or invalid balances list for {asset}")
+                return BalanceInfo(asset=asset, free="0", locked="0")
+            
+            for balance in balances:
+                if balance.get('asset') == asset:
                     return BalanceInfo(
                         asset=balance['asset'],
-                        free=balance['free'],
-                        locked=balance['locked']
+                        free=balance.get('free', '0'),
+                        locked=balance.get('locked', '0')
                     )
-            raise Exception(f"Asset {asset} not found in account")
+            
+            # Asset not found - return zero balance instead of error
+            logger.info(f"Asset {asset} not found in account, returning zero balance")
+            return BalanceInfo(asset=asset, free="0", locked="0")
+            
         except Exception as e:
             logger.error(f"Failed to get balance for {asset}: {e}")
-            raise
+            # Return zero balance instead of raising exception
+            return BalanceInfo(asset=asset, free="0", locked="0")
     
     def get_current_price(self, symbol: str) -> float:
         """Get current price for symbol"""
