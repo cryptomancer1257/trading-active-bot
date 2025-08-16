@@ -302,20 +302,67 @@ class BinanceFuturesIntegration:
             logger.error(f"Failed to create take profit order: {e}")
             raise
     
-    def create_oco_order(self, symbol: str, side: str, quantity: str, 
-                        stop_price: str, take_profit_price: str, 
-                        reduce_only: bool = True) -> Dict[str, Any]:
-        """Create OCO (One-Cancels-Other) order with STOP_MARKET and TAKE_PROFIT_MARKET"""
+    def get_open_orders(self, symbol: str) -> List[Dict[str, Any]]:
+        """Get all open orders for a symbol"""
         try:
-            # For futures, we need to place separate orders since OCO is not directly supported
-            # We'll create both orders and track them together
+            params = {'symbol': symbol}
+            response = self._make_request("GET", "/fapi/v1/openOrders", params, signed=True)
+            return response
+        except Exception as e:
+            logger.error(f"Failed to get open orders: {e}")
+            return []
+    
+    def cancel_order(self, symbol: str, order_id: int) -> bool:
+        """Cancel a specific order"""
+        try:
+            params = {
+                'symbol': symbol,
+                'orderId': order_id
+            }
+            self._make_request("DELETE", "/fapi/v1/order", params, signed=True)
+            logger.info(f"❌ Cancelled order: {order_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to cancel order {order_id}: {e}")
+            return False
+    
+    def create_managed_orders(self, symbol: str, side: str, quantity: str, 
+                            stop_price: str, take_profit_price: str, 
+                            reduce_only: bool = True) -> Dict[str, Any]:
+        """Create orders with proper management - check existing orders first"""
+        try:
+            # 🔍 STEP 1: Check existing orders
+            existing_orders = self.get_open_orders(symbol)
             
-            # Create stop loss order
+            # Filter existing SL and TP orders for this symbol
+            existing_sl = [o for o in existing_orders if o['type'] == 'STOP_MARKET' and o['side'] == side]
+            existing_tp = [o for o in existing_orders if o['type'] == 'TAKE_PROFIT_MARKET' and o['side'] == side]
+            
+            logger.info(f"📊 Existing orders: {len(existing_sl)} SL, {len(existing_tp)} TP")
+            
+            # 🧹 STEP 2: Cancel excessive orders (keep max 1 SL + 2 TP)
+            if len(existing_sl) > 0:
+                logger.info("⚠️ Stop Loss orders already exist, cancelling old ones...")
+                for order in existing_sl:
+                    self.cancel_order(symbol, int(order['orderId']))
+            
+            if len(existing_tp) > 1:
+                logger.info("⚠️ Too many Take Profit orders, cancelling old ones...")
+                for order in existing_tp:
+                    self.cancel_order(symbol, int(order['orderId']))
+            
+            # 🆕 STEP 3: Create new managed orders
+            # Split quantity for partial TP strategy
+            total_qty = float(quantity)
+            partial_qty = total_qty * 0.5  # 50% for first TP (recover capital)
+            remaining_qty = total_qty * 0.5  # 50% for second TP (profit)
+            
+            # Create stop loss order (full quantity)
             stop_params = {
                 'symbol': symbol,
                 'side': side,
                 'type': 'STOP_MARKET',
-                'quantity': quantity,
+                'quantity': f"{total_qty:.5f}",
                 'stopPrice': stop_price,
                 'timeInForce': 'GTC'
             }
@@ -325,46 +372,67 @@ class BinanceFuturesIntegration:
             
             stop_response = self._make_request("POST", "/fapi/v1/order", stop_params, signed=True)
             
-            # Create take profit order
-            tp_params = {
+            # Create first take profit order (partial - recover capital)
+            tp1_price = float(take_profit_price)
+            tp1_params = {
                 'symbol': symbol,
                 'side': side,
                 'type': 'TAKE_PROFIT_MARKET',
-                'quantity': quantity,
-                'stopPrice': take_profit_price,
+                'quantity': f"{partial_qty:.5f}",
+                'stopPrice': f"{tp1_price:.2f}",
                 'timeInForce': 'GTC'
             }
             
             if reduce_only:
-                tp_params['reduceOnly'] = 'true'
+                tp1_params['reduceOnly'] = 'true'
             
-            tp_response = self._make_request("POST", "/fapi/v1/order", tp_params, signed=True)
+            tp1_response = self._make_request("POST", "/fapi/v1/order", tp1_params, signed=True)
             
-            logger.info(f"🔗 OCO Orders created: SL={stop_response['orderId']}, TP={tp_response['orderId']}")
+            # Create second take profit order (remaining - profit taking)
+            tp2_price = tp1_price * 1.02  # 2% higher for profit taking
+            tp2_params = {
+                'symbol': symbol,
+                'side': side,
+                'type': 'TAKE_PROFIT_MARKET',
+                'quantity': f"{remaining_qty:.5f}",
+                'stopPrice': f"{tp2_price:.2f}",
+                'timeInForce': 'GTC'
+            }
+            
+            if reduce_only:
+                tp2_params['reduceOnly'] = 'true'
+            
+            tp2_response = self._make_request("POST", "/fapi/v1/order", tp2_params, signed=True)
+            
+            logger.info(f"✅ Managed Orders Created:")
+            logger.info(f"🛡️ Stop Loss: {stop_response['orderId']} (Full: {total_qty:.5f})")
+            logger.info(f"🎯 Take Profit 1: {tp1_response['orderId']} (Partial: {partial_qty:.5f} @ ${tp1_price:.2f})")
+            logger.info(f"🎯 Take Profit 2: {tp2_response['orderId']} (Profit: {remaining_qty:.5f} @ ${tp2_price:.2f})")
             
             return {
                 'stop_loss_order': {
                     'order_id': stop_response['orderId'],
-                    'symbol': stop_response['symbol'],
-                    'side': stop_response['side'],
-                    'type': stop_response['type'],
-                    'quantity': stop_response['origQty'],
-                    'stop_price': stop_response['stopPrice'],
-                    'status': stop_response['status']
+                    'quantity': total_qty,
+                    'price': stop_price
                 },
-                'take_profit_order': {
-                    'order_id': tp_response['orderId'],
-                    'symbol': tp_response['symbol'],
-                    'side': tp_response['side'],
-                    'type': tp_response['type'],
-                    'quantity': tp_response['origQty'],
-                    'stop_price': tp_response['stopPrice'],
-                    'status': tp_response['status']
-                }
+                'take_profit_orders': [
+                    {
+                        'order_id': tp1_response['orderId'],
+                        'quantity': partial_qty,
+                        'price': tp1_price,
+                        'type': 'partial'
+                    },
+                    {
+                        'order_id': tp2_response['orderId'],
+                        'quantity': remaining_qty,
+                        'price': tp2_price,
+                        'type': 'profit'
+                    }
+                ]
             }
             
         except Exception as e:
-            logger.error(f"Failed to create OCO order: {e}")
+            logger.error(f"Failed to create managed orders: {e}")
             raise
     
     def get_klines(self, symbol: str, interval: str, limit: int = 100) -> pd.DataFrame:
@@ -424,8 +492,8 @@ class BinanceFuturesBot(CustomBot):
         self.position_size_pct = config.get('position_size_pct', 0.1)  # 10% of balance
         self.testnet = config.get('testnet', True)  # Add testnet attribute
         
-        # Multi-timeframe configuration - Dynamic timeframes support
-        self.timeframes = config.get('timeframes', ['1h', '4h', '1d'])  # Default timeframes
+        # Multi-timeframe configuration - Optimized 3 timeframes
+        self.timeframes = config.get('timeframes', ['30m', '1h', '4h'])  # Optimized 3 timeframes
         self.primary_timeframe = config.get('primary_timeframe', self.timeframes[0])  # First timeframe as primary
         
         # Validate timeframes
@@ -1056,8 +1124,8 @@ class BinanceFuturesBot(CustomBot):
                         adjusted_tp_price = current_market_price - min_tp_distance
                         logger.warning(f"⚠️ Take profit distance adjusted: {adjusted_tp_price:.2f}")
                 
-                # Create OCO order with reduceOnly=true
-                oco_orders = self.futures_client.create_oco_order(
+                # Create managed orders (1 SL + 2 TP with duplicate check)
+                managed_orders = self.futures_client.create_managed_orders(
                     symbol=symbol,
                     side=sl_side,  # Same side for both SL and TP (opposite of entry)
                     quantity=quantity_str,
@@ -1066,19 +1134,20 @@ class BinanceFuturesBot(CustomBot):
                     reduce_only=True
                 )
                 
-                sl_order = oco_orders['stop_loss_order']
-                tp_order = oco_orders['take_profit_order']
+                sl_order = managed_orders['stop_loss_order']
+                tp_orders = managed_orders['take_profit_orders']
                 
-                logger.info(f"🔗 OCO Orders placed successfully:")
-                logger.info(f"🛡️ Stop Loss: {sl_order.get('order_id', 'N/A')} @ ${adjusted_stop_price:.2f} (Market: ${current_market_price:.2f})")
-                logger.info(f"🎯 Take Profit: {tp_order.get('order_id', 'N/A')} @ ${adjusted_tp_price:.2f} (Market: ${current_market_price:.2f})")
+                logger.info(f"✅ Managed Orders placed successfully:")
+                logger.info(f"🛡️ Stop Loss: {sl_order.get('order_id', 'N/A')} @ ${adjusted_stop_price:.2f}")
+                logger.info(f"🎯 Take Profit 1: {tp_orders[0].get('order_id', 'N/A')} (50% @ ${tp_orders[0].get('price', 'N/A')})")
+                logger.info(f"🎯 Take Profit 2: {tp_orders[1].get('order_id', 'N/A')} (50% @ ${tp_orders[1].get('price', 'N/A')})")
                 
             except Exception as e:
-                logger.error(f"Failed to place OCO orders: {e}")
+                logger.error(f"Failed to place managed orders: {e}")
                 if "would immediately trigger" in str(e).lower():
                     logger.error("💡 Tip: Order prices too close to market price. Consider wider stop/profit percentages.")
                 sl_order = None
-                tp_order = None
+                tp_orders = None
             
             result = {
                 'status': 'success',
@@ -1096,7 +1165,8 @@ class BinanceFuturesBot(CustomBot):
                 },
                 'take_profit': {
                     'price': take_profit_price,
-                    'order_id': tp_order.get('order_id') if tp_order else None,
+                    'order_ids': [tp.get('order_id') for tp in tp_orders] if 'tp_orders' in locals() and tp_orders else [None],
+                    'strategy': 'partial_profit_taking',
                     'source': 'recommendation' if take_profit_target else 'percentage'
                 },
                 'confidence': action.value,
@@ -1178,7 +1248,7 @@ class BinanceFuturesBot(CustomBot):
     def crawl_data(self) -> Dict[str, Any]:
         """
         Crawl historical data for multiple timeframes dynamically
-        Supports any number of timeframes: ["5m", "30m", "1h", "4h", "1d"]
+        Optimized for 3 timeframes: ["30m", "1h", "4h"]
         """
         try:
             if not self.futures_client:
@@ -1808,8 +1878,8 @@ async def main_execution():
         'take_profit_pct': 0.04,  # 4%
         'position_size_pct': 0.1,  # 10% of balance
         
-        # 🎯 Dynamic 5 timeframes - Bạn có thể thay đổi tùy ý!
-        'timeframes': ['5m', '30m', '1h', '4h', '1d'],  
+        # 🎯 Optimized 3 timeframes for better performance
+        'timeframes': ['30m', '1h', '4h'],  
         'primary_timeframe': '1h',  # Primary timeframe for final decision
         
         'use_llm_analysis': True,  # Enable LLM analysis with full system

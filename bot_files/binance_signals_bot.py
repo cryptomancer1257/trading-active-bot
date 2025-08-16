@@ -156,8 +156,8 @@ class BinanceSignalsBot(CustomBot):
         self.trading_pair = config.get('trading_pair', 'BTCUSDT')
         self.testnet = config.get('testnet', True)
         
-        # Multi-timeframe configuration
-        self.timeframes = config.get('timeframes', ['1h', '4h', '1d'])
+        # Multi-timeframe configuration - Optimized 3 timeframes
+        self.timeframes = config.get('timeframes', ['30m', '1h', '4h'])
         self.primary_timeframe = config.get('primary_timeframe', self.timeframes[0])
         
         # Validate timeframes

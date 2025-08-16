@@ -102,8 +102,8 @@ def initialize_bot(subscription):
                     'take_profit_pct': 0.04,  # 4%
                     'position_size_pct': 0.1,  # 10% of balance
                     
-                    # 🎯 Dynamic 5 timeframes - Bạn có thể thay đổi tùy ý!
-                    'timeframes': ['5m', '30m', '1h', '4h', '1d'],  
+                    # 🎯 Optimized 3 timeframes for better performance
+                    'timeframes': ['30m', '1h', '4h'],  
                     'primary_timeframe': '1h',  # Primary timeframe for final decision
                     
                     'use_llm_analysis': True,  # Enable LLM analysis with full system
@@ -945,7 +945,7 @@ def run_futures_bot_trading(self, user_principal_id: str = None, config: Dict[st
             'stop_loss_pct': 0.02,
             'take_profit_pct': 0.04,
             'position_size_pct': 0.05,
-            'timeframes': ['5m', '30m', '1h', '4h', '1d'],
+            'timeframes': ['30m', '1h', '4h'],
             'primary_timeframe': '1h',
             'use_llm_analysis': True,
             'llm_model': 'openai',
