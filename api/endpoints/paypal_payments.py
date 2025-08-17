@@ -120,21 +120,21 @@ async def execute_paypal_payment(
         logger.info(f"Result keys: {result.keys() if isinstance(result, dict) else 'Not a dict'}")
         
         # Schedule Studio sync and rental creation using Celery
-        from core.tasks import sync_payment_to_studio_task
-        
-        # Sync to Studio (create subscription via API)
-        sync_payment_to_studio_task.apply_async(
-            args=[execution_data.payment_id], 
-            countdown=5
-        )
+        # from core.tasks import sync_payment_to_studio_task
+        #
+        # # Sync to Studio (create subscription via API)
+        # sync_payment_to_studio_task.apply_async(
+        #     args=[execution_data.payment_id],
+        #     countdown=5
+        # )
         
         # Create ICP rental (can be delayed, less critical for dashboard)
-        background_tasks.add_task(
-            create_rental_in_canister,
-            execution_data.payment_id,
-            db
-        )
-        
+        # background_tasks.add_task(
+        #     create_rental_in_canister,
+        #     execution_data.payment_id,
+        #     db
+        # )
+        #
         logger.info(f"PayPal payment executed successfully: {execution_data.payment_id}")
         
         # Create response object
@@ -356,7 +356,7 @@ async def sync_payment_to_studio_endpoint(
             )
         
         # Schedule sync
-        background_tasks.add_task(sync_payment_to_studio, payment_id, db)
+        # background_tasks.add_task(sync_payment_to_studio, payment_id, db)
         
         return {
             "success": True,
