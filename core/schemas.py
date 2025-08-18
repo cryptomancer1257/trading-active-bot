@@ -476,8 +476,7 @@ class MarketplaceSubscriptionCreateV2(BaseModel):
     # Required fields
     user_principal_id: str = Field(..., description="ICP Principal ID of marketplace user")
     bot_id: int = Field(..., description="ID of bot to subscribe to")
-    instance_name: str = Field(..., description="User's custom name for this bot instance")
-    
+    # instance_name: Optional[str] = Field(None, description="User's custom name for this bot instance")
     # Subscription timing - REQUIRED
     subscription_start: datetime = Field(..., description="When subscription starts (UTC) - REQUIRED")
     subscription_end: datetime = Field(..., description="When subscription ends (UTC) - REQUIRED")
@@ -492,6 +491,7 @@ class MarketplaceSubscriptionCreateV2(BaseModel):
     strategy_config: Dict[str, Any] = Field(default_factory=dict)
     execution_config: Optional[ExecutionConfig] = None
     risk_config: Optional[RiskConfig] = None
+    notify_default_method: Optional[str] = "email"  # Default notification method (email, telegram, etc.)
     
     @validator('user_principal_id')
     def validate_principal_id(cls, v):
