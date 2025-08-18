@@ -4,16 +4,47 @@
 
 -- Simple approach: Add columns directly (will error if exists, but that's OK for existing deployments)
 
--- Add new columns to subscriptions table
-ALTER TABLE subscriptions ADD COLUMN user_principal_id VARCHAR(255) COMMENT 'ICP Principal ID';
-ALTER TABLE subscriptions ADD COLUMN timeframes JSON COMMENT 'List of timeframes';
-ALTER TABLE subscriptions ADD COLUMN trade_evaluation_period INT COMMENT 'Minutes for bot analysis';
-ALTER TABLE subscriptions ADD COLUMN network_type ENUM('testnet', 'mainnet') DEFAULT 'testnet';
-ALTER TABLE subscriptions ADD COLUMN trade_mode ENUM('Spot', 'Margin', 'Futures') DEFAULT 'Spot';
+-- Add new columns to subscriptions table (safe)
+-- user_principal_id
+SELECT COUNT(*) INTO @exists FROM INFORMATION_SCHEMA.COLUMNS 
+WHERE table_schema = 'bot_marketplace' AND table_name = 'subscriptions' AND column_name = 'user_principal_id';
+SET @sql = IF(@exists = 0, 'ALTER TABLE subscriptions ADD COLUMN user_principal_id VARCHAR(255) COMMENT "ICP Principal ID"', 'SELECT "user_principal_id exists"');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
--- Add indexes
-CREATE INDEX idx_subscriptions_principal_id ON subscriptions(user_principal_id);
-CREATE INDEX idx_subscriptions_principal_bot ON subscriptions(user_principal_id, bot_id);
+-- timeframes
+SELECT COUNT(*) INTO @exists FROM INFORMATION_SCHEMA.COLUMNS 
+WHERE table_schema = 'bot_marketplace' AND table_name = 'subscriptions' AND column_name = 'timeframes';
+SET @sql = IF(@exists = 0, 'ALTER TABLE subscriptions ADD COLUMN timeframes JSON COMMENT "List of timeframes"', 'SELECT "timeframes exists"');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- trade_evaluation_period
+SELECT COUNT(*) INTO @exists FROM INFORMATION_SCHEMA.COLUMNS 
+WHERE table_schema = 'bot_marketplace' AND table_name = 'subscriptions' AND column_name = 'trade_evaluation_period';
+SET @sql = IF(@exists = 0, 'ALTER TABLE subscriptions ADD COLUMN trade_evaluation_period INT COMMENT "Minutes for bot analysis"', 'SELECT "trade_evaluation_period exists"');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- network_type
+SELECT COUNT(*) INTO @exists FROM INFORMATION_SCHEMA.COLUMNS 
+WHERE table_schema = 'bot_marketplace' AND table_name = 'subscriptions' AND column_name = 'network_type';
+SET @sql = IF(@exists = 0, 'ALTER TABLE subscriptions ADD COLUMN network_type ENUM("testnet", "mainnet") DEFAULT "testnet"', 'SELECT "network_type exists"');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- trade_mode
+SELECT COUNT(*) INTO @exists FROM INFORMATION_SCHEMA.COLUMNS 
+WHERE table_schema = 'bot_marketplace' AND table_name = 'subscriptions' AND column_name = 'trade_mode';
+SET @sql = IF(@exists = 0, 'ALTER TABLE subscriptions ADD COLUMN trade_mode ENUM("Spot", "Margin", "Futures") DEFAULT "Spot"', 'SELECT "trade_mode exists"');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- Add indexes (safe)
+SELECT COUNT(*) INTO @index_exists FROM INFORMATION_SCHEMA.STATISTICS 
+WHERE table_schema = 'bot_marketplace' AND table_name = 'subscriptions' AND index_name = 'idx_subscriptions_principal_id';
+SET @sql = IF(@index_exists = 0, 'CREATE INDEX idx_subscriptions_principal_id ON subscriptions(user_principal_id)', 'SELECT "idx_subscriptions_principal_id exists"');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SELECT COUNT(*) INTO @index_exists FROM INFORMATION_SCHEMA.STATISTICS 
+WHERE table_schema = 'bot_marketplace' AND table_name = 'subscriptions' AND index_name = 'idx_subscriptions_principal_bot';
+SET @sql = IF(@index_exists = 0, 'CREATE INDEX idx_subscriptions_principal_bot ON subscriptions(user_principal_id, bot_id)', 'SELECT "idx_subscriptions_principal_bot exists"');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 -- Update exchange_credentials table
 ALTER TABLE exchange_credentials 
