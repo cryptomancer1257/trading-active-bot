@@ -416,7 +416,7 @@ python scripts/test_paypal_integration.py
 - `api/endpoints/paypal_payments.py` - API implementation
 - `services/paypal_service.py` - Core PayPal logic
 - `services/currency_service.py` - Currency conversion
-- `migrations/versions/009_paypal_integration.sql` - Database schema
+- `migrations/versions/011_paypal_integration.sql` - Database schema
 
 ---
 

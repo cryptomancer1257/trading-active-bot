@@ -55,7 +55,7 @@ ALTER TABLE subscriptions
 MODIFY COLUMN exchange_type ENUM('BINANCE', 'COINBASE', 'KRAKEN', 'BYBIT', 'HUOBI') DEFAULT 'BINANCE';
 
 -- Add api_key to users table
-ALTER TABLE users ADD COLUMN api_key VARCHAR(255) UNIQUE COMMENT 'API key for marketplace auth';
+-- ALTER TABLE users ADD COLUMN api_key VARCHAR(255) UNIQUE COMMENT 'API key for marketplace auth';
 
 -- Add index on api_key
 CREATE INDEX idx_users_api_key ON users(api_key);
@@ -75,9 +75,7 @@ SELECT
     s.exchange_type as exchange_name,
     s.network_type,
     s.trade_mode,
-    s.status,
-    s.created_at,
-    s.updated_at
+    s.status
 FROM subscriptions s
 JOIN bots b ON s.bot_id = b.id
 WHERE s.user_principal_id IS NOT NULL;

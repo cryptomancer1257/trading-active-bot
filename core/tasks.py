@@ -5,10 +5,19 @@ from typing import Optional, Dict, Any
 from datetime import datetime, timedelta
 from decimal import Decimal
 import importlib.util
+import logging
+import traceback
+import time
+from typing import Optional, Dict, Any
+from datetime import datetime, timedelta
+from decimal import Decimal
+import importlib.util
 import inspect
 import os
 import tempfile
 import sys
+import redis
+import json
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -20,6 +29,11 @@ from sqlalchemy.orm import Session
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Helper to push DM to Redis queue
+def queue_discord_dm(user_id, message):
+    r = redis.Redis(host=os.getenv('REDIS_HOST', 'active-trading-redis-1'), port=int(os.getenv('REDIS_PORT', 6379)), db=0)
+    payload = {'user_id': user_id, 'message': message}
+    r.rpush('discord_dm_queue', json.dumps(payload))
 def initialize_bot(subscription):
     """Initialize bot from subscription - Load from S3"""
     try:
@@ -256,6 +270,236 @@ def initialize_bot(subscription):
         logger.error(f"Error initializing bot: {e}")
         logger.error(traceback.format_exc())
         return None
+# def initialize_bot(subscription):
+#     """Initialize bot from subscription - Load from S3"""
+#     try:
+#         # Import here to avoid circular imports
+#         from core import models
+#         from core import schemas
+#         from core.database import SessionLocal
+#         from services.s3_manager import S3Manager
+#         from core.bot_base_classes import get_base_classes
+        
+
+#         # Get bot information
+#         bot_id = subscription.bot.id
+#         logger.info(f"Initializing bot {bot_id} from local bot_files...")
+
+#         # Lấy đường dẫn code_path từ subscription.bot.code_path
+#         code_path = getattr(subscription.bot, 'code_path', None)
+#         if not code_path:
+#             logger.error(f"No code_path found for bot {bot_id}")
+#             return None
+
+#         # Đọc code từ file local
+#         try:
+#             with open(code_path, 'r', encoding='utf-8') as f:
+#                 code_content = f.read()
+#             logger.info(f"Read bot code from {code_path}: {len(code_content)} characters")
+#         except Exception as e:
+#             logger.error(f"Failed to read bot code from {code_path}: {e}")
+#             return None
+
+#         # Load base classes from bot_sdk folder
+#         base_classes = get_base_classes()
+
+#         # Combine base classes with downloaded bot code
+#         full_code = base_classes + "\n" + code_content
+
+#         import tempfile
+#         with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+#             f.write(full_code)
+#             temp_file_path = f.name
+        
+#         try:
+#             # Load bot module from temporary file
+#             spec = importlib.util.spec_from_file_location("bot_module", temp_file_path)
+#             if not spec or not spec.loader:
+#                 logger.error("Could not create module spec")
+#                 return None
+            
+#             bot_module = importlib.util.module_from_spec(spec)
+#             spec.loader.exec_module(bot_module)
+            
+#             # Find bot class in the module
+#             bot_class = None
+#             for attr_name in dir(bot_module):
+#                 attr = getattr(bot_module, attr_name)
+#                 if (inspect.isclass(attr) and 
+#                     hasattr(attr, 'execute_algorithm') and 
+#                     attr_name != 'CustomBot'):
+#                     bot_class = attr
+#                     break
+            
+#             if not bot_class:
+#                 logger.error("No valid bot class found in module")
+#                 return None
+            
+#             # Prepare bot configuration - Rich config for Futures bots
+#             if hasattr(subscription.bot, 'bot_type') and subscription.bot.bot_type and subscription.bot.bot_type.upper() == 'FUTURES':
+#                 # Rich configuration for Futures bots (like main_execution)
+#                 bot_config = {
+#                     'trading_pair': 'BTCUSDT',
+#                     'testnet': True,
+#                     'leverage': 5,
+#                     'stop_loss_pct': 0.02,  # 2%
+#                     'take_profit_pct': 0.04,  # 4%
+#                     'position_size_pct': 0.1,  # 10% of balance
+                    
+#                     # 🎯 Optimized 3 timeframes for better performance
+#                     'timeframes': ['30m', '1h', '4h'],  
+#                     'primary_timeframe': '1h',  # Primary timeframe for final decision
+                    
+#                     'use_llm_analysis': True,  # Enable LLM analysis with full system
+#                     'llm_model': 'openai',  # Primary LLM model to use
+                    
+#                     # Technical indicators (fallback when LLM fails)
+#                     'rsi_period': 14,
+#                     'rsi_oversold': 30,     # Buy signal threshold
+#                     'rsi_overbought': 70,   # Sell signal threshold
+                    
+#                     # Capital management (CRITICAL for risk control)
+#                     'base_position_size_pct': 0.02,    # 2% minimum position
+#                     'max_position_size_pct': 0.10,     # 10% maximum position  
+#                     'max_portfolio_exposure': 0.30,    # 30% total exposure limit
+#                     'max_drawdown_threshold': 0.15,    # 15% stop-loss threshold
+                    
+#                     # Celery execution
+#                     'require_confirmation': False,  # No confirmation for Celery
+#                     'auto_confirm': True  # Auto-confirm trades (for Celery/automated execution)
+#                 }
+#                 logger.info(f"🚀 Applied RICH FUTURES CONFIG: {len(bot_config['timeframes'])} timeframes, {bot_config['leverage']}x leverage")
+#             else:
+#                 # Standard configuration for other bots
+#                 bot_config = {
+#                     'short_window': 50,
+#                     'long_window': 200,
+#                     'position_size': 0.3,
+#                     'min_volume_threshold': 1000000,
+#                     'volatility_threshold': 0.05
+#                 }
+#                 logger.info("📊 Applied STANDARD CONFIG for non-futures bot")
+            
+#             # Override with subscription strategy_config if available (from database)
+#             if subscription.strategy_config:
+#                 logger.info(f"🎯 Merging DATABASE STRATEGY CONFIG: {subscription.strategy_config}")
+#                 bot_config.update(subscription.strategy_config)
+            
+#             # Prepare subscription context for bot (includes principal ID)
+#             subscription_context = {
+#                 'subscription_id': subscription.id,
+#                 'user_principal_id': subscription.user_principal_id,
+#                 'exchange': subscription.exchange_type.value if subscription.exchange_type else 'binance',
+#                 'trading_pair': subscription.trading_pair,
+#                 'timeframe': subscription.timeframe,
+#                 'is_testnet': subscription.is_testnet if subscription.is_testnet else True,
+#                 'is_marketplace_subscription': getattr(subscription, 'is_marketplace_subscription', False)
+#             }
+            
+#             # Try multiple initialization approaches for compatibility
+#             bot_instance = None
+#             init_success = False
+            
+#             # Create api_keys dict for backward compatibility
+#             api_keys = {
+#                 'exchange': subscription_context['exchange'],
+#                 'testnet': subscription_context['is_testnet']
+#             }
+            
+#             # Method 1: Try BinanceFuturesBot direct initialization (for Futures bots)
+#             if hasattr(subscription.bot, 'bot_type') and subscription.bot.bot_type and subscription.bot.bot_type.upper() == 'FUTURES':
+#                 try:
+#                     logger.info(f"Attempting FUTURES BOT direct initialization...")
+#                     # Import BinanceFuturesBot directly for futures bots
+#                     import sys
+#                     import os
+#                     bot_files_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'bot_files')
+#                     if bot_files_path not in sys.path:
+#                         sys.path.insert(0, bot_files_path)
+                    
+#                     from binance_futures_bot import BinanceFuturesBot
+#                     bot_instance = BinanceFuturesBot(bot_config, api_keys, subscription.user_principal_id)
+#                     init_success = True
+#                     logger.info(f"✅ FUTURES BOT initialized successfully with principal ID")
+#                 except Exception as e:
+#                     logger.warning(f"FUTURES BOT direct init failed: {e}")
+            
+#             # Method 2: Try downloaded bot with 3 arguments (config, api_keys, principal_id)
+#             if not init_success:
+#                 try:
+#                     bot_instance = bot_class(bot_config, api_keys, subscription.user_principal_id)
+#                     init_success = True
+#                     logger.info(f"✅ Downloaded bot initialized with 3 args: {bot_class.__name__}")
+#                 except TypeError as e:
+#                     logger.warning(f"3-arg constructor failed: {e}")
+            
+#             # Method 3: Try downloaded bot with 2 arguments (config, api_keys)
+#             if not init_success:
+#                 try:
+#                     bot_instance = bot_class(bot_config, api_keys)
+#                     init_success = True
+#                     logger.info(f"✅ Downloaded bot initialized with 2 args: {bot_class.__name__}")
+#                 except TypeError as e:
+#                     logger.warning(f"2-arg constructor failed: {e}")
+            
+#             # Method 4: Try downloaded bot with 1 argument (config)
+#             if not init_success:
+#                 try:
+#                     bot_instance = bot_class(bot_config)
+#                     init_success = True
+#                     logger.info(f"✅ Downloaded bot initialized with 1 arg: {bot_class.__name__}")
+#                 except TypeError as e:
+#                     logger.warning(f"1-arg constructor failed: {e}")
+            
+#             # Method 5: Try downloaded bot with no arguments
+#             if not init_success:
+#                 try:
+#                     bot_instance = bot_class()
+#                     init_success = True
+#                     logger.info(f"✅ Downloaded bot initialized with no args: {bot_class.__name__}")
+#                 except Exception as e:
+#                     logger.error(f"No-arg constructor failed: {e}")
+            
+#             # If initialization succeeded, manually inject context for non-futures bots
+#             if init_success and bot_instance:
+#                 # Manually inject subscription context for downloaded bots
+#                 if hasattr(bot_instance, 'user_principal_id'):
+#                     bot_instance.user_principal_id = subscription_context['user_principal_id']
+#                 if hasattr(bot_instance, 'subscription_id'):
+#                     bot_instance.subscription_id = subscription_context['subscription_id']
+#                 if hasattr(bot_instance, 'trading_pair'):
+#                     bot_instance.trading_pair = subscription_context['trading_pair']
+#                 if hasattr(bot_instance, 'timeframe'):
+#                     bot_instance.timeframe = subscription_context['timeframe']
+#                 if hasattr(bot_instance, 'is_testnet'):
+#                     bot_instance.is_testnet = subscription_context['is_testnet']
+                
+#                 # Set config manually if the bot has attributes for it
+#                 if hasattr(bot_instance, 'short_window'):
+#                     bot_instance.short_window = bot_config.get('short_window', 50)
+#                 if hasattr(bot_instance, 'long_window'):
+#                     bot_instance.long_window = bot_config.get('long_window', 200)
+#                 if hasattr(bot_instance, 'position_size'):
+#                     bot_instance.position_size = bot_config.get('position_size', 0.3)
+                
+#                 logger.info(f"Context injected - Principal ID: {subscription_context['user_principal_id']}")
+#             else:
+#                 logger.error(f"All bot initialization methods failed")
+#                 return None
+            
+#             return bot_instance
+            
+#         finally:
+#             # Clean up temporary file
+#             try:
+#                 os.unlink(temp_file_path)
+#             except:
+#                 pass
+        
+#     except Exception as e:
+#         logger.error(f"Error initializing bot: {e}")
+#         logger.error(traceback.format_exc())
+#         return None
 
 def execute_trade_action(db, subscription, exchange, action, current_price):
     """Execute trade action"""
@@ -461,7 +705,7 @@ def run_bot_logic(self, subscription_id: int):
     try:
         # Try to acquire Redis lock
         from redis import Redis
-        redis_client = Redis(host='localhost', port=6379, db=0, decode_responses=True)
+        redis_client = Redis(host='redis', port=6379, db=0, decode_responses=True)
         
         # Set lock with 5-minute expiration (longer than typical bot execution)
         lock_acquired = redis_client.set(lock_key, "locked", nx=True, ex=300)
@@ -487,6 +731,7 @@ def run_bot_logic(self, subscription_id: int):
         db = SessionLocal()
         
         try:
+            logger.info(f"Running bot logic for subscription {subscription_id}")
             # Get subscription
             subscription = crud.get_subscription_by_id(db, subscription_id)
             if not subscription:
@@ -605,7 +850,7 @@ def run_bot_logic(self, subscription_id: int):
             subscription_config = {
                 'subscription_id': subscription_id,
                 'timeframe': subscription.timeframe,
-                    'trading_pair': trading_pair,
+                'trading_pair': trading_pair,
                 'is_testnet': use_testnet,
                 'exchange_type': exchange_type.value,
                 'user_id': subscription.user_id or 0  # 0 for marketplace users
@@ -642,8 +887,28 @@ def run_bot_logic(self, subscription_id: int):
                 if final_action.action in ["BUY", "SELL"]:
                     try:
                     # Get balance from exchange using real API
-                        base_asset = trading_pair.split('/')[0]  # BTC from BTC/USDT
-                        quote_asset = trading_pair.split('/')[1]  # USDT from BTC/USDT
+                        # Handle different trading pair formats
+                        if '/' in trading_pair:
+                            # Format: BTC/USDT
+                            base_asset = trading_pair.split('/')[0]  # BTC from BTC/USDT
+                            quote_asset = trading_pair.split('/')[1]  # USDT from BTC/USDT
+                        else:
+                            # Format: BTCUSDT - try to extract base and quote
+                            # Common patterns: BTCUSDT, ETHUSDT, etc.
+                            if trading_pair.endswith('USDT'):
+                                base_asset = trading_pair[:-4]  # Remove 'USDT' suffix
+                                quote_asset = 'USDT'
+                            elif trading_pair.endswith('BTC'):
+                                base_asset = trading_pair[:-3]  # Remove 'BTC' suffix
+                                quote_asset = 'BTC'
+                            elif trading_pair.endswith('ETH'):
+                                base_asset = trading_pair[:-3]  # Remove 'ETH' suffix
+                                quote_asset = 'ETH'
+                            else:
+                                # Fallback: assume first 3 chars are base, rest is quote
+                                base_asset = trading_pair[:3]
+                                quote_asset = trading_pair[3:]
+                                logger.warning(f"Unknown trading pair format: {trading_pair}, using fallback parsing")
                         
                         base_balance = exchange.get_balance(base_asset)
                         quote_balance = exchange.get_balance(quote_asset)
@@ -699,7 +964,6 @@ def run_bot_logic(self, subscription_id: int):
                 try:
                     from datetime import datetime
                     from services.email_templates import send_combined_notification
-                    
                     # Different emoji for different actions
                     action_emoji = {
                         "BUY": "🟢",
@@ -709,13 +973,8 @@ def run_bot_logic(self, subscription_id: int):
                     
                     # Send combined notification with trade result
                     # Get email for notification (studio user or marketplace user)
-                    user_email = subscription.user.email if subscription.user_id else subscription.marketplace_user_email
-                    
-                    send_combined_notification(
-                        user_email,
-                        subscription.bot.name,
-                        final_action.action,
-                        {
+                    user_email = subscription.user.email if subscription.user_id else None
+                    body_details = {
                             'trading_pair': trading_pair,
                             'current_price': current_price,
                             'reason': final_action.reason,
@@ -726,7 +985,98 @@ def run_bot_logic(self, subscription_id: int):
                             'subscription_id': subscription_id,
                             'trade_details': trade_details
                         }
+                    send_combined_notification(
+                        user_email,
+                        subscription.bot.name,
+                        final_action.action,
+                        body_details
                     )
+
+                    telegram_chat_id = None
+                    discord_user_id = None
+                    # Studio user: get from user.user_settings
+                    if hasattr(subscription.user, 'user_settings') and subscription.user.user_settings:
+                        telegram_chat_id = getattr(subscription.user.user_settings, 'telegram_chat_id', None)
+                        discord_user_id = getattr(subscription.user.user_settings, 'discord_user_id', None)
+                    # Marketplace user: get from UserSettings by principal_id
+                    if not telegram_chat_id or discord_user_id and subscription.user_principal_id:
+                        from core import crud
+                        users_settings = crud.get_user_settings_by_principal(db, subscription.user_principal_id)
+                        if users_settings:
+                            telegram_chat_id = getattr(users_settings, 'telegram_chat_id', None)
+                            discord_user_id = getattr(users_settings, 'discord_user_id', None)
+                    if trade_result and (telegram_chat_id or discord_user_id):
+                        logger.info(f"trade_result: {trade_result}")
+                        # Build concise remaining balance line
+                        remaining_balance_line = "Unable to fetch"
+                        try:
+                            # Try to parse from previously computed balance string
+                            # If detailed values exist from balance_info block, reuse them
+                            if '•' in balance_info:
+                                # Example lines already computed above
+                                # We will not parse; instead, compute again safely using trading_pair parsing
+                                if '/' in trading_pair:
+                                    base_asset_msg = trading_pair.split('/')[0]
+                                    quote_asset_msg = trading_pair.split('/')[1]
+                                else:
+                                    if trading_pair.endswith('USDT'):
+                                        base_asset_msg = trading_pair[:-4]
+                                        quote_asset_msg = 'USDT'
+                                    elif trading_pair.endswith('BTC'):
+                                        base_asset_msg = trading_pair[:-3]
+                                        quote_asset_msg = 'BTC'
+                                    elif trading_pair.endswith('ETH'):
+                                        base_asset_msg = trading_pair[:-3]
+                                        quote_asset_msg = 'ETH'
+                                    else:
+                                        base_asset_msg = trading_pair[:3]
+                                        quote_asset_msg = trading_pair[3:]
+                                # Fetch quick balances again for a one-line summary
+                                bb = exchange.get_balance(base_asset_msg)
+                                qb = exchange.get_balance(quote_asset_msg)
+                                bt = float(bb.free) + float(bb.locked)
+                                qt = float(qb.free) + float(qb.locked)
+                                pv = qt + (bt * float(current_price))
+                                remaining_balance_line = f"{base_asset_msg}: {bt:.6f}, {quote_asset_msg}: {qt:.2f} (~${pv:.2f} USDT)"
+                        except Exception:
+                            pass
+
+                        # Extract optional fields
+                        entry_price = trade_details.get('current_price', current_price) if isinstance(trade_details, dict) else current_price
+                        quantity = trade_details.get('quantity') if isinstance(trade_details, dict) else None
+                        base_asset_td = trade_details.get('base_asset') if isinstance(trade_details, dict) else None
+                        qty_text = f"{quantity} {base_asset_td}" if quantity and base_asset_td else (str(quantity) if quantity else 'N/A')
+                        stop_loss_text = 'N/A'
+                        take_profit_text = 'N/A'
+                        try:
+                            if getattr(final_action, 'recommendation', None):
+                                rec = final_action.recommendation
+                                sl = rec.get('stop_loss') or rec.get('stop_loss_price')
+                                tp = rec.get('take_profit') or rec.get('take_profit_price')
+                                if sl is not None:
+                                    stop_loss_text = str(sl)
+                                if tp is not None:
+                                    take_profit_text = str(tp)
+                        except Exception:
+                            pass
+
+                        # Format message in English as requested
+                        message = (
+                            f"bot name: {subscription.bot.name}\n"
+                            f"Your bot just executed a {final_action.action} order.\n"
+                            f"Entry price: ${float(entry_price):.4f}\n"
+                            f"Quantity: {qty_text}\n"
+                            f"Stop loss: {stop_loss_text}\n"
+                            f"Target price: {take_profit_text}\n"
+                            f"Remaining balance: {remaining_balance_line}"
+                        )
+                        if telegram_chat_id:
+                            send_telegram_notification.delay(telegram_chat_id, message)
+                        if discord_user_id:
+                            send_discord_notification.delay(discord_user_id, message)
+                    else:
+                        logger.warning(f"No telegram_chat_id found in user settings for user {subscription.user.id if subscription.user else subscription.user_principal_id or 'N/A'}")
+
                 except Exception as e:
                     logger.error(f"Failed to send signal notification: {e}")
                 
@@ -888,6 +1238,32 @@ def send_email_notification(email: str, subject: str, body: str):
         
     except Exception as e:
         logger.error(f"Error sending email notification: {e}")
+
+# @app.task
+# def send_telegram_notification(chat_id: str | int, text: str):
+#     try:
+#         from services.telegram_service import TelegramService
+#         telegram_service = TelegramService()
+#     except Exception as e:
+#         logger.error(f"Error sending email notification: {e}")
+
+    
+# @app.task
+# def send_discord_notification():
+#     return
+@app.task
+def send_telegram_notification(chat_id, text):
+    from services.telegram_service import TelegramService
+    telegram_service = TelegramService()
+    telegram_service.send_telegram_message_v2(chat_id=chat_id, text=text)
+
+@app.task
+def send_discord_notification(user_id, message):
+    try:
+        queue_discord_dm(user_id, message)
+        logger.info(f"Queued Discord DM to user {user_id}")
+    except Exception as e:
+        logger.error(f"Failed to queue Discord DM: {e}")
 
 @app.task
 def send_sendgrid_notification(email: str, bot_name: str, action: str, details: dict):

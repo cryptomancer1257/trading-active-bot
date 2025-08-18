@@ -14,5 +14,6 @@ __all__ = [
     'create_llm_service',
     'S3Manager',
     'SendGridEmailService',
-    'GmailSMTPService'
+    'GmailSMTPService',
+    'TelegramService'
 ]

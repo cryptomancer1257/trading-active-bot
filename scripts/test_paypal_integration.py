@@ -161,7 +161,7 @@ def test_database_migration():
     print("\n🗄️  Testing Database Migration")
     print("=" * 40)
     
-    migration_file = "migrations/versions/009_paypal_integration.sql"
+    migration_file = "migrations/versions/011_paypal_integration.sql"
     if os.path.exists(migration_file):
         print("✅ PayPal migration file found")
         

@@ -181,7 +181,8 @@ class BotManager:
             "errors": [],
             "warnings": [],
             "bot_class": None,
-            "bot_info": {}
+            "bot_info": {},
+            "error": None  # Đảm bảo luôn có key 'error' để endpoint không bị KeyError
         }
         
         try:
@@ -193,20 +194,28 @@ class BotManager:
             if security_issues:
                 validation_result["errors"].extend(security_issues)
                 validation_result["is_valid"] = False
+                validation_result["error"] = "; ".join(security_issues)
+                validation_result["valid"] = validation_result["is_valid"]
                 return validation_result
             
             # Check for required imports
             required_imports = self._check_required_imports(tree)
             if not required_imports:
-                validation_result["errors"].append("Missing required imports: from bots.bot_sdk import CustomBot, Action")
+                msg = "Missing required imports: from bots.bot_sdk import CustomBot, Action"
+                validation_result["errors"].append(msg)
                 validation_result["is_valid"] = False
+                validation_result["error"] = msg
+                validation_result["valid"] = validation_result["is_valid"]
                 return validation_result
             
             # Find bot class
             bot_class = self._find_bot_class(tree)
             if not bot_class:
-                validation_result["errors"].append("No CustomBot subclass found")
+                msg = "No CustomBot subclass found"
+                validation_result["errors"].append(msg)
                 validation_result["is_valid"] = False
+                validation_result["error"] = msg
+                validation_result["valid"] = validation_result["is_valid"]
                 return validation_result
 
             validation_result["bot_class"] = bot_class["name"]
@@ -215,8 +224,11 @@ class BotManager:
             # Check required methods
             missing_methods = self._check_required_methods(bot_class)
             if missing_methods:
+                msg = "; ".join([f"Missing required method: {method}" for method in missing_methods])
                 validation_result["errors"].extend([f"Missing required method: {method}" for method in missing_methods])
                 validation_result["is_valid"] = False
+                validation_result["error"] = msg
+                validation_result["valid"] = validation_result["is_valid"]
                 return validation_result
             
             # Additional checks
@@ -224,12 +236,20 @@ class BotManager:
             validation_result["warnings"].extend(warnings)
             
         except SyntaxError as e:
+            msg = f"Syntax error: {str(e)}"
             validation_result["is_valid"] = False
-            validation_result["errors"].append(f"Syntax error: {str(e)}")
+            validation_result["errors"].append(msg)
+            validation_result["error"] = msg
         except Exception as e:
+            msg = f"Validation error: {str(e)}"
             validation_result["is_valid"] = False
-            validation_result["errors"].append(f"Validation error: {str(e)}")
+            validation_result["errors"].append(msg)
+            validation_result["error"] = msg
         
+        # Nếu có lỗi mà chưa có error, gán error là chuỗi nối các errors
+        if not validation_result["is_valid"] and not validation_result["error"] and validation_result["errors"]:
+            validation_result["error"] = "; ".join([str(e) for e in validation_result["errors"]])
+        validation_result["valid"] = validation_result["is_valid"]
         return validation_result
     
     def _check_security_issues(self, tree: ast.AST) -> List[str]:
