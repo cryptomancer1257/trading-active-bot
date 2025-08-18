@@ -13,7 +13,6 @@ from telegram.ext import ApplicationBuilder
 from telegram.ext import MessageHandler, filters, ContextTypes
 from telegram.ext import CallbackQueryHandler
 from telegram import Update
-from dotenv import load_dotenv
 from sqlalchemy.orm import Session
 from fastapi import APIRouter, Depends
 import requests
@@ -22,7 +21,6 @@ from core.database import SessionLocal, get_db
 from core import crud, models
 import datetime
 
-load_dotenv()
 logger = logging.getLogger(__name__)
 
 class TelegramService:
@@ -38,14 +36,22 @@ class TelegramService:
             await self.run_polling()
 
     async def run_webhook(self):
-        bot = Bot(token=self.bot_token)
-        await bot.set_webhook(
-            url=self.webhook_url,
-            drop_pending_updates=True
-        )
-        logger.info(f"✅ Webhook configured for URL: {self.webhook_url}")
+        try: 
+            logger.info("Running Telegram bot in webhook mode")
+            if not self.bot_token or not self.webhook_url:
+                logger.error("❌ Missing Telegram bot token or webhook URL")
+                return
+            bot = Bot(token=self.bot_token)
+            await bot.set_webhook(
+                url=self.webhook_url,
+                drop_pending_updates=True
+            )
+            logger.info(f"✅ Webhook configured for URL: {self.webhook_url}")
+        except Exception as e:
+            logger.error(f"❌ Error configuring webhook: {e}")
 
     async def run_polling(self):
+        logger.info("Running Telegram bot in polling mode")
         try:
             app = ApplicationBuilder().token(self.bot_token).build()
             self.add_handlers(app)
