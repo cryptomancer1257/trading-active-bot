@@ -38,7 +38,7 @@ async def lifespan(app: FastAPI):
         logger.error("Error occurred during lifespan: %s", str(e))
     finally:
         # Cancel background tasks gracefully
-        telegram_task.cancel()
+        # telegram_task.cancel()
         discord_task.cancel()
         
         # Wait for tasks to complete

@@ -14,8 +14,9 @@ from core.database import SessionLocal
 logger = logging.getLogger(__name__)
 
 class PanelView(View):
-    def __init__(self):
+    def __init__(self, bot: commands.Bot):
         super().__init__(timeout=300)  # 5 minutes timeout instead of None
+        self.bot = bot
 
     @discord.ui.button(label="🔔 Follow Bot", style=discord.ButtonStyle.success)
     async def follow_button(self, interaction: discord.Interaction, button: discord.ui.Button):
