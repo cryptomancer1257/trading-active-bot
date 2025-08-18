@@ -1344,20 +1344,42 @@ def create_bot_marketplace_registration(
     db: Session,
     registration: schemas.BotMarketplaceRegistrationRequest
 ) -> models.BotRegistration:
-    """Register a bot for marketplace listing"""
-    
+    """Register a bot for marketplace listing (idempotent per principal+bot).
+
+    - If a record exists for (user_principal_id, bot_id), update api_key and metadata.
+    - Else, create a new registration.
+    """
+
     # Verify bot exists and is approved
     bot = db.query(models.Bot).filter(
         models.Bot.id == registration.bot_id,
         models.Bot.status == models.BotStatus.APPROVED
     ).first()
-    
+
     if not bot:
         raise ValueError("Bot not found or not approved")
-    
-    # Generate API key for this bot (no uniqueness check needed)
+
+    # Generate a new API key
     bot_api_key = generate_bot_api_key()
-    
+
+    # Check existing registration by (principal, bot)
+    existing = db.query(models.BotRegistration).filter(
+        models.BotRegistration.user_principal_id == registration.user_principal_id,
+        models.BotRegistration.bot_id == registration.bot_id
+    ).first()
+
+    if existing:
+        # Update in-place (rotate API key and metadata)
+        existing.api_key = bot_api_key
+        existing.marketplace_name = registration.marketplace_name or existing.marketplace_name or bot.name
+        existing.marketplace_description = registration.marketplace_description or existing.marketplace_description or bot.description
+        if registration.price_on_marketplace is not None:
+            existing.price_on_marketplace = registration.price_on_marketplace
+        existing.status = models.BotRegistrationStatus.APPROVED
+        db.commit()
+        db.refresh(existing)
+        return existing
+
     # Create registration with auto-approval
     db_registration = models.BotRegistration(
         user_principal_id=registration.user_principal_id,
@@ -1366,13 +1388,13 @@ def create_bot_marketplace_registration(
         marketplace_name=registration.marketplace_name or bot.name,
         marketplace_description=registration.marketplace_description or bot.description,
         price_on_marketplace=registration.price_on_marketplace or bot.price_per_month,
-        status=models.BotRegistrationStatus.APPROVED  # Auto-approved
+        status=models.BotRegistrationStatus.APPROVED
     )
-    
+
     db.add(db_registration)
     db.commit()
     db.refresh(db_registration)
-    
+
     return db_registration
 
 def get_marketplace_bots(
@@ -1588,3 +1610,152 @@ def validate_marketplace_subscription_access(
     # These are different users, which is expected in marketplace model
     
     return subscription, bot_registration
+
+# PayPal Payment CRUD Operations
+def create_paypal_payment(db: Session, payment_data: schemas.PayPalPaymentCreate) -> models.PayPalPayment:
+    """Create a new PayPal payment record"""
+    db_payment = models.PayPalPayment(**payment_data.dict())
+    db.add(db_payment)
+    db.commit()
+    db.refresh(db_payment)
+    return db_payment
+
+def get_paypal_payment(db: Session, payment_id: str) -> models.PayPalPayment:
+    """Get PayPal payment by ID"""
+    return db.query(models.PayPalPayment).filter(models.PayPalPayment.id == payment_id).first()
+
+def get_paypal_payment_by_order_id(db: Session, order_id: str) -> models.PayPalPayment:
+    """Get PayPal payment by order ID"""
+    return db.query(models.PayPalPayment).filter(models.PayPalPayment.order_id == order_id).first()
+
+def get_paypal_payment_by_paypal_id(db: Session, paypal_payment_id: str) -> models.PayPalPayment:
+    """Get PayPal payment by PayPal payment ID"""
+    return db.query(models.PayPalPayment).filter(
+        models.PayPalPayment.paypal_payment_id == paypal_payment_id
+    ).first()
+
+def update_paypal_payment_status(
+    db: Session, 
+    payment_id: str, 
+    status: models.PayPalPaymentStatus,
+    **kwargs
+) -> models.PayPalPayment:
+    """Update PayPal payment status and other fields"""
+    db_payment = get_paypal_payment(db, payment_id)
+    if db_payment:
+        db_payment.status = status
+        for key, value in kwargs.items():
+            if hasattr(db_payment, key):
+                setattr(db_payment, key, value)
+        db.commit()
+        db.refresh(db_payment)
+    return db_payment
+
+def get_paypal_payments_by_user(
+    db: Session, 
+    user_principal_id: str, 
+    skip: int = 0, 
+    limit: int = 50
+) -> List[models.PayPalPayment]:
+    """Get PayPal payments for a specific user"""
+    return db.query(models.PayPalPayment).filter(
+        models.PayPalPayment.user_principal_id == user_principal_id
+    ).order_by(models.PayPalPayment.created_at.desc()).offset(skip).limit(limit).all()
+
+def get_paypal_payments_by_status(
+    db: Session, 
+    status: models.PayPalPaymentStatus,
+    skip: int = 0, 
+    limit: int = 50
+) -> List[models.PayPalPayment]:
+    """Get PayPal payments by status"""
+    return db.query(models.PayPalPayment).filter(
+        models.PayPalPayment.status == status
+    ).order_by(models.PayPalPayment.created_at.desc()).offset(skip).limit(limit).all()
+
+def get_pending_rental_payments(db: Session) -> List[models.PayPalPayment]:
+    """Get PayPal payments that need rental creation"""
+    return db.query(models.PayPalPayment).filter(
+        models.PayPalPayment.status == models.PayPalPaymentStatus.COMPLETED_PENDING_RENTAL
+    ).order_by(models.PayPalPayment.created_at.asc()).all()
+
+def get_paypal_payment_summaries(
+    db: Session,
+    skip: int = 0,
+    limit: int = 50,
+    status_filter: str = None
+) -> List[dict]:
+    """Get PayPal payment summaries with bot information"""
+    query = db.query(
+        models.PayPalPayment.id,
+        models.PayPalPayment.user_principal_id,
+        models.Bot.name.label('bot_name'),
+        models.PayPalPayment.amount_usd,
+        models.PayPalPayment.status,
+        models.PayPalPayment.created_at,
+        models.PayPalPayment.completed_at,
+        models.PayPalPayment.rental_id
+    ).join(models.Bot, models.PayPalPayment.bot_id == models.Bot.id)
+    
+    if status_filter:
+        query = query.filter(models.PayPalPayment.status == status_filter)
+    
+    return query.order_by(models.PayPalPayment.created_at.desc()).offset(skip).limit(limit).all()
+
+# PayPal Configuration CRUD
+def get_paypal_config(db: Session) -> models.PayPalConfig:
+    """Get active PayPal configuration"""
+    return db.query(models.PayPalConfig).filter(
+        models.PayPalConfig.is_active == True
+    ).first()
+
+def create_paypal_config(db: Session, config_data: schemas.PayPalConfigCreate) -> models.PayPalConfig:
+    """Create PayPal configuration"""
+    # Deactivate existing configs
+    db.query(models.PayPalConfig).update({"is_active": False})
+    
+    # Create new config
+    db_config = models.PayPalConfig(**config_data.dict())
+    db.add(db_config)
+    db.commit()
+    db.refresh(db_config)
+    return db_config
+
+def update_paypal_config(
+    db: Session, 
+    config_id: int, 
+    config_data: schemas.PayPalConfigCreate
+) -> models.PayPalConfig:
+    """Update PayPal configuration"""
+    db_config = db.query(models.PayPalConfig).filter(models.PayPalConfig.id == config_id).first()
+    if db_config:
+        for key, value in config_data.dict().items():
+            setattr(db_config, key, value)
+        db.commit()
+        db.refresh(db_config)
+    return db_config
+
+# PayPal Webhook Event CRUD
+def create_webhook_event(db: Session, event_data: dict) -> models.PayPalWebhookEvent:
+    """Create webhook event record"""
+    db_event = models.PayPalWebhookEvent(
+        id=event_data.get("id", str(uuid.uuid4())),
+        event_type=event_data.get("event_type"),
+        event_data=event_data,
+        processed=False
+    )
+    db.add(db_event)
+    db.commit()
+    db.refresh(db_event)
+    return db_event
+
+def mark_webhook_processed(db: Session, webhook_id: str, payment_id: str = None):
+    """Mark webhook event as processed"""
+    db_event = db.query(models.PayPalWebhookEvent).filter(
+        models.PayPalWebhookEvent.id == webhook_id
+    ).first()
+    if db_event:
+        db_event.processed = True
+        if payment_id:
+            db_event.payment_id = payment_id
+        db.commit()

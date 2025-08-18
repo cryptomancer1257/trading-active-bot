@@ -18,21 +18,35 @@ from core.database import engine
 from core.models import Base
 from api.endpoints import auth, bots, subscriptions, admin
 from api.endpoints import exchange_credentials, user_principals, futures_bot, marketplace
+from api.endpoints import paypal_payments
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
 
 telegram_service = TelegramService()
 discord_service = DiscordService()
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Start background tasks
+    telegram_task = await telegram_service.run()
+    discord_task = asyncio.create_task(discord_service.run())
+    
     try:
-        await telegram_service.run()
-        # await discord_service.run()
         yield
     except Exception as e:
         logger.error("Error occurred during lifespan: %s", str(e))
     finally:
+        # Cancel background tasks gracefully
+        telegram_task.cancel()
+        discord_task.cancel()
+        
+        # Wait for tasks to complete
+        try:
+            await asyncio.gather(telegram_task, discord_task, return_exceptions=True)
+        except Exception as e:
+            logger.error("Error during task cleanup: %s", str(e))
+        
         await app.stop()
         await app.shutdown()
 
@@ -62,6 +76,7 @@ app.include_router(exchange_credentials.router, prefix="/exchange-credentials", 
 app.include_router(user_principals.router, prefix="/user-principals", tags=["User Principals"])
 app.include_router(futures_bot.router, prefix="/api", tags=["Futures Bot"])  # Available in both modes
 app.include_router(marketplace.router, prefix="/marketplace", tags=["Marketplace"])
+app.include_router(paypal_payments.router, prefix="/payments", tags=["PayPal Payments"])
 
 @app.post("/webhook")
 async def webhook(req: Request, db: Session = Depends(get_db)):

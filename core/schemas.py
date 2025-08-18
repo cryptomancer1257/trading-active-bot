@@ -1014,3 +1014,113 @@ class MarketplaceSubscriptionControlResponse(BaseModel):
     status: SubscriptionStatus
     message: str
     timestamp: datetime
+
+# PayPal Payment Schemas
+class PayPalOrderRequest(BaseModel):
+    """Request to create PayPal order"""
+    user_principal_id: str
+    bot_id: int
+    duration_days: int
+    pricing_tier: str  # "daily", "quarterly", "yearly"
+
+class PayPalOrderResponse(BaseModel):
+    """Response from PayPal order creation"""
+    success: bool
+    payment_id: str
+    paypal_order_id: str
+    approval_url: str
+    amount_usd: Decimal
+    amount_icp_equivalent: Decimal
+    expires_in_minutes: int
+
+class PayPalExecutionRequest(BaseModel):
+    """Request to execute PayPal payment"""
+    payment_id: str
+    payer_id: str
+
+class PayPalExecutionResponse(BaseModel):
+    """Response from PayPal payment execution"""
+    success: bool
+    payment_id: str
+    paypal_payment_id: Optional[str] = None
+    rental_id: Optional[str] = None
+    message: str
+    rental_status: str  # "processing", "completed", "failed"
+
+class PayPalPaymentBase(BaseModel):
+    """Base PayPal payment schema"""
+    user_principal_id: str
+    bot_id: int
+    duration_days: int
+    pricing_tier: str
+    amount_usd: Decimal
+    amount_icp_equivalent: Decimal
+    exchange_rate_usd_to_icp: Decimal
+
+class PayPalPaymentCreate(PayPalPaymentBase):
+    """Schema for creating PayPal payment"""
+    pass
+
+class PayPalPaymentInDB(PayPalPaymentBase):
+    """PayPal payment from database"""
+    id: str
+    order_id: str
+    status: str
+    paypal_order_id: Optional[str] = None
+    paypal_payment_id: Optional[str] = None
+    paypal_payer_id: Optional[str] = None
+    payer_email: Optional[str] = None
+    payer_name: Optional[str] = None
+    payer_country_code: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    expires_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    rental_id: Optional[str] = None
+    error_message: Optional[str] = None
+    retry_count: int
+    
+    class Config:
+        from_attributes = True
+
+class PayPalPaymentSummary(BaseModel):
+    """Summary view of PayPal payment"""
+    id: str
+    user_principal_id: str
+    bot_name: str
+    amount_usd: Decimal
+    status: str
+    overall_status: str  # SUCCESS, NEEDS_MANUAL_REVIEW, FAILED, PENDING
+    created_at: datetime
+    completed_at: Optional[datetime] = None
+    rental_id: Optional[str] = None
+
+class PayPalConfigBase(BaseModel):
+    """Base PayPal configuration schema"""
+    environment: str
+    client_id: str
+    webhook_id: Optional[str] = None
+    is_active: bool
+
+class PayPalConfigCreate(PayPalConfigBase):
+    """Schema for creating PayPal config"""
+    client_secret: str
+    webhook_secret: Optional[str] = None
+
+class PayPalConfigInDB(PayPalConfigBase):
+    """PayPal config from database"""
+    id: int
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+class PayPalWebhookEvent(BaseModel):
+    """PayPal webhook event schema"""
+    id: str
+    event_type: str
+    event_data: Dict[str, Any]
+    payment_id: Optional[str] = None
+    processed: bool
+    created_at: datetime

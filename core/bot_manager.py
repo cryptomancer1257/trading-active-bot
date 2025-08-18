@@ -217,10 +217,10 @@ class BotManager:
                 validation_result["error"] = msg
                 validation_result["valid"] = validation_result["is_valid"]
                 return validation_result
-            
+
             validation_result["bot_class"] = bot_class["name"]
             validation_result["bot_info"] = bot_class["info"]
-            
+
             # Check required methods
             missing_methods = self._check_required_methods(bot_class)
             if missing_methods:
@@ -247,7 +247,7 @@ class BotManager:
             validation_result["error"] = msg
         
         # Nếu có lỗi mà chưa có error, gán error là chuỗi nối các errors
-        if not validation_result["valid"] and not validation_result["error"] and validation_result["errors"]:
+        if not validation_result["is_valid"] and not validation_result["error"] and validation_result["errors"]:
             validation_result["error"] = "; ".join([str(e) for e in validation_result["errors"]])
         validation_result["valid"] = validation_result["is_valid"]
         return validation_result
@@ -258,9 +258,9 @@ class BotManager:
         
         # Forbidden functions/modules
         forbidden_imports = {
-            'os', 'sys', 'subprocess', 'eval', 'exec', 'compile',
-            'open', '__import__', 'globals', 'locals', 'vars',
-            'input', 'raw_input', 'file', 'execfile', 'reload'
+            'subprocess', 'eval', 'exec', 'compile',
+            '__import__', 'globals', 'vars',
+            'raw_input', 'file', 'execfile', 'reload'
         }
         
         forbidden_attributes = {

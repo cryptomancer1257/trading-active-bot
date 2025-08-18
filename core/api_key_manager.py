@@ -109,6 +109,7 @@ class APIKeyManager:
                 return None
             
             cred = credentials[0]  # Get first matching credential
+            logger.info(f"Found credentials for user {user_id} (testnet={is_testnet}): {cred.api_key}")
             
             # Decrypt credentials
             decrypted_credentials = {
