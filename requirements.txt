@@ -45,3 +45,7 @@ google-generativeai>=0.3.0
 
 # Security & Encryption
 cryptography>=3.4.8
+
+telegramify-markdown==0.5.1
+discord.py==2.5.2
+python-telegram-bot==22.3

@@ -163,6 +163,9 @@ class UserSettings(Base):
     social_twitter = Column(String(255))
     social_whatsapp = Column(String(255))
 
+    telegram_chat_id = Column(String(255))
+    discord_user_id = Column(String(255))
+
     # Default signal channel
     default_channel = Column(String(50), default="email")
 
@@ -293,9 +296,6 @@ class Subscription(Base):
     
     # Marketplace subscription fields (for users without studio account)
     is_marketplace_subscription = Column(Boolean, default=False)
-    marketplace_user_email = Column(String(255), nullable=True)
-    marketplace_user_telegram = Column(String(255), nullable=True)
-    marketplace_user_discord = Column(String(255), nullable=True)
     marketplace_subscription_start = Column(DateTime, nullable=True)
     marketplace_subscription_end = Column(DateTime, nullable=True)
     

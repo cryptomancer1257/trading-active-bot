@@ -191,9 +191,6 @@ async def create_marketplace_subscription_v2(
                 'user_principal_id': request.get('user_principal_id'),
                 'bot_id': int(request.get('bot_id')) if request.get('bot_id') is not None else None,
                 'instance_name': request.get('instance_name') or f"studio_{request.get('bot_id')}_{int(time.time())}",
-                'marketplace_user_email': request.get('email'),
-                'marketplace_user_telegram': request.get('telegram'),
-                'marketplace_user_discord': request.get('discord'),
                 'subscription_start': parse_iso(request.get('start_time')) or datetime.utcnow(),
                 'subscription_end': parse_iso(request.get('end_time')) or (datetime.utcnow() + timedelta(days=30)),
                 'exchange_type': schemas.ExchangeType.BINANCE,
@@ -202,7 +199,7 @@ async def create_marketplace_subscription_v2(
                 'is_testnet': request.get('is_testnet'),
                 'strategy_config': {},
                 'execution_config': None,
-                'risk_config': None,
+                'risk_config': None
             }
         else:
             # Assume MarketplaceSubscriptionCreateV2 shape
@@ -287,6 +284,20 @@ async def create_marketplace_subscription_v2(
             take_profit_percent=4.0,
             max_position_size=100.0
         )
+ 
+        # # Normalize network_type to models.NetworkType
+        # try:
+        #     if isinstance(request.network_type, schemas.NetworkType):
+        #         network_type_model = models.NetworkType[request.network_type.name]
+        #     elif isinstance(request.network_type, models.NetworkType):
+        #         network_type_model = request.network_type
+        #     else:
+        #         network_type_model = models.NetworkType(str(request.network_type).upper())
+        # except Exception:
+        #     raise HTTPException(
+        #         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        #         detail="Invalid network_type; must be TESTNET or MAINNET",
+        #     )
         
         # Create marketplace subscription
         subscription = models.Subscription(
@@ -297,9 +308,6 @@ async def create_marketplace_subscription_v2(
             
             # Marketplace-specific fields
             is_marketplace_subscription=True,
-            marketplace_user_email=request.marketplace_user_email,
-            marketplace_user_telegram=request.marketplace_user_telegram,
-            marketplace_user_discord=request.marketplace_user_discord,
             marketplace_subscription_start=request.subscription_start,
             marketplace_subscription_end=request.subscription_end,
             
@@ -309,7 +317,8 @@ async def create_marketplace_subscription_v2(
             timeframe=request.timeframe,
             is_testnet=request.is_testnet,
             trade_mode=trade_mode,  # Auto-detected from bot type
-            
+            # network_type=network_type_model,
+
             # Strategy configs
             strategy_config=request.strategy_config,
             execution_config=execution_config.dict(),
@@ -346,9 +355,6 @@ async def create_marketplace_subscription_v2(
             instance_name=subscription.instance_name,
             status=subscription.status,
             is_marketplace_subscription=subscription.is_marketplace_subscription,
-            marketplace_user_email=subscription.marketplace_user_email,
-            marketplace_user_telegram=subscription.marketplace_user_telegram,
-            marketplace_user_discord=subscription.marketplace_user_discord,
             started_at=subscription.started_at,
             expires_at=subscription.expires_at
         )

@@ -8,6 +8,7 @@ import os
 import sys
 from datetime import datetime
 from dotenv import load_dotenv
+import asyncio
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -53,7 +54,7 @@ else:
         
         s3_manager = S3Manager()
         bot_manager = BotManager()
-        logger.info("S3 and BotManager initialized successfully")
+        logger.info("S3, BotManager,  initialized successfully")
     except Exception as e:
                  logger.error(f"Failed to initialize S3/BotManager: {e}")
 
