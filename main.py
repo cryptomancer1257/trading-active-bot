@@ -4,12 +4,14 @@ Trading Bot Marketplace - Main Application
 """
 
 import asyncio
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, logger, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from sqlalchemy.orm import Session
 from core.database import get_db
 from services.telegram_service import TelegramService
+from services.discord_service import DiscordService
 
 # Import from new structure
 from core.database import engine
@@ -20,17 +22,27 @@ from api.endpoints import exchange_credentials, user_principals, futures_bot, ma
 # Create database tables
 Base.metadata.create_all(bind=engine)
 
+telegram_service = TelegramService()
+discord_service = DiscordService()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    try:
+        await telegram_service.run()
+        # await discord_service.run()
+        yield
+    except Exception as e:
+        logger.error("Error occurred during lifespan: %s", str(e))
+    finally:
+        await app.stop()
+        await app.shutdown()
+
 # Create FastAPI app
 app = FastAPI(
+    lifespan=lifespan,
     title="Trading Bot Marketplace",
     description="A comprehensive marketplace for trading bot rental",
     version="2.0.0"
 )
-
-telegram_service = TelegramService()
-@app.on_event("startup")
-async def startup_event():
-    asyncio.create_task(telegram_service.run())
 
 # Add CORS middleware
 app.add_middleware(

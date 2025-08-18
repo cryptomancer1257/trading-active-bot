@@ -51,12 +51,10 @@ else:
     try:
         from services.s3_manager import S3Manager
         from core.bot_manager import BotManager
-        from services.telegram_service import TelegramService
         
         s3_manager = S3Manager()
         bot_manager = BotManager()
-        telegram_service = TelegramService()
-        logger.info("S3, BotManager, and TelegramService initialized successfully")
+        logger.info("S3, BotManager,  initialized successfully")
     except Exception as e:
                  logger.error(f"Failed to initialize S3/BotManager: {e}")
 
@@ -69,11 +67,6 @@ app = FastAPI(
     description="A marketplace for trading bot rentals with S3 integration",
     version="2.0.0"
 )
-
-telegram_service = TelegramService()
-@app.on_event("startup")
-async def startup_event():
-    asyncio.create_task(telegram_service.run())
 
 # Add CORS middleware
 app.add_middleware(

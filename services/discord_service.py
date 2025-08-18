@@ -19,6 +19,7 @@ class PanelView(View):
 
     @discord.ui.button(label="🔔 Follow Bot", style=discord.ButtonStyle.success)
     async def follow_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)  # Trả lời ngay, giữ interaction sống
         user_id = str(interaction.user.id)
         username = f"{interaction.user.name}"
         try:
@@ -33,7 +34,6 @@ class PanelView(View):
                     await interaction.response.send_message("❌ Bot cannot send you a DM. Please enable DMs!", ephemeral=True)
             else:
                 await interaction.response.send_message(message, ephemeral=True)
-                
         except Exception as e:
             logger.error(f"Error in follow_button: {e}")
             await interaction.response.send_message("❌ An error occurred. Please try again later.", ephemeral=True)
@@ -72,8 +72,7 @@ class DiscordService:
                 color=discord.Color.blue()
             )
             embed.set_footer(text="Bot by AI Team • Marketplace for Rent Bots")
-            view = PanelView()
-            message = await ctx.send(embed=embed, view=view)
+            message = await ctx.send(embed=embed, view=PanelView())
             await message.pin(reason="Pinned start panel for new users")
 
 
