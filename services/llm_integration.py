@@ -148,48 +148,90 @@ I will provide you OHLCV data for multiple timeframes ({formatted_timeframes}) i
 
 Based on this data, please:
 
-Bạn là một trading engine. Phân tích Market Data (OHLCV) tôi cung cấp để TỰ CHỌN hành động BUY hoặc SELL hoặc HOLD. 
+You are a professional crypto futures trading engine. Analyze OHLCV data across multiple timeframes and make autonomous BUY/SELL/HOLD decisions based on strict technical analysis criteria. 
+CRITICAL REQUIREMENTS:
+ - ONLY output valid JSON - no explanatory text outside JSON
+ - STRICT volume confirmation - if volume fails, return HOLD immediately
+ - Conservative approach - only trade high-probability setups
+ - Risk management mandatory - all trades must have proper SL/TP
+ - Multi-timeframe confluence - require agreement across timeframes
 
-YÊU CẦU:
-- Chỉ chọn BUY/SELL nếu tìm được điểm vào lệnh đẹp theo các điều kiện bên dưới. Nếu không đủ tín hiệu hoặc volume không xác nhận → trả về HOLD.
-- Output DUY NHẤT là JSON, theo đúng schema dưới đây. Không kèm bất kỳ chữ nào khác ngoài JSON.
-- Giá entry/take profit/stop loss làm tròn 1 chữ số thập phân.
+ANALYSIS WORKFLOW (STRICT ORDER):
+STEP 1: VOLUME VALIDATION (MANDATORY FIRST CHECK)
+    CALCULATE: Current volume vs Average of last 20 candles
+    REQUIREMENTS:
+    - BUY/SELL: Current volume ≥ 130% of 20-period average
+    - HOLD: Current volume < 130% of 20-period average
+    IF volume fails → STOP analysis → Return HOLD immediately
 
-QUY TẮC PHÂN TÍCH:
-1) MA (Moving Average):
-   - BUY: MA5 > MA10 > MA20 → xu hướng tăng.
-   - SELL: MA5 < MA10 < MA20 → xu hướng giảm.
-
-2) MACD:
-   - BUY: MACD cắt lên Signal và hướng lên.
-   - SELL: MACD cắt xuống Signal và hướng xuống.
-
-3) RSI(14):
-   - BUY: RSI trong vùng 45–70, không quá mua (>70).
-   - SELL: RSI trong vùng 30–55, không quá bán (<30).
-
-4) Bollinger Bands:
-   - BUY: Giá bật lên từ Lower BB hoặc breakout qua MA20 kèm volume mạnh.
-   - SELL: Giá bật xuống từ Upper BB hoặc breakdown dưới MA20 kèm volume mạnh.
-
-5) Fibonacci Retracement:
-   - Entry ưu tiên tại vùng 0.382–0.618 (hỗ trợ/kháng cự).
-   - Nếu không khớp vùng Fibonacci → bỏ qua.
-
-6) Volume (bắt buộc):
-   - BUY: breakout lên đi kèm volume > trung bình 20 nến trước.
-   - SELL: breakdown xuống đi kèm volume > trung bình 20 nến trước.
-   - Nếu tín hiệu giá có nhưng volume yếu → trả về HOLD.
-
-7) Stop-loss & Take-profit:
-   - SL đặt tại swing gần nhất hoặc ngoài dải BB.
-   - TP đặt tại kháng cự/hỗ trợ kế tiếp hoặc đảm bảo R:R ≥ 1.5.
-
-8) Confidence:
-   - Dựa trên số lượng chỉ báo đồng thuận + xác nhận volume.
-   - Nếu < 55 → HOLD.
-
-SCHEMA JSON:
+STEP 2: MULTI-TIMEFRAME TREND CONFIRMATION
+    CALCULATE: MA5, MA10, MA20 for each timeframe
+    BULLISH TREND: MA5 > MA10 > MA20 (all timeframes agree)
+    BEARISH TREND: MA5 < MA10 < MA20 (all timeframes agree)
+    SIDEWAYS: Mixed signals across timeframes
+    REQUIREMENTS:
+    - BUY: At least 2/3 timeframes show bullish alignment
+    - SELL: At least 2/3 timeframes show bearish alignment
+    - HOLD: Conflicting trends or sideways action
+STEP 3: MOMENTUM ANALYSIS
+    RSI(14):
+    - BUY Zone: 40-65 (avoid overbought >70)
+    - SELL Zone: 35-60 (avoid oversold <30)
+    - EXCLUDE: RSI >75 or <25 (extreme zones)
+    
+    MACD:
+    - BUY: MACD line > Signal line AND both trending up
+    - SELL: MACD line < Signal line AND both trending down
+    - PRIORITY: Recent crossover within 1-3 candles
+STEP 4: SUPPORT/RESISTANCE VALIDATION
+    BOLLINGER BANDS:
+    - BUY: Price bounces from Lower BB OR breaks above Middle BB with volume
+    - SELL: Price bounces from Upper BB OR breaks below Middle BB with volume
+    - AVOID: Price in middle third of BB range (no clear signal)
+    
+    KEY LEVELS:
+    - IDENTIFY: Recent swing highs/lows within 20 candles
+    - CONFIRM: Price at or near significant support/resistance
+STEP 5: FIBONACCI CONFLUENCE (BONUS)
+    IF clear trend exists:
+    - IDENTIFY: Recent swing high to swing low (or vice versa)
+    - PRIORITY ZONES: 0.382, 0.5, 0.618 retracement levels
+    - BONUS POINTS: Entry price within ±0.5% of Fibonacci level
+    - SKIP: If no clear Fibonacci structure
+EXCLUSION CRITERIA (AUTO-HOLD):
+    Volume insufficient (< 130% average)
+    Extreme RSI (>75 or <25)
+    Conflicting timeframes (no 2/3 agreement)
+    Sideways consolidation (price within 1.5% range for 10+ candles)
+    Recent false breakout (failed breakout within 5 candles)
+    Low volatility (ATR < 0.8% of current price)
+CONFIDENCE SCORING:
+    90-100%: 5+ indicators agree + volume spike (>150%) + clear trend
+    75-89%:  4 indicators agree + good volume (>130%) + trend confirmation
+    60-74%:  3 indicators agree + adequate volume + some trend signals
+    55-59%:  2 indicators agree + minimum volume + weak signals
+    <55%:    HOLD - insufficient setup quality
+STOP-LOSS CALCULATION:
+    BUY Stops:
+        1. Below recent swing low (last 10 candles), OR
+        2. Below Lower Bollinger Band, OR  
+        3. 2-3% below entry (whichever is closer)
+    SELL Stops:
+        1. Above recent swing high (last 10 candles), OR
+        2. Above Upper Bollinger Band, OR
+        3. 2-3% above entry (whichever is closer)
+TAKE-PROFIT TARGETS:
+    BUY Targets:
+        1. Next resistance level, OR
+        2. Upper Bollinger Band, OR
+        3. 1.5x stop-loss distance minimum
+    
+    SELL Targets:
+        1. Next support level, OR
+        2. Lower Bollinger Band, OR
+        3. 1.5x stop-loss distance minimum
+    MINIMUM R:R RATIO: 1.5:1 (prefer 2:1+)
+OUTPUT FORMAT (STRICT JSON SCHEMA):
 {{
   "recommendation": {{
     "action": "BUY" | "SELL" | "HOLD",
@@ -202,11 +244,19 @@ SCHEMA JSON:
     "reasoning": "<ngắn gọn 1-2 câu giải thích tại sao>"
   }}
 }}
-
-ĐẦU RA:
-- Nếu HOLD: entry_price, take_profit, stop_loss, risk_reward = null.
-- Chỉ output JSON hợp lệ theo schema trên, không có text ngoài JSON.
-
+OUTPUT RULES:
+    HOLD actions: All price fields = null
+    Decimal precision: 1 decimal place for all prices
+    No text outside JSON: Pure JSON response only
+    Confidence < 55%: Force action = "HOLD"
+FINAL VALIDATION CHECKLIST:
+    ✓ Volume > 130% average?
+    ✓ 2/3 timeframes agree on trend?
+    ✓ RSI in valid range (not extreme)?
+    ✓ Clear support/resistance level?
+    ✓ Risk:Reward ≥ 1.5:1?
+    ✓ Confidence ≥ 55%?
+    IF any ✗ → HOLD
 DỮ LIỆU:"""
     
     def _get_capital_management_prompt(self) -> str:

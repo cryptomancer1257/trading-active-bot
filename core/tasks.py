@@ -1504,6 +1504,7 @@ async def run_advanced_futures_workflow(bot, subscription_id: int, subscription_
         if hasattr(signal, 'recommendation') and signal.recommendation:
             rec = signal.recommendation
             logger.info(f"🎯 LLM Recommendation Details:")
+            logger.info(f"   Strategy: {rec.get('action', 'N/A')}")
             logger.info(f"   Strategy: {rec.get('strategy', 'N/A')}")
             logger.info(f"   Entry Price: {rec.get('entry_price', 'Market')}")
             logger.info(f"   Take Profit: {rec.get('take_profit', 'N/A')}")

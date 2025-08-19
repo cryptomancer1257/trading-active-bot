@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 class MigrationRunner:
     def __init__(self):
         self.db_config = {
-            'host': os.getenv('DB_HOST', 'db'),
+            'host': os.getenv('DB_HOST', 'localhost'),
             'port': int(os.getenv('DB_PORT', '3306')),
             'user': os.getenv('DB_USER', 'botuser'),
             'password': os.getenv('DB_PASSWORD', 'botpassword123'),

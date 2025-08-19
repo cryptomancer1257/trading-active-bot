@@ -5,7 +5,7 @@ Trading Bot Marketplace - Main Application
 
 import asyncio
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, logger, Request, Depends
+from fastapi import FastAPI, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from sqlalchemy.orm import Session
@@ -20,6 +20,8 @@ from api.endpoints import auth, bots, subscriptions, admin
 from api.endpoints import exchange_credentials, user_principals, futures_bot, marketplace
 from api.endpoints import paypal_payments
 
+import logging
+logger = logging.getLogger("uvicorn.error")
 # Create database tables
 Base.metadata.create_all(bind=engine)
 
