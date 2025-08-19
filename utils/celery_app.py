@@ -14,8 +14,8 @@ load_dotenv('.env')
 app = Celery('bot_marketplace')
 
 # Configure broker and backend
-app.conf.broker_url = os.getenv('REDIS_URL', 'redis://active-trading-redis-1:6379/0')
-app.conf.result_backend = os.getenv('REDIS_URL', 'redis://active-trading-redis-1:6379/0')
+app.conf.broker_url = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+app.conf.result_backend = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
 
 # Task configuration
 app.conf.update(
