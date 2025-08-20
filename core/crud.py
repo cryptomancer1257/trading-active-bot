@@ -564,6 +564,8 @@ def create_trial_subscription(db: Session, trial: schemas.SubscriptionTrialCreat
 def get_subscription_by_id(db: Session, sub_id: int):
     return db.query(models.Subscription).filter(models.Subscription.id == sub_id).first()
 
+def get_subscription_by_id_and_bot(db: Session, sub_id: int, bot_id: int):
+    return db.query(models.Subscription).filter(models.Subscription.id == sub_id, models.Subscription.bot_id == bot_id).first()
 # --- Exchange Credentials CRUD ---
 def create_exchange_credentials(db: Session, credentials: schemas.ExchangeCredentialsCreate, user_id: int):
     """Create new exchange credentials for a user"""
@@ -672,9 +674,9 @@ def update_credentials_validation(db: Session, credentials_id: int, is_valid: bo
     return db_credentials
 
 # === User Settings CRUD ===
-def get_user_setting_by_telegram_username(db: Session, telegram_username: int) -> models.UserSettings:
+def get_users_setting_by_telegram_username(db: Session, telegram_username: int) -> models.UserSettings:
     """Get user settings by Telegram ID"""
-    return db.query(models.UserSettings).filter(models.UserSettings.social_telegram == telegram_username).first()
+    return db.query(models.UserSettings).filter(models.UserSettings.social_telegram == telegram_username).all()
 
 def get_user_setting_by_discord_username(db: Session, discord_username: int) -> models.UserSettings:
     """Get user settings by Discord ID"""

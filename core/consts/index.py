@@ -1,0 +1,3 @@
+#BINANCE
+MAIN_INDICATORS = ["BOLL", "EMA", "SMA", "WMA", "AVL", "TRIX", "SAR"]
+SUB_INDICATORS = ["VOL", "MACD", "RSI", "MFI", "KDJ", "OBV", "CCI", "StochRSI", "WR", "DMI", "MTM", "EMV"]

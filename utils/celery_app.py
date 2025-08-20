@@ -37,11 +37,13 @@ app.conf.update(
     ],
     task_routes={
         'core.tasks.run_bot_logic': {'queue': 'bot_execution'},
+        'core.tasks.run_bot_signal_logic': {'queue': 'bot_execution_signal'},
         'core.tasks.run_futures_bot_trading': {'queue': 'futures_trading'},
         'core.tasks.schedule_futures_bot_trading': {'queue': 'futures_trading'},
         'core.tasks.cleanup_old_logs': {'queue': 'maintenance'},
         'core.tasks.send_email_notification': {'queue': 'notifications'},
         'core.tasks.send_telegram_notification': {'queue': 'notifications'},
+        'core.tasks.send_telegram_beauty_notification': {'queue': 'notifications'},
         'core.tasks.send_discord_notification': {'queue': 'notifications'},
         'core.tasks.test_task': {'queue': 'default'},
     },
@@ -52,6 +54,7 @@ app.conf.update(
         Queue('futures_trading'),
         Queue('maintenance'),
         Queue('notifications'),
+        Queue('bot_execution_signal'),
     ),
     beat_schedule={
         'cleanup-old-logs': {
