@@ -18,6 +18,8 @@ import hmac
 import time
 import requests
 import asyncio
+import redis
+import os
 from datetime import datetime
 from dataclasses import dataclass
 
@@ -496,6 +498,18 @@ class BinanceFuturesBot(CustomBot):
         self.timeframes = config.get('timeframes', ['30m', '1h', '4h'])  # Optimized 3 timeframes
         self.primary_timeframe = config.get('primary_timeframe', self.timeframes[0])  # First timeframe as primary
         
+        # 🔒 Redis client for distributed locking and caching
+        self.redis_client = None
+        try:
+            redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+            self.redis_client = redis.from_url(redis_url, decode_responses=True)
+            # Test connection
+            self.redis_client.ping()
+            logger.info("✅ Redis connection established for LLM locking")
+        except Exception as e:
+            logger.warning(f"⚠️ Redis connection failed: {e}. LLM calls may duplicate across workers.")
+            self.redis_client = None
+        
         # Validate timeframes
         supported_timeframes = [
             '1m', '3m', '5m', '15m', '30m',  # Minutes
@@ -601,6 +615,82 @@ class BinanceFuturesBot(CustomBot):
         logger.info(f"Primary timeframe: {self.primary_timeframe}")
         logger.info(f"Analysis method: {'LLM (' + self.llm_model + ')' if self.use_llm_analysis else 'Technical Indicators'}")
     
+    def _get_llm_cache_key(self, symbol: str, timeframes: List[str]) -> str:
+        """Generate cache key for LLM analysis"""
+        # Create unique key based on symbol and current minute (cache for 1 minute)
+        current_minute = int(time.time() // 60)
+        key_data = f"{symbol}:{':'.join(sorted(timeframes))}:{current_minute}"
+        return f"llm_analysis:{hashlib.md5(key_data.encode()).hexdigest()}"
+    
+    def _get_llm_lock_key(self, symbol: str) -> str:
+        """Generate lock key for LLM analysis"""
+        return f"llm_lock:{symbol}"
+    
+    def _acquire_llm_lock(self, symbol: str, timeout: int = 300) -> bool:
+        """
+        Acquire distributed lock for LLM analysis to prevent duplicate calls
+        Returns True if lock acquired, False if another worker is already processing
+        """
+        if not self.redis_client:
+            return True  # No Redis, proceed without locking
+            
+        lock_key = self._get_llm_lock_key(symbol)
+        worker_id = f"worker_{os.getpid()}_{int(time.time())}"
+        
+        try:
+            # Try to acquire lock with expiration
+            acquired = self.redis_client.set(lock_key, worker_id, nx=True, ex=timeout)
+            if acquired:
+                logger.info(f"🔒 LLM lock acquired by {worker_id} for {symbol}")
+                return True
+            else:
+                current_owner = self.redis_client.get(lock_key)
+                logger.info(f"⏳ LLM lock held by {current_owner} for {symbol}, skipping duplicate analysis")
+                return False
+        except Exception as e:
+            logger.warning(f"Failed to acquire LLM lock: {e}")
+            return True  # Proceed if Redis fails
+    
+    def _release_llm_lock(self, symbol: str):
+        """Release LLM analysis lock"""
+        if not self.redis_client:
+            return
+            
+        lock_key = self._get_llm_lock_key(symbol)
+        try:
+            self.redis_client.delete(lock_key)
+            logger.debug(f"🔓 LLM lock released for {symbol}")
+        except Exception as e:
+            logger.warning(f"Failed to release LLM lock: {e}")
+    
+    def _get_cached_llm_result(self, symbol: str, timeframes: List[str]) -> Optional[Dict[str, Any]]:
+        """Get cached LLM analysis result"""
+        if not self.redis_client:
+            return None
+            
+        cache_key = self._get_llm_cache_key(symbol, timeframes)
+        try:
+            cached_result = self.redis_client.get(cache_key)
+            if cached_result:
+                logger.info(f"📋 Using cached LLM analysis for {symbol}")
+                return json.loads(cached_result)
+        except Exception as e:
+            logger.warning(f"Failed to get cached LLM result: {e}")
+        return None
+    
+    def _cache_llm_result(self, symbol: str, timeframes: List[str], result: Dict[str, Any]):
+        """Cache LLM analysis result for 60 seconds"""
+        if not self.redis_client:
+            return
+            
+        cache_key = self._get_llm_cache_key(symbol, timeframes)
+        try:
+            # Cache for 60 seconds
+            self.redis_client.setex(cache_key, 60, json.dumps(result))
+            logger.debug(f"💾 Cached LLM analysis for {symbol}")
+        except Exception as e:
+            logger.warning(f"Failed to cache LLM result: {e}")
+
     def execute_algorithm(self, data: pd.DataFrame, timeframe: str, subscription_config: Dict[str, Any] = None) -> Action:
         """Execute futures trading algorithm"""
         try:
@@ -803,7 +893,31 @@ class BinanceFuturesBot(CustomBot):
         try:
             # If LLM is enabled and we have historical data, use LLM analysis
             if allow_llm and self.use_llm_analysis and self.llm_service and 'historical_data' in analysis:
-                logger.info("Generating futures signal using LLM analysis...")
+                # 🔍 Step 1: Check cache first
+                cached_result = self._get_cached_llm_result(self.trading_pair, self.timeframes)
+                if cached_result:
+                    return Action(
+                        action=cached_result.get('action', 'HOLD'),
+                        value=cached_result.get('confidence', 0.0),
+                        reason=f"[CACHED] {cached_result.get('reasoning', 'Cached LLM analysis')}"
+                    )
+                
+                # 🔒 Step 2: Try to acquire lock for LLM analysis
+                if not self._acquire_llm_lock(self.trading_pair):
+                    # Another worker is processing, wait for cache or fallback
+                    time.sleep(2)  # Wait 2 seconds
+                    cached_result = self._get_cached_llm_result(self.trading_pair, self.timeframes)
+                    if cached_result:
+                        return Action(
+                            action=cached_result.get('action', 'HOLD'),
+                            value=cached_result.get('confidence', 0.0),
+                            reason=f"[WAITED] {cached_result.get('reasoning', 'LLM analysis from other worker')}"
+                        )
+                    else:
+                        logger.warning("⚠️ No cached result available, falling back to technical analysis")
+                        return self._generate_technical_signal(analysis, data)
+                
+                logger.info("🤖 Generating futures signal using LLM analysis...")
                 
                 try:
                     # Run async LLM analysis safely with ThreadPoolExecutor
@@ -829,19 +943,41 @@ class BinanceFuturesBot(CustomBot):
                         try:
                             llm_action = future.result(timeout=300)  # 60 second timeout for LLM
                             if llm_action:
+                                # 💾 Cache the successful LLM result
+                                cache_data = {
+                                    'action': llm_action.action,
+                                    'confidence': llm_action.value,
+                                    'reasoning': llm_action.reason
+                                }
+                                self._cache_llm_result(self.trading_pair, self.timeframes, cache_data)
+                                
+                                # 🔓 Release lock after successful processing
+                                self._release_llm_lock(self.trading_pair)
                                 return llm_action
                         except concurrent.futures.TimeoutError:
                             logger.warning("LLM signal generation timed out")
+                            self._release_llm_lock(self.trading_pair)
                         except Exception as e:
                             logger.warning(f"LLM signal generation failed: {e}")
+                            self._release_llm_lock(self.trading_pair)
                             
                 except Exception as e:
                     logger.warning(f"Failed to setup LLM signal generation: {e}")
+                    self._release_llm_lock(self.trading_pair)
                 
                 # Fall through to traditional analysis if LLM fails
                 logger.info("Falling back to traditional analysis...")
             
             # Fallback to traditional technical analysis
+            return self._generate_technical_signal(analysis, data)
+            
+        except Exception as e:
+            logger.error(f"Error in futures signal generation: {e}")
+            return Action(action="HOLD", value=0.0, reason=f"Futures signal error: {e}")
+    
+    def _generate_technical_signal(self, analysis: Dict[str, Any], data: pd.DataFrame) -> Action:
+        """Generate signal using traditional technical analysis"""
+        try:
             logger.info("Generating futures signal using traditional technical analysis...")
             if 'error' in analysis:
                 return Action(action="HOLD", value=0.0, reason=f"Analysis error: {analysis['error']}")
@@ -1474,41 +1610,79 @@ class BinanceFuturesBot(CustomBot):
             if (self.use_llm_analysis and self.llm_service and 
                 'timeframes_data' in analysis and analysis['timeframes_data']):
                 
-                logger.info("Generating signal using LLM multi-timeframe analysis...")
+                # 🔍 Step 1: Check cache first
+                cached_result = self._get_cached_llm_result(self.trading_pair, self.timeframes)
+                if cached_result:
+                    return Action(
+                        action=cached_result.get('action', 'HOLD'),
+                        value=cached_result.get('confidence', 0.0),
+                        reason=f"[CACHED-MTF] {cached_result.get('reasoning', 'Cached multi-timeframe LLM analysis')}"
+                    )
                 
-                try:
-                    # Try to run async LLM analysis safely
-                    import concurrent.futures
-                    import threading
+                # 🔒 Step 2: Try to acquire lock for LLM analysis
+                if not self._acquire_llm_lock(self.trading_pair):
+                    # Another worker is processing, wait for cache or fallback
+                    time.sleep(3)  # Wait 3 seconds for multi-timeframe
+                    cached_result = self._get_cached_llm_result(self.trading_pair, self.timeframes)
+                    if cached_result:
+                        return Action(
+                            action=cached_result.get('action', 'HOLD'),
+                            value=cached_result.get('confidence', 0.0),
+                            reason=f"[WAITED-MTF] {cached_result.get('reasoning', 'Multi-timeframe LLM analysis from other worker')}"
+                        )
+                    else:
+                        logger.warning("⚠️ No cached multi-timeframe result available, falling back to technical analysis")
+                        # Skip to traditional analysis
+                        pass
+                else:
+                    logger.info("🤖 Generating signal using LLM multi-timeframe analysis...")
                     
-                    def run_llm_signal():
-                        """Run LLM signal generation in a separate thread with new event loop"""
-                        new_loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(new_loop)
-                        try:
-                            return new_loop.run_until_complete(
-                                self._generate_llm_signal_from_multi_timeframes(analysis['timeframes_data'])
-                            )
-                        except Exception as e:
-                            logger.error(f"LLM signal generation error: {e}")
-                            return None
-                        finally:
-                            new_loop.close()
-                    
-                    # Run in thread pool to avoid event loop conflicts
-                    with concurrent.futures.ThreadPoolExecutor() as executor:
-                        future = executor.submit(run_llm_signal)
-                        try:
-                            llm_action = future.result(timeout=60)  # 60 second timeout for LLM
-                            if llm_action:
-                                return llm_action
-                        except concurrent.futures.TimeoutError:
-                            logger.warning("LLM signal generation timed out")
-                        except Exception as e:
-                            logger.warning(f"LLM signal generation failed: {e}")
-                            
-                except Exception as e:
-                    logger.warning(f"Failed to setup LLM signal generation: {e}")
+                    try:
+                        # Try to run async LLM analysis safely
+                        import concurrent.futures
+                        import threading
+                        
+                        def run_llm_signal():
+                            """Run LLM signal generation in a separate thread with new event loop"""
+                            new_loop = asyncio.new_event_loop()
+                            asyncio.set_event_loop(new_loop)
+                            try:
+                                return new_loop.run_until_complete(
+                                    self._generate_llm_signal_from_multi_timeframes(analysis['timeframes_data'])
+                                )
+                            except Exception as e:
+                                logger.error(f"LLM signal generation error: {e}")
+                                return None
+                            finally:
+                                new_loop.close()
+                        
+                        # Run in thread pool to avoid event loop conflicts
+                        with concurrent.futures.ThreadPoolExecutor() as executor:
+                            future = executor.submit(run_llm_signal)
+                            try:
+                                llm_action = future.result(timeout=60)  # 60 second timeout for LLM
+                                if llm_action:
+                                    # 💾 Cache the successful multi-timeframe LLM result
+                                    cache_data = {
+                                        'action': llm_action.action,
+                                        'confidence': llm_action.value,
+                                        'reasoning': llm_action.reason
+                                    }
+                                    self._cache_llm_result(self.trading_pair, self.timeframes, cache_data)
+                                    
+                                    # 🔓 Release lock after successful processing
+                                    self._release_llm_lock(self.trading_pair)
+                                    return llm_action
+                            except concurrent.futures.TimeoutError:
+                                logger.warning("LLM multi-timeframe signal generation timed out")
+                                self._release_llm_lock(self.trading_pair)
+                            except Exception as e:
+                                logger.warning(f"LLM multi-timeframe signal generation failed: {e}")
+                                self._release_llm_lock(self.trading_pair)
+                                
+                    except Exception as e:
+                        logger.warning(f"Failed to setup multi-timeframe LLM signal generation: {e}")
+                        self._release_llm_lock(self.trading_pair)
                 
                 # Fall through to traditional analysis if LLM fails
                 logger.info("Falling back to traditional analysis...")
