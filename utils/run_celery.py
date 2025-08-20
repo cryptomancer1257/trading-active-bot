@@ -24,7 +24,7 @@ def main():
         'worker',
         '--loglevel=info',
         '--concurrency=2',
-        '--queues=default,bot_execution,futures_trading,maintenance,notifications',
+        '--queues=default,bot_execution,futures_trading,maintenance,notifications,bot_execution_signal',
         '--pool=threads'
     ])
 
