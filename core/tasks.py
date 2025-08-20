@@ -1132,7 +1132,7 @@ def run_bot_logic(self, subscription_id: int):
             logger.warning(f"Failed to release Redis lock: {e}")
 
 @app.task(bind=True, autoretry_for=(Exception,), retry_kwargs={'max_retries': 3, 'countdown': 60})
-def run_bot_signal_logic(bot_id: int, subscription_id: int, payload):
+def run_bot_signal_logic(self, bot_id: int, subscription_id: int):
     """Run bot signal logic for a specific subscription"""
     lock_key = f"bot_execution_signal_lock_{subscription_id}"
     redis_client = None
@@ -1162,7 +1162,7 @@ def run_bot_signal_logic(bot_id: int, subscription_id: int, payload):
         from datetime import datetime
         import uuid
         import subprocess
-        from consts import MAIN_INDICATORS, SUB_INDICATORS
+        from core.consts.index import MAIN_INDICATORS, SUB_INDICATORS, TIMEFRAME_ROBOT_MAP
         from services.image_analysis import analyze_image_with_openai
         from core.schemas import PayLoadBotRun
         db = SessionLocal()
@@ -1188,11 +1188,16 @@ def run_bot_signal_logic(bot_id: int, subscription_id: int, payload):
                 session_id = str(uuid.uuid4())
                 logger.info(f"Running bot signal logic for subscription {subscription_id} with session ID {session_id}")
 
-                all_strategies = subscription.strategy_config
+                all_strategies = subscription.bot.strategy_config
                 main_selected = [s for s in all_strategies if s in MAIN_INDICATORS]
                 sub_selected = [s for s in all_strategies if s in SUB_INDICATORS]
 
-                trading_pair = subscription.trading_pair.replace("/", "_") or 'BTC/USDT'
+                trading_pair = subscription.bot.trading_pair.replace("/", "_") or 'BTC/USDT'
+
+                timeframes_binance = [
+                    TIMEFRAME_ROBOT_MAP.get(tf.lower(), tf)
+                    for tf in subscription.bot.timeframes
+                ]
 
                 robot_file = os.path.abspath("binance.robot")
 
@@ -1206,11 +1211,13 @@ def run_bot_signal_logic(bot_id: int, subscription_id: int, payload):
                 logger.info(f"🔍 DEBUG: About to run Robot Framework with session_id: {session_id}")
                 sys.stdout.flush()
 
+                logger.info(f"🔍 DEBUG: body run robot: {trading_pair} {timeframes_binance} \n {main_selected} \n {sub_selected}")
+
                 result = subprocess.run([
                     "robot",
                     "--variable", f"session_id:{session_id}",
                     "--variable", f"trading_pair:{trading_pair}",
-                    "--variable", f"timeframe:{json.dumps([tf.value for tf in subscription.timeframes])}",
+                    "--variable", f"timeframe:{json.dumps(timeframes_binance)}",
                     "--variable", f"main_indicators:{json.dumps(main_selected)}",
                     "--variable", f"sub_indicators:{json.dumps(sub_selected)}",
                     robot_file
@@ -1267,9 +1274,9 @@ def run_bot_signal_logic(bot_id: int, subscription_id: int, payload):
                     success = result.returncode == 0
 
                     bot_config = PayLoadBotRun(
-                        trading_pair=subscription.trading_pair,
-                        timeframe=subscription.timeframes,
-                        strategies=subscription.strategy_config,
+                        trading_pair=subscription.bot.trading_pair,
+                        timeframe=subscription.bot.timeframes,
+                        strategies=subscription.bot.strategy_config,
                         # custom_prompt=subscription.risk_config
                     )
 
@@ -1300,6 +1307,24 @@ def run_bot_signal_logic(bot_id: int, subscription_id: int, payload):
                     import traceback
                     logger.error(f"🚨 TRACEBACK: {traceback.format_exc()}")
                     sys.stdout.flush()
+                finally:
+                    if os.path.exists(image_path_file):
+                        try:
+                            os.remove(image_path_file)
+                            print(f"✅ Removed session file: {image_path_file}")
+                        except Exception as e:
+                            print(f"❌ Error removing session file: {e}")
+                    # Xóa tất cả ảnh đã dùng nếu tồn tại
+                    for img_path in image_paths:
+                        if os.path.exists(img_path):
+                            try:
+                                os.remove(img_path)
+                                print(f"🧹 Removed image: {img_path}")
+                            except Exception as e:
+                                print(f"❌ Error removing image {img_path}: {e}")
+
+                    db.close()
+                        
             return
         except Exception as e:
             logger.error(f"🚨 EXCEPTION in scheduled_bot_task: {e}")
@@ -1357,9 +1382,13 @@ def schedule_active_bots():
                 if should_run:
                     logger.info(f"Scheduling bot execution for subscription {subscription.id}")
                     
-                    # Queue the bot execution task
-                    run_bot_logic.delay(subscription.id)
-                    
+                    if subscription.bot.bot_mode != "PASSIVE":
+                        run_bot_logic.delay(subscription.id)
+                        # Queue the bot execution task      
+                    else:
+                        # Handle PASSIVE bots
+                        run_bot_signal_logic.delay(subscription.bot.id, subscription.id)
+
                     # Update next run time based on timeframe
                     if subscription.bot.timeframe == "1m":
                         next_run = datetime.utcnow() + timedelta(minutes=1)
