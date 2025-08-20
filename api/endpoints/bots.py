@@ -107,6 +107,15 @@ def submit_new_bot(
     """Developer submit a new bot, bot will be in PENDING status"""
     return crud.create_bot(db=db, bot=bot_in, developer_id=current_user.id)
 
+@router.post("/signal", response_model=schemas.BotInDB, status_code=status.HTTP_201_CREATED)
+def submit_new_bot_signal(
+    bot_in: schemas.BotCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(security.get_current_active_developer)
+):
+    """Developer submit a new bot, bot will be in PENDING status"""
+    return crud.create_bot(db=db, bot=bot_in, developer_id=current_user.id)
+
 @router.post("/with-code", response_model=schemas.BotInDB, status_code=status.HTTP_201_CREATED)
 async def submit_new_bot_with_code(
     name: str = Form(...),

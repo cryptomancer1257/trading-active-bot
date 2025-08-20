@@ -1,3 +1,19 @@
+def format_notification_message(bot_name, balance_info, action, reason, current_price=None, available=None, total_wallet=None):
+    """
+    Format notification message for all channels (Telegram, Discord, Email)
+    """
+
+    available_str = available if available is not None else "N/A"
+    total_wallet_str = total_wallet if total_wallet is not None else "N/A"
+    msg = (
+        f"{bot_name}\n"
+        f"TESTNET Account Balance:\n"
+        f" 💰 Available: ${available_str:,.2f} USDT\n"
+        f" 💎 Total Wallet: ${total_wallet_str:,.2f} USDT\n"
+        f"Action: {action}\n"
+        f"Reason: {reason}"
+    )
+    return msg
 import logging
 import traceback
 import time
@@ -109,16 +125,16 @@ def initialize_bot(subscription):
             if hasattr(subscription.bot, 'bot_type') and subscription.bot.bot_type and subscription.bot.bot_type.upper() == 'FUTURES':
                 # Rich configuration for Futures bots (like main_execution)
                 bot_config = {
-                    'trading_pair': 'BTCUSDT',
-                    'testnet': True,
+                    'trading_pair': subscription.bot.trading_pair.replace('/', ''),
+                    'testnet': subscription.is_testnet if subscription.is_testnet else True,
                     'leverage': 5,
                     'stop_loss_pct': 0.02,  # 2%
                     'take_profit_pct': 0.04,  # 4%
                     'position_size_pct': 0.1,  # 10% of balance
                     
                     # 🎯 Optimized 3 timeframes for better performance
-                    'timeframes': ['30m', '1h', '4h'],  
-                    'primary_timeframe': '1h',  # Primary timeframe for final decision
+                    'timeframes': subscription.bot.timeframes,
+                    'primary_timeframe': subscription.bot.timeframe,  # Primary timeframe for final decision
                     
                     'use_llm_analysis': True,  # Enable LLM analysis with full system
                     'llm_model': 'openai',  # Primary LLM model to use
@@ -151,17 +167,17 @@ def initialize_bot(subscription):
                 logger.info("📊 Applied STANDARD CONFIG for non-futures bot")
             
             # Override with subscription strategy_config if available (from database)
-            if subscription.strategy_config:
-                logger.info(f"🎯 Merging DATABASE STRATEGY CONFIG: {subscription.strategy_config}")
-                bot_config.update(subscription.strategy_config)
-            
+            if subscription.bot.strategy_config:
+                logger.info(f"🎯 Merging DATABASE STRATEGY CONFIG: {subscription.bot.strategy_config}")
+                bot_config.update(subscription.bot.strategy_config)
+
             # Prepare subscription context for bot (includes principal ID)
             subscription_context = {
                 'subscription_id': subscription.id,
                 'user_principal_id': subscription.user_principal_id,
-                'exchange': subscription.exchange_type.value if subscription.exchange_type else 'binance',
-                'trading_pair': subscription.trading_pair,
-                'timeframe': subscription.timeframe,
+                'exchange': subscription.bot.exchange_type.value if subscription.bot.exchange_type else 'binance',
+                'trading_pair': subscription.bot.trading_pair.replace('/', ''),
+                'timeframe': subscription.bot.timeframe,
                 'is_testnet': subscription.is_testnet if subscription.is_testnet else True,
                 'is_marketplace_subscription': getattr(subscription, 'is_marketplace_subscription', False)
             }
@@ -339,16 +355,16 @@ def initialize_bot(subscription):
 #             if hasattr(subscription.bot, 'bot_type') and subscription.bot.bot_type and subscription.bot.bot_type.upper() == 'FUTURES':
 #                 # Rich configuration for Futures bots (like main_execution)
 #                 bot_config = {
-#                     'trading_pair': 'BTCUSDT',
-#                     'testnet': True,
+#                     'trading_pair': subscription.bot.trading_pair.replace('/', ''),
+#                     'testnet': subscription.is_testnet if subscription.is_testnet else True,
 #                     'leverage': 5,
 #                     'stop_loss_pct': 0.02,  # 2%
 #                     'take_profit_pct': 0.04,  # 4%
 #                     'position_size_pct': 0.1,  # 10% of balance
                     
 #                     # 🎯 Optimized 3 timeframes for better performance
-#                     'timeframes': ['30m', '1h', '4h'],  
-#                     'primary_timeframe': '1h',  # Primary timeframe for final decision
+#                     'timeframes': subscription.bot.timeframes,
+#                     'primary_timeframe': subscription.bot.timeframe,  # Primary timeframe for final decision
                     
 #                     'use_llm_analysis': True,  # Enable LLM analysis with full system
 #                     'llm_model': 'openai',  # Primary LLM model to use
@@ -381,17 +397,17 @@ def initialize_bot(subscription):
 #                 logger.info("📊 Applied STANDARD CONFIG for non-futures bot")
             
 #             # Override with subscription strategy_config if available (from database)
-#             if subscription.strategy_config:
-#                 logger.info(f"🎯 Merging DATABASE STRATEGY CONFIG: {subscription.strategy_config}")
-#                 bot_config.update(subscription.strategy_config)
-            
+#             if subscription.bot.strategy_config:
+#                 logger.info(f"🎯 Merging DATABASE STRATEGY CONFIG: {subscription.bot.strategy_config}")
+#                 bot_config.update(subscription.bot.strategy_config)
+
 #             # Prepare subscription context for bot (includes principal ID)
 #             subscription_context = {
 #                 'subscription_id': subscription.id,
 #                 'user_principal_id': subscription.user_principal_id,
-#                 'exchange': subscription.exchange_type.value if subscription.exchange_type else 'binance',
-#                 'trading_pair': subscription.trading_pair,
-#                 'timeframe': subscription.timeframe,
+#                 'exchange': subscription.bot.exchange_type.value if subscription.bot.exchange_type else 'binance',
+#                 'trading_pair': subscription.bot.trading_pair.replace('/', ''),
+#                 'timeframe': subscription.bot.timeframe,
 #                 'is_testnet': subscription.is_testnet if subscription.is_testnet else True,
 #                 'is_marketplace_subscription': getattr(subscription, 'is_marketplace_subscription', False)
 #             }
@@ -507,7 +523,7 @@ def execute_trade_action(db, subscription, exchange, action, current_price):
         from core import crud
         
         # Get trading pair
-        trading_pair = subscription.trading_pair or 'BTC/USDT'
+        trading_pair = subscription.bot.trading_pair or 'BTC/USDT'
         exchange_symbol = trading_pair.replace('/', '')
         
         # Get balance info
@@ -763,7 +779,7 @@ def run_bot_logic(self, subscription_id: int):
                 return
 
             # Get exchange credentials - prioritize exchange_credentials table
-            exchange_type = subscription.exchange_type or schemas.ExchangeType.BINANCE
+            exchange_type = subscription.bot.exchange_type or schemas.ExchangeType.BINANCE
             use_testnet = getattr(subscription, 'is_testnet', True)
             if getattr(subscription, 'is_trial', False):
                 use_testnet = True
@@ -830,7 +846,7 @@ def run_bot_logic(self, subscription_id: int):
             )
             
             # Get current market data
-            trading_pair = subscription.trading_pair or 'BTC/USDT'
+            trading_pair = subscription.bot.trading_pair or 'BTC/USDT'
             exchange_symbol = trading_pair.replace('/', '')
             try:
                 ticker = exchange.get_ticker(exchange_symbol)
@@ -849,7 +865,7 @@ def run_bot_logic(self, subscription_id: int):
             # Create subscription config
             subscription_config = {
                 'subscription_id': subscription_id,
-                'timeframe': subscription.timeframe,
+                'timeframe': subscription.bot.timeframe,
                 'trading_pair': trading_pair,
                 'is_testnet': use_testnet,
                 'exchange_type': exchange_type.value,
@@ -864,7 +880,7 @@ def run_bot_logic(self, subscription_id: int):
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 try:
-                    final_action = loop.run_until_complete(
+                    final_action, account_status = loop.run_until_complete(
                         run_advanced_futures_workflow(bot, subscription_id, subscription_config, db)
                     )
                 finally:
@@ -979,7 +995,7 @@ def run_bot_logic(self, subscription_id: int):
                             'current_price': current_price,
                             'reason': final_action.reason,
                             'confidence': final_action.value or 'N/A',
-                            'timeframe': subscription.timeframe,
+                            'timeframe': subscription.bot.timeframe,
                             'is_testnet': bool(subscription.is_testnet),
                             'balance_info': balance_info,
                             'subscription_id': subscription_id,
@@ -1005,7 +1021,7 @@ def run_bot_logic(self, subscription_id: int):
                         if users_settings:
                             telegram_chat_id = getattr(users_settings, 'telegram_chat_id', None)
                             discord_user_id = getattr(users_settings, 'discord_user_id', None)
-                    if trade_result and (telegram_chat_id or discord_user_id):
+                    if telegram_chat_id or discord_user_id:
                         logger.info(f"trade_result: {trade_result}")
                         # Build concise remaining balance line
                         remaining_balance_line = "Unable to fetch"
@@ -1060,15 +1076,14 @@ def run_bot_logic(self, subscription_id: int):
                         except Exception:
                             pass
 
-                        # Format message in English as requested
-                        message = (
-                            f"bot name: {subscription.bot.name}\n"
-                            f"Your bot just executed a {final_action.action} order.\n"
-                            f"Entry price: ${float(entry_price):.4f}\n"
-                            f"Quantity: {qty_text}\n"
-                            f"Stop loss: {stop_loss_text}\n"
-                            f"Target price: {take_profit_text}\n"
-                            f"Remaining balance: {remaining_balance_line}"
+                        # Format message for all channels using unified format
+                        message = format_notification_message(
+                            bot_name=subscription.bot.name,
+                            balance_info=balance_info,
+                            available=account_status.get('available_balance', 0),
+                            action=final_action.action,
+                            reason=final_action.reason,
+                            total_wallet=account_status.get('total_balance', 0)
                         )
                         if telegram_chat_id:
                             send_telegram_notification.delay(telegram_chat_id, message)
@@ -1116,6 +1131,190 @@ def run_bot_logic(self, subscription_id: int):
         except Exception as e:
             logger.warning(f"Failed to release Redis lock: {e}")
 
+@app.task(bind=True, autoretry_for=(Exception,), retry_kwargs={'max_retries': 3, 'countdown': 60})
+def run_bot_signal_logic(bot_id: int, subscription_id: int, payload):
+    """Run bot signal logic for a specific subscription"""
+    lock_key = f"bot_execution_signal_lock_{subscription_id}"
+    redis_client = None
+    
+    try:
+        # Try to acquire Redis lock
+        from redis import Redis
+        redis_client = Redis(host='redis', port=6379, db=0, decode_responses=True)
+        
+        # Set lock with 5-minute expiration (longer than typical bot execution)
+        lock_acquired = redis_client.set(lock_key, "locked", nx=True, ex=300)
+        
+        if not lock_acquired:
+            logger.info(f"🔒 Bot execution for subscription {subscription_id} already in progress by another worker, skipping")
+            return {"status": "skipped", "reason": "duplicate_execution_prevented"}
+            
+        logger.info(f"🔓 Acquired execution lock for subscription {subscription_id}")
+        
+    except Exception as e:
+        logger.warning(f"Failed to acquire Redis lock, proceeding without lock: {e}")
+        redis_client = None  # Disable lock cleanup if Redis unavailable
+    try: 
+        from core import models
+        from core import schemas
+        from core import crud
+        from core.database import SessionLocal
+        from datetime import datetime
+        import uuid
+        import subprocess
+        from consts import MAIN_INDICATORS, SUB_INDICATORS
+        from services.image_analysis import analyze_image_with_openai
+        from core.schemas import PayLoadBotRun
+        db = SessionLocal()
+
+        try: 
+            logger.info(f"Running bot signal logic for subscription {subscription_id}")
+
+            subscription = crud.get_subscription_by_id_and_bot(db, subscription_id, bot_id)
+            if not subscription:
+                logger.error(f"Subscription {subscription_id} not found")
+                return
+            
+            if subscription.status != models.SubscriptionStatus.ACTIVE:
+                logger.info(f"Subscription {subscription_id} is not active (status: {subscription.status}), skipping")
+                return
+            
+            now = datetime.utcnow()
+            if subscription.expires_at and subscription.expires_at < now:
+                logger.info(f"Subscription {subscription_id} has expired (ended at {subscription.expires_at}), skipping")
+                return
+            
+            if subscription.user_principal_id:
+                session_id = str(uuid.uuid4())
+                logger.info(f"Running bot signal logic for subscription {subscription_id} with session ID {session_id}")
+
+                all_strategies = subscription.strategy_config
+                main_selected = [s for s in all_strategies if s in MAIN_INDICATORS]
+                sub_selected = [s for s in all_strategies if s in SUB_INDICATORS]
+
+                trading_pair = subscription.trading_pair.replace("/", "_") or 'BTC/USDT'
+
+                robot_file = os.path.abspath("binance.robot")
+
+                driver_path = os.path.abspath("drivers")
+                os.environ["PATH"] += os.pathsep + driver_path
+
+                env = os.environ.copy()
+                env["BROWSER"] = "chrome"
+                print("====== ROBOT  ======")
+                sys.stdout.flush()
+                logger.info(f"🔍 DEBUG: About to run Robot Framework with session_id: {session_id}")
+                sys.stdout.flush()
+
+                result = subprocess.run([
+                    "robot",
+                    "--variable", f"session_id:{session_id}",
+                    "--variable", f"trading_pair:{trading_pair}",
+                    "--variable", f"timeframe:{json.dumps([tf.value for tf in subscription.timeframes])}",
+                    "--variable", f"main_indicators:{json.dumps(main_selected)}",
+                    "--variable", f"sub_indicators:{json.dumps(sub_selected)}",
+                    robot_file
+                ], capture_output=True, text=True, env=env,
+                    encoding='utf-8',
+                    errors='replace')
+                logger.info("====== ROBOT STDOUT ======")
+                sys.stdout.flush()
+                logger.info(result)
+                sys.stdout.flush()
+
+                try:
+                    print(f"🔍 DEBUG: Robot completed with returncode: {result.returncode}")
+                    sys.stdout.flush()
+                    print(f"🔍 DEBUG: Now checking for session file...")
+                    sys.stdout.flush()
+
+                    image_path_file = os.path.join("/app/screenshots", f"{session_id}_image.txt")
+                    print(f"🔍 DEBUG: Looking for session file: {image_path_file}")
+                    sys.stdout.flush()
+                    print(f"🔍 DEBUG: Session ID: {session_id}")
+                    sys.stdout.flush()
+                    
+                    # Wait for session file to be created (race condition fix)
+                    import time
+                    max_retries = 10
+                    retry_delay = 0.5
+
+                    for attempt in range(max_retries):
+                        if os.path.exists(image_path_file):
+                            print(f"✅ DEBUG: Session file found after {attempt + 1} attempts!")
+                            sys.stdout.flush()
+                            break
+                        else:
+                            print(f"🔄 DEBUG: Attempt {attempt + 1}/{max_retries} - waiting for session file...")
+                            sys.stdout.flush()
+                            time.sleep(retry_delay)
+                    else:
+                        print(f"❌ DEBUG: Session file NOT found after {max_retries} attempts: {image_path_file}")
+                        sys.stdout.flush()
+                        print("⚠️ Không tìm thấy đường dẫn ảnh đã chụp.")
+                        sys.stdout.flush()
+                        return
+                    
+                    with open(image_path_file, "r") as f:
+                        content = f.read().strip()
+                        image_paths = [line.strip() for line in content.splitlines() if line.strip()]
+                        if not image_paths:
+                            print("⚠️ Không có ảnh nào được tạo.")
+                            return
+                        # print(f"📸 DEBUG: Image path from file: {image_path}")
+                        sys.stdout.flush()
+                    sys.stdout.flush()
+                    success = result.returncode == 0
+
+                    bot_config = PayLoadBotRun(
+                        trading_pair=subscription.trading_pair,
+                        timeframe=subscription.timeframes,
+                        strategies=subscription.strategy_config,
+                        # custom_prompt=subscription.risk_config
+                    )
+
+                    response = analyze_image_with_openai(image_paths, bot_config)
+                    bot_name = f"🤖 BOT {subscription.bot.name}"
+                    final_response = f"{bot_name}\n\n{response}"
+
+                    telegram_chat_id = None
+                    discord_user_id = None
+                    # Studio user: get from user.user_settings
+                    if hasattr(subscription.user, 'user_settings') and subscription.user.user_settings:
+                        telegram_chat_id = getattr(subscription.user.user_settings, 'telegram_chat_id', None)
+                        discord_user_id = getattr(subscription.user.user_settings, 'discord_user_id', None)
+                    # Marketplace user: get from UserSettings by principal_id
+                    if not telegram_chat_id or discord_user_id and subscription.user_principal_id:
+                        from core import crud
+                        users_settings = crud.get_user_settings_by_principal(db, subscription.user_principal_id)
+                        if users_settings:
+                            telegram_chat_id = getattr(users_settings, 'telegram_chat_id', None)
+                            discord_user_id = getattr(users_settings, 'discord_user_id', None)
+                    if telegram_chat_id:
+                        send_telegram_beauty_notification.delay(telegram_chat_id, final_response)
+                    if discord_user_id:
+                        send_discord_notification.delay(discord_user_id, final_response)
+                except Exception as e:
+                    logger.error(f"🚨 EXCEPTION in scheduled_bot_task: {e}")
+                    sys.stdout.flush()
+                    import traceback
+                    logger.error(f"🚨 TRACEBACK: {traceback.format_exc()}")
+                    sys.stdout.flush()
+            return
+        except Exception as e:
+            logger.error(f"🚨 EXCEPTION in scheduled_bot_task: {e}")
+            sys.stdout.flush()
+            import traceback
+            logger.error(f"🚨 TRACEBACK: {traceback.format_exc()}")
+            sys.stdout.flush()
+            return
+    except Exception as e:
+            logger.error(f"🚨 EXCEPTION in scheduled_bot_task: {e}")
+            sys.stdout.flush()
+            import traceback
+            logger.error(f"🚨 TRACEBACK: {traceback.format_exc()}")
+            sys.stdout.flush()
+            return
 @app.task
 def schedule_active_bots():
     """Schedule active bots for execution"""
@@ -1162,17 +1361,17 @@ def schedule_active_bots():
                     run_bot_logic.delay(subscription.id)
                     
                     # Update next run time based on timeframe
-                    if subscription.timeframe == "1m":
+                    if subscription.bot.timeframe == "1m":
                         next_run = datetime.utcnow() + timedelta(minutes=1)
-                    elif subscription.timeframe == "5m":
+                    elif subscription.bot.timeframe == "5m":
                         next_run = datetime.utcnow() + timedelta(minutes=5)
-                    elif subscription.timeframe == "15m":
+                    elif subscription.bot.timeframe == "15m":
                         next_run = datetime.utcnow() + timedelta(minutes=15)
-                    elif subscription.timeframe == "1h":
+                    elif subscription.bot.timeframe == "1h":
                         next_run = datetime.utcnow() + timedelta(hours=1)
-                    elif subscription.timeframe == "4h":
+                    elif subscription.bot.timeframe == "4h":
                         next_run = datetime.utcnow() + timedelta(hours=4)
-                    elif subscription.timeframe == "1d":
+                    elif subscription.bot.timeframe == "1d":
                         next_run = datetime.utcnow() + timedelta(days=1)
                     else:
                         next_run = datetime.utcnow() + timedelta(hours=1)  # Default to 1 hour
@@ -1256,6 +1455,12 @@ def send_telegram_notification(chat_id, text):
     from services.telegram_service import TelegramService
     telegram_service = TelegramService()
     telegram_service.send_telegram_message_v2(chat_id=chat_id, text=text)
+
+@app.task 
+def send_telegram_beauty_notification(chat_id, text):
+    from services.telegram_service import TelegramService
+    telegram_service = TelegramService()
+    telegram_service.send_message_safe_telegram(chat_id=chat_id, text=text)
 
 @app.task
 def send_discord_notification(user_id, message):
@@ -1537,7 +1742,7 @@ async def run_advanced_futures_workflow(bot, subscription_id: int, subscription_
         
         # Return the signal (for compatibility with existing workflow)
         logger.info(f"🎉 ADVANCED FUTURES WORKFLOW completed successfully")
-        return signal
+        return signal, account_status
         
     except Exception as e:
         logger.error(f"❌ Error in advanced futures workflow: {e}")

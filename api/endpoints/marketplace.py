@@ -172,38 +172,9 @@ async def create_marketplace_subscription_v2(
     - Have contact info stored for notifications
     """
     try:
-        # Normalize request body: accept both Studio rent payload and Marketplace V2 schema
-        def parse_iso(ts: Optional[str]) -> Optional[datetime]:
-            if not ts:
-                return None
-            try:
-                # Support trailing 'Z'
-                if isinstance(ts, str) and ts.endswith('Z'):
-                    ts = ts.replace('Z', '+00:00')
-                return datetime.fromisoformat(ts)  # type: ignore[arg-type]
-            except Exception:
-                return None
-
         normalized_payload: Dict[str, Any]
-        if isinstance(request, dict) and 'email' in request:
-            # Studio style payload
-            normalized_payload = {
-                'user_principal_id': request.get('user_principal_id'),
-                'bot_id': int(request.get('bot_id')) if request.get('bot_id') is not None else None,
-                'instance_name': f"studio_{request.get('bot_id')}_{int(time.time())}",
-                'subscription_start': parse_iso(request.get('start_time')) or datetime.utcnow(),
-                'subscription_end': parse_iso(request.get('end_time')) or (datetime.utcnow() + timedelta(days=30)),
-                'exchange_type': schemas.ExchangeType.BINANCE,
-                'trading_pair': 'BTCUSDT',
-                'timeframe': '1h',
-                'is_testnet': request.get('is_testnet'),
-                'strategy_config': {},
-                'execution_config': None,
-                'risk_config': None
-            }
-        else:
-            # Assume MarketplaceSubscriptionCreateV2 shape
-            normalized_payload = dict(request)
+        # Assume MarketplaceSubscriptionCreateV2 shape
+        normalized_payload = dict(request)
 
         try:
             request = schemas.MarketplaceSubscriptionCreateV2(**normalized_payload)  # type: ignore[assignment]
@@ -297,16 +268,10 @@ async def create_marketplace_subscription_v2(
             marketplace_subscription_start=request.subscription_start,
             marketplace_subscription_end=request.subscription_end,
             
-            # Trading config
-            exchange_type=request.exchange_type,
-            trading_pair=request.trading_pair,
-            timeframe=request.timeframe,
             is_testnet=request.is_testnet,
-            trade_mode=trade_mode,  # Auto-detected from bot type
             # network_type=network_type_model,
 
-            # Strategy configs
-            strategy_config=request.strategy_config,
+            # configs
             execution_config=execution_config.dict(),
             risk_config=risk_config.dict(),
             
