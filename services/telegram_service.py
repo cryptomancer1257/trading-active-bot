@@ -183,9 +183,9 @@ class TelegramService:
                 return self.send_markdown_v2(chat_id, text)
             except Exception as e:
                 print(f"⚠️ MarkdownV2 failed, fallback to plain text: {e}")
-                return self.send_message(chat_id, text)
+                return self.send_telegram_message_v2(chat_id, text)
         else:
-            return self.send_message(chat_id, text)
+            return self.send_telegram_message_v2(chat_id, text)
     def send_markdown_v2(self, chat_id: str | int, text: str):
         formatted_text = self.format_telegram_message(text)
         try:
@@ -197,7 +197,7 @@ class TelegramService:
             safe_text = formatted_text  # fallback nếu lỗi escape
 
         print(f"✅ Sending Markdown V2 message to {chat_id}")
-        return self.send_telegram_message(chat_id, safe_text, parse_mode="MarkdownV2")
+        return self.send_telegram_message_v2(chat_id, safe_text, parse_mode="MarkdownV2")
     def send_long_message(self, chat_id: str | int, text: str, use_markdown: bool = True):
         MAX_LENGTH = 4000
         chunks = []
@@ -258,6 +258,7 @@ class TelegramService:
             chunks.append(current_chunk)
 
         return chunks
+    @staticmethod
     def format_telegram_message(text: str) -> str:
         """
         Tiền xử lý Markdown:
