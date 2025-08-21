@@ -43,7 +43,7 @@ services:
 
   celery:
     build: .
-    command: celery -A utils.celery_app worker --loglevel=info --queues=default,bot_execution,futures_trading,maintenance,notifications
+    command: celery -A utils.celery_app worker --loglevel=info --queues=default,bot_execution,futures_trading,maintenance,notifications,bot_execution_signal
     environment:
       - DATABASE_URL=mysql+pymysql://botuser:botpassword123@db/bot_marketplace
       - REDIS_URL=redis://redis:6379/0

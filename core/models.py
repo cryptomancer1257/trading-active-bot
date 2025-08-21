@@ -208,7 +208,17 @@ class Bot(Base):
     bot_type = Column(String(50), default="TECHNICAL")  # TECHNICAL, ML, DL, LLM
     model_path = Column(String(500))  # Path to ML model files
     model_metadata = Column(JSON)  # Model info, requirements, etc.
-    
+    bot_mode = Column(String(10), default="PASSIVE")
+
+    #timeframe
+    timeframe = Column(String(10), default="1h")
+    timeframes = Column(JSON, default=func.jsonb_build_array("1h"))
+
+    #exchange
+    exchange_type = Column(Enum(ExchangeType), default=ExchangeType.BINANCE)
+    trading_pair = Column(String(10), default="BTC/USDT")
+    strategy_config = Column(JSON, default={})  # Strategy configuration overrides
+
     # Legacy pricing (keep for backward compatibility)
     price_per_month = Column(DECIMAL(10, 2), default=0.00)
     is_free = Column(Boolean, default=True)
@@ -281,26 +291,16 @@ class Subscription(Base):
     is_testnet = Column(Boolean, default=False)  # True for testnet subscriptions
     is_trial = Column(Boolean, default=False)    # True for trial subscriptions
     trial_expires_at = Column(DateTime)          # Trial expiration (can be different from expires_at)
-    
-    # Exchange and trading configuration
-    exchange_type = Column(Enum(ExchangeType), default=ExchangeType.BINANCE)  # BINANCE, COINBASE, KRAKEN
-    trading_pair = Column(String(20))
-    timeframe = Column(String(10))  # "1h", "4h", "1d" - kept for backward compatibility
-    
+  
     # New fields for marketplace bot registration
     user_principal_id = Column(String(255))  # ICP Principal ID
-    timeframes = Column(JSON)  # List of timeframes ["1h", "2h", "4h"]
     trade_evaluation_period = Column(Integer)  # Minutes for bot analysis period
     network_type = Column(Enum(NetworkType), default=NetworkType.TESTNET)
-    trade_mode = Column(Enum(TradeMode), default=TradeMode.SPOT)
     
     # Marketplace subscription fields (for users without studio account)
     is_marketplace_subscription = Column(Boolean, default=False)
     marketplace_subscription_start = Column(DateTime, nullable=True)
     marketplace_subscription_end = Column(DateTime, nullable=True)
-    
-    # Strategy configuration (overrides defaults)
-    strategy_config = Column(JSON)
 
     # Execution configuration
     execution_config = Column(JSON)
