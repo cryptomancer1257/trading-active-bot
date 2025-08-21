@@ -564,6 +564,11 @@ def create_trial_subscription(db: Session, trial: schemas.SubscriptionTrialCreat
 def get_subscription_by_id(db: Session, sub_id: int):
     return db.query(models.Subscription).filter(models.Subscription.id == sub_id).first()
 
+def get_all_subscription_by_principal_id(db: Session, principal_id: int):
+    return db.query(models.Subscription).filter(
+        models.Subscription.user_principal_id == principal_id
+    ).all()
+
 def get_subscription_by_id_and_bot(db: Session, sub_id: int, bot_id: int):
     return db.query(models.Subscription).filter(models.Subscription.id == sub_id, models.Subscription.bot_id == bot_id).first()
 # --- Exchange Credentials CRUD ---
@@ -801,6 +806,13 @@ def get_active_subscriptions(db: Session):
         joinedload(models.Subscription.user)
     ).filter(
         models.Subscription.status == models.SubscriptionStatus.ACTIVE
+    ).all()
+
+def get_bot_signal_subscriptions(db: Session, user_principal_id: int):
+    return db.query(models.Subscription).filter(
+        models.Subscription.user_principal_id == user_principal_id,
+        models.Subscription.status == models.SubscriptionStatus.ACTIVE,
+        models.Bot.bot_mode == 'PASSIVE'
     ).all()
 
 def update_subscription_next_run(db: Session, subscription_id: int, next_run: datetime):
