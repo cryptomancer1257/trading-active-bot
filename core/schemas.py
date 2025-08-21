@@ -267,17 +267,11 @@ class BotBase(BaseModel):
     trading_pair: Optional[str] = None
     strategy_config: Optional[Any] = None
 
-class PayLoadBotRun(BaseModel):
-    bot_id: int
+class PayLoadAnalysis(BaseModel):
     bot_name: str = ""
-    owner_principal_id: Optional[str] = None
-    start_time: datetime
-    end_time: datetime
     trading_pair: str
     timeframe: List[str]
     strategies: List[str]
-    exchange: str
-    signal_frequency: int
 
 class BotCreate(BotBase):
     pass
