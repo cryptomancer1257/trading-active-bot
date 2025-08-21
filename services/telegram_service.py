@@ -107,16 +107,21 @@ class TelegramService:
                     chat_id = int(chat_id)
                 except ValueError:
                     pass
-            user_setting = crud.get_user_setting_by_telegram_username(db, telegram_username=user_name)
-            if not user_setting:
+            user_settings = crud.get_users_setting_by_telegram_username(db, telegram_username=user_name)
+            if not user_settings or len(user_settings) == 0:
                 await self.send_telegram_message(chat_id, "❌ Account not found. Please rent bot first.")
                 return {"ok": False}
 
-            if user_setting.telegram_chat_id != chat_id:
-                user_setting.telegram_chat_id = chat_id
-                print(f"📱 Updated chat_id for user {user_name}: {chat_id}")
-            db.commit()
-            db.refresh(user_setting)
+            updated = False
+            for user_setting in user_settings:
+                if user_setting.telegram_chat_id != chat_id:
+                    user_setting.telegram_chat_id = chat_id
+                    updated = True
+                    print(f"📱 Updated chat_id for user {user_name}: {chat_id}")
+            if updated:
+                db.commit()
+                for user_setting in user_settings:
+                    db.refresh(user_setting)
 
             if text.startswith("/start"):
                 return await self.handle_start_command(chat_id, user_setting, db)

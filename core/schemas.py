@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr, Field, validator
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
@@ -21,6 +21,12 @@ class BotType(str, Enum):
     ML = "ML"               # Machine Learning
     DL = "DL"               # Deep Learning
     LLM = "LLM"             # Large Language Model
+    SPOT = "SPOT"           # Spot Trading
+    FUTURES = "FUTURES"     # Futures Trading
+
+class BotMode(str, Enum):
+    PASSIVE = "PASSIVE"
+    ACTIVE = "ACTIVE"
 
 class FileType(str, Enum):
     CODE = "CODE"
@@ -255,6 +261,23 @@ class BotBase(BaseModel):
     config_schema: Optional[Dict[str, Any]] = None
     default_config: Optional[Dict[str, Any]] = None
     model_metadata: Optional[Dict[str, Any]] = None
+    timeframes: Optional[List[str]] = None
+    timeframe: Optional[str] = None
+    bot_mode: Optional[BotMode] = None
+    trading_pair: Optional[str] = None
+    strategy_config: Optional[Any] = None
+
+class PayLoadBotRun(BaseModel):
+    bot_id: int
+    bot_name: str = ""
+    owner_principal_id: Optional[str] = None
+    start_time: datetime
+    end_time: datetime
+    trading_pair: str
+    timeframe: List[str]
+    strategies: List[str]
+    exchange: str
+    signal_frequency: int
 
 class BotCreate(BotBase):
     pass
@@ -270,6 +293,9 @@ class BotUpdate(BaseModel):
     config_schema: Optional[Dict[str, Any]] = None
     default_config: Optional[Dict[str, Any]] = None
     model_metadata: Optional[Dict[str, Any]] = None
+    timeframes: Optional[List[str]] = None
+    trading_pair: Optional[str] = None
+    strategy_config: Optional[List[str]] = None
 
 class BotInDB(BotBase):
     id: int
@@ -472,7 +498,6 @@ class MarketplaceSubscriptionCreate(BaseModel):
 
 class MarketplaceSubscriptionCreateV2(BaseModel):
     """Schema for creating subscription from marketplace (v2 - with contact info)"""
-    
     # Required fields
     user_principal_id: str = Field(..., description="ICP Principal ID of marketplace user")
     bot_id: int = Field(..., description="ID of bot to subscribe to")
@@ -482,13 +507,9 @@ class MarketplaceSubscriptionCreateV2(BaseModel):
     subscription_end: datetime = Field(..., description="When subscription ends (UTC) - REQUIRED")
     
     # Trading configuration
-    exchange_type: ExchangeType = ExchangeType.BINANCE
-    trading_pair: str = "BTCUSDT"
-    timeframe: str = "1h"
     is_testnet: bool = True
 
     # Optional configurations with defaults
-    strategy_config: Dict[str, Any] = Field(default_factory=dict)
     execution_config: Optional[ExecutionConfig] = None
     risk_config: Optional[RiskConfig] = None
     notify_default_method: Optional[str] = "email"  # Default notification method (email, telegram, etc.)

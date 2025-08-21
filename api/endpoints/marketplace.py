@@ -12,7 +12,7 @@ import logging
 from core.api_key_manager import api_key_manager
 from core import crud, models, schemas, security
 from core.database import get_db
-from core.tasks import run_bot_logic
+from core.tasks import run_bot_logic, run_bot_signal_logic
 from core.security import validate_marketplace_api_key
 
 from typing import Dict, Any, List, Optional
@@ -172,38 +172,9 @@ async def create_marketplace_subscription_v2(
     - Have contact info stored for notifications
     """
     try:
-        # Normalize request body: accept both Studio rent payload and Marketplace V2 schema
-        def parse_iso(ts: Optional[str]) -> Optional[datetime]:
-            if not ts:
-                return None
-            try:
-                # Support trailing 'Z'
-                if isinstance(ts, str) and ts.endswith('Z'):
-                    ts = ts.replace('Z', '+00:00')
-                return datetime.fromisoformat(ts)  # type: ignore[arg-type]
-            except Exception:
-                return None
-
         normalized_payload: Dict[str, Any]
-        if isinstance(request, dict) and 'email' in request:
-            # Studio style payload
-            normalized_payload = {
-                'user_principal_id': request.get('user_principal_id'),
-                'bot_id': int(request.get('bot_id')) if request.get('bot_id') is not None else None,
-                'instance_name': f"studio_{request.get('bot_id')}_{int(time.time())}",
-                'subscription_start': parse_iso(request.get('start_time')) or datetime.utcnow(),
-                'subscription_end': parse_iso(request.get('end_time')) or (datetime.utcnow() + timedelta(days=30)),
-                'exchange_type': schemas.ExchangeType.BINANCE,
-                'trading_pair': 'BTCUSDT',
-                'timeframe': '1h',
-                'is_testnet': request.get('is_testnet'),
-                'strategy_config': {},
-                'execution_config': None,
-                'risk_config': None
-            }
-        else:
-            # Assume MarketplaceSubscriptionCreateV2 shape
-            normalized_payload = dict(request)
+        # Assume MarketplaceSubscriptionCreateV2 shape
+        normalized_payload = dict(request)
 
         try:
             request = schemas.MarketplaceSubscriptionCreateV2(**normalized_payload)  # type: ignore[assignment]
@@ -297,16 +268,10 @@ async def create_marketplace_subscription_v2(
             marketplace_subscription_start=request.subscription_start,
             marketplace_subscription_end=request.subscription_end,
             
-            # Trading config
-            exchange_type=request.exchange_type,
-            trading_pair=request.trading_pair,
-            timeframe=request.timeframe,
             is_testnet=request.is_testnet,
-            trade_mode=trade_mode,  # Auto-detected from bot type
             # network_type=network_type_model,
 
-            # Strategy configs
-            strategy_config=request.strategy_config,
+            # configs
             execution_config=execution_config.dict(),
             risk_config=risk_config.dict(),
             
@@ -355,6 +320,179 @@ async def create_marketplace_subscription_v2(
             detail="Failed to create marketplace subscription"
         )
 
+@router.post("/v3/subscription", response_model=schemas.MarketplaceSubscriptionResponse)
+async def create_marketplace_subscription_v2(
+    request: schemas.MarketplaceSubscriptionCreateV2,
+    db: Session = Depends(get_db),
+    x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
+):
+    """
+    Create subscription for marketplace user (without studio account)
+    
+    This endpoint allows marketplace to create subscriptions for users who:
+    - Only exist in marketplace, not in studio
+    - Are identified by principal_id 
+    - Have contact info stored for notifications
+    """
+    try:
+        # Validate API key: allow either marketplace API key or a valid bot API key
+        marketplace_key = os.getenv('MARKETPLACE_API_KEY', 'marketplace_dev_api_key_12345')
+        if not x_api_key:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="API key is required",
+                headers={"WWW-Authenticate": "ApiKey"},
+            )
+
+        is_marketplace_key = x_api_key == marketplace_key
+        bot_registration = None
+        if not is_marketplace_key:
+            bot_registration = crud.get_bot_registration_by_api_key(db, x_api_key)
+            if not bot_registration:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid marketplace API key",
+                    headers={"WWW-Authenticate": "ApiKey"},
+                )
+
+        # Validate bot exists and is approved
+        bot = db.query(models.Bot).filter(
+            models.Bot.id == request.bot_id,
+            models.Bot.status == models.BotStatus.APPROVED
+        ).first()
+        
+        if not bot:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Bot not found or not approved"
+            )
+        
+        # If authorized via bot API key, ensure the registration is for this bot
+        if bot_registration and bot_registration.bot_id != request.bot_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="API key does not match the requested bot",
+            )
+        
+        principal_mapping = db.query(models.UserPrincipal).filter(
+                models.UserPrincipal.principal_id == request.user_principal_id,
+                models.UserPrincipal.status == models.UserPrincipalStatus.ACTIVE
+            ).first()
+        user_id = principal_mapping.user_id if principal_mapping else None
+        
+        if bot.bot_mode == "ACTIVE": 
+            # Create default configs if not provided
+            execution_config = request.execution_config or schemas.ExecutionConfig(
+                buy_order_type="PERCENTAGE",
+                buy_order_value=100.0,
+                sell_order_type="ALL",
+                sell_order_value=100.0
+            )
+            
+            risk_config = request.risk_config or schemas.RiskConfig(
+                stop_loss_percent=2.0,
+                take_profit_percent=4.0,
+                max_position_size=100.0
+            )
+        
+            # Create marketplace subscription
+            subscription = models.Subscription(
+                instance_name= f"studio_{request.bot_id}_{int(time.time())}",  # SAI
+                user_id=user_id,  # Can be NULL
+                bot_id=request.bot_id,
+                user_principal_id=request.user_principal_id,
+                
+                # Marketplace-specific fields
+                is_marketplace_subscription=True,
+                marketplace_subscription_start=request.subscription_start,
+                marketplace_subscription_end=request.subscription_end,
+                
+                is_testnet=request.is_testnet,
+                # network_type=network_type_model,
+
+                # configs
+                execution_config=execution_config.dict(),
+                risk_config=risk_config.dict(),
+                
+                # Timing - both are now required
+                started_at=request.subscription_start,
+                expires_at=request.subscription_end,
+                
+                status=models.SubscriptionStatus.ACTIVE
+            )
+        
+            db.add(subscription)
+            db.commit()
+            db.refresh(subscription)
+        
+            logger.info(f"Created marketplace subscription {subscription.id} for principal {request.user_principal_id}")
+        
+            # Trigger bot execution based on start and end time
+            now = datetime.utcnow()
+            if subscription.started_at <= now <= subscription.expires_at:
+                logger.info(f"Triggering immediate bot execution for marketplace subscription {subscription.id}")
+                run_bot_logic.apply_async(args=[subscription.id], countdown=10)
+            elif subscription.started_at > now:
+                logger.info(f"Marketplace subscription {subscription.id} will start later at {subscription.started_at}")
+            else:
+                logger.info(f"Marketplace subscription {subscription.id} has expired (ended at {subscription.expires_at})")
+        else:
+            logger.info(f"Bot {bot.id} is signaling")
+
+            subscription = models.Subscription(
+                instance_name= f"studio_{request.bot_id}_{int(time.time())}",  # SAI
+                user_id=user_id,  # Can be NULL
+                bot_id=request.bot_id,
+                user_principal_id=request.user_principal_id,
+                
+                # Marketplace-specific fields
+                is_marketplace_subscription=True,
+                marketplace_subscription_start=request.subscription_start,
+                marketplace_subscription_end=request.subscription_end,
+                
+                is_testnet=request.is_testnet,
+                # network_type=network_type_model,
+                
+                # Timing - both are now required
+                started_at=request.subscription_start,
+                expires_at=request.subscription_end,
+                
+                status=models.SubscriptionStatus.ACTIVE
+            )
+        
+            db.add(subscription)
+            db.commit()
+            db.refresh(subscription)
+
+            now = datetime.utcnow()
+            if subscription.started_at <= now <= subscription.expires_at:
+                logger.info(f"Triggering immediate bot execution signal for marketplace subscription {subscription.id}")
+                run_bot_signal_logic.apply_async(args=[bot.id, subscription.id], countdown=10)
+            elif subscription.started_at > now:
+                logger.info(f"Marketplace subscription {subscription.id} will start later at {subscription.started_at}")
+            else:
+                logger.info(f"Marketplace subscription {subscription.id} has expired (ended at {subscription.expires_at})")
+
+        return schemas.MarketplaceSubscriptionResponse(
+            subscription_id=subscription.id,
+            user_principal_id=subscription.user_principal_id,
+            bot_id=subscription.bot_id,
+            instance_name=subscription.instance_name,
+            status=subscription.status,
+            is_marketplace_subscription=subscription.is_marketplace_subscription,
+            started_at=subscription.started_at,
+            expires_at=subscription.expires_at
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to create marketplace subscription: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create marketplace subscription"
+        )
 
 # Marketplace endpoint for storing credentials by principal ID
 @router.post("/store-by-principal", response_model=Dict[str, Any])
