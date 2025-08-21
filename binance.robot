@@ -67,9 +67,12 @@ Handle Cookie Popup
 
 Load And Select Indicators
     # Mở menu Technical Indicator
-    Wait Until Page Contains Element    xpath=//div[contains(@class, 'bn-tooltips-ele')]//*[name()='svg' and .//*[name()='path'][contains(@d, 'M4 20h3v-6.791')]]    10s
-    Click Element                       xpath=//div[contains(@class, 'bn-tooltips-ele')]//*[name()='svg' and .//*[name()='path'][contains(@d, 'M4 20h3v-6.791')]]
-    Sleep    1s
+    ${technical_indicator_icon}=    Set Variable    css:div.bn-tooltips-web > div.bn-tooltips-ele > div > svg[viewBox="0 0 24 24"] path[d*="M19.932 8.802a"]
+    
+    # Đợi và click vào icon
+    Wait Until Page Contains Element    ${technical_indicator_icon}    10s
+    Click Element                       ${technical_indicator_icon}
+    Sleep    3s
 
     # Xử lý main indicators nếu có - skip for now due to selector issues
     Run Keyword If    ${main_indicators}   Select Main Indicators

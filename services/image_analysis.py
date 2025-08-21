@@ -4,7 +4,7 @@ import time
 from typing import Optional, Dict, Any, List
 from openai import OpenAI
 import logging
-from core.schemas import PayLoadBotRun
+from core.schemas import PayLoadAnalysis
 
 logger = logging.getLogger(__name__)
 
@@ -272,7 +272,7 @@ def analyze_multiple_charts(chart_data: List[Dict[str, Any]]) -> List[Dict[str, 
     
     return results 
 
-def analyze_image_with_openai(image_paths: list[str], bot_config: PayLoadBotRun) -> str:
+def analyze_image_with_openai(image_paths: list[str], bot_config: PayLoadAnalysis) -> str:
     analyzer = TradingChartAnalyzer()
     
     result = analyzer.analyze_chart_image(
