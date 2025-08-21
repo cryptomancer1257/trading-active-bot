@@ -1164,7 +1164,7 @@ def run_bot_signal_logic(self, bot_id: int, subscription_id: int):
         import subprocess
         from core.consts.index import MAIN_INDICATORS, SUB_INDICATORS, TIMEFRAME_ROBOT_MAP
         from services.image_analysis import analyze_image_with_openai
-        from core.schemas import PayLoadBotRun
+        from core.schemas import PayLoadAnalysis
         db = SessionLocal()
 
         try: 
@@ -1273,7 +1273,8 @@ def run_bot_signal_logic(self, bot_id: int, subscription_id: int):
                     sys.stdout.flush()
                     success = result.returncode == 0
 
-                    bot_config = PayLoadBotRun(
+                    bot_config = PayLoadAnalysis(
+                        bot_name=subscription.bot.name,
                         trading_pair=subscription.bot.trading_pair,
                         timeframe=subscription.bot.timeframes,
                         strategies=subscription.bot.strategy_config,
@@ -1467,18 +1468,6 @@ def send_email_notification(email: str, subject: str, body: str):
     except Exception as e:
         logger.error(f"Error sending email notification: {e}")
 
-# @app.task
-# def send_telegram_notification(chat_id: str | int, text: str):
-#     try:
-#         from services.telegram_service import TelegramService
-#         telegram_service = TelegramService()
-#     except Exception as e:
-#         logger.error(f"Error sending email notification: {e}")
-
-    
-# @app.task
-# def send_discord_notification():
-#     return
 @app.task
 def send_telegram_notification(chat_id, text):
     from services.telegram_service import TelegramService
