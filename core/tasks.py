@@ -1298,6 +1298,7 @@ def run_bot_signal_logic(self, bot_id: int, subscription_id: int):
                         if users_settings:
                             telegram_chat_id = getattr(users_settings, 'telegram_chat_id', None)
                             discord_user_id = getattr(users_settings, 'discord_user_id', None)
+                    logger.info(f"telegram chat id and discord user id: {telegram_chat_id}, {discord_user_id}")
                     if telegram_chat_id:
                         send_telegram_beauty_notification.delay(telegram_chat_id, final_response)
                     if discord_user_id:
@@ -1341,6 +1342,14 @@ def run_bot_signal_logic(self, bot_id: int, subscription_id: int):
             logger.error(f"🚨 TRACEBACK: {traceback.format_exc()}")
             sys.stdout.flush()
             return
+    finally:
+        # 🔓 CLEANUP: Release Redis lock
+        try:
+            if redis_client:
+                redis_client.delete(lock_key)
+                logger.info(f"🔓 Released execution lock for subscription {subscription_id}")
+        except Exception as e:
+            logger.warning(f"Failed to release Redis lock: {e}")
 @app.task
 def schedule_active_bots():
     """Schedule active bots for execution"""
