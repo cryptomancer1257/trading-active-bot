@@ -10,6 +10,7 @@ import datetime
 from discord.ui import View, Button
 from core import crud, models
 from core.database import SessionLocal
+from core.tasks import run_bot_signal_logic, run_bot_logic
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,7 @@ class PanelView(View):
         username = f"{interaction.user.name}"
         
         try:
+            await interaction.response.defer(ephemeral=True)
             logger.info(f"🔔 User {username} ({user_id}) clicked Follow Bot button")
             
             # Respond immediately to prevent interaction timeout
@@ -62,20 +64,178 @@ class PanelView(View):
     async def handle_discord_subscription(self, user_id: str, username: str):
         try:
             with SessionLocal() as db:
-                user = crud.get_user_setting_by_discord_username(db, username)
-                if not user:
+                user_settings = crud.get_users_setting_by_discord_username(db, username)
+                if not user_settings or len(user_settings) == 0:
                     return False, "❌ Account not found. Please rent bot first."
                 
-                # Update discord_user_id if different
-                if user.discord_user_id != user_id:
-                    user.discord_user_id = user_id
+                updated = False
+                for user_setting in user_settings:
+                    if user_setting.discord_user_id != user_id:
+                        user_setting.discord_user_id = user_id
+                        updated = True
+                        logger.info(f"📱 Updated discord_user_id for user {username}: {user_id}")
+                if updated:
                     db.commit()
-                    db.refresh(user)
+                    for user_setting in user_settings:
+                        db.refresh(user_setting)
                 
                 return True, "✅ You are now following the bot! You'll receive notifications about bot rentals."
         except Exception as e:
             logger.error(f"Error in handle_discord_subscription: {e}")
             return False, "❌ Database error occurred. Please try again later."
+
+class ManualSignalsPanelView(View):
+    @discord.ui.button(label="🔍 View All Bots Passive", style=discord.ButtonStyle.primary)
+    async def view_all_bots(self, interaction: discord.Interaction, button: discord.ui.Button):
+        try:
+            await interaction.response.defer(ephemeral=True) 
+
+            with SessionLocal() as db:
+                user_id = str(interaction.user.id)
+                username = f"{interaction.user.name}"
+
+                logger.info(f"ManualSignalsPanelView with user: {username}")
+
+                # Gọi DB để lấy danh sách bot mà user đã thuê
+                user_settings = crud.get_users_setting_by_discord_username(db, username)
+                if not user_settings or len(user_settings) == 0:
+                    return False, "❌ Account not found. Please rent bot first."
+                
+                updated = False
+                for user_setting in user_settings:
+                    if user_setting.discord_user_id != user_id:
+                        user_setting.discord_user_id = user_id
+                        updated = True
+                        logger.info(f"📱 Updated discord_user_id for user {username}: {user_id}")
+                if updated:
+                    db.commit()
+                    for user_setting in user_settings:
+                        db.refresh(user_setting)
+
+                if user_settings:
+                    bots = []
+                    for user_setting in user_settings:
+                        bot_list = crud.get_all_subscription_by_principal_id(db, principal_id=user_setting.principal_id, bot_mode='PASSIVE')
+                        if bot_list:
+                            for bot in bot_list:
+                                rent_date = getattr(bot, "started_at", None)
+                                rent_date_str = rent_date.strftime("%d/%m %H:%M") if rent_date else "N/A"
+
+                                # Lấy 5 ký tự đầu principal_id
+                                principal_prefix = str(user_setting.principal_id)[:5]
+
+                                bots.append({
+                                    "bot_name": bot.bot.name,
+                                    "bot_id": bot.bot.id,
+                                    "sub_id": bot.id,
+                                    "rent_date": rent_date_str,
+                                    "principal_prefix": principal_prefix,
+                                    "bot_mode": bot.bot.bot_mode # passive bot mode
+                                })
+
+                if not bots:
+                    await interaction.response.send_message("❌ You don't have any rented bots.", ephemeral=True)
+                    return
+
+                view = BotListView(bots)
+                await interaction.response.send_message("🤖 List of your rented bots:", view=view, ephemeral=True)
+        except Exception as e:
+            logger.error(f"Error in view_all_bots: {e}")
+            try:
+                await interaction.followup.send("❌ An error occurred. Please try again later.", ephemeral=True)
+            except:
+                # If interaction is completely expired, log the error
+                logger.error("Could not send error message to user due to expired interaction")
+
+class ManualActivePanelView(View):
+    @discord.ui.button(label="🔍 View All Bots Active", style=discord.ButtonStyle.primary)
+    async def view_all_bots(self, interaction: discord.Interaction, button: discord.ui.Button):
+        try:
+            await interaction.response.defer(ephemeral=True)
+
+            with SessionLocal() as db:
+                user_id = str(interaction.user.id)
+                username = f"{interaction.user.name}"
+
+                logger.info(f"ManualActivePanelView with user: {username}")
+
+                # Query user settings
+                user_settings = crud.get_users_setting_by_discord_username(db, username)
+                if not user_settings or len(user_settings) == 0:
+                    await interaction.followup.send("❌ Account not found. Please rent bot first.", ephemeral=True)
+                    return
+
+                updated = False
+                for user_setting in user_settings:
+                    if user_setting.discord_user_id != user_id:
+                        user_setting.discord_user_id = user_id
+                        updated = True
+                        logger.info(f"📱 Updated discord_user_id for user {username}: {user_id}")
+                if updated:
+                    db.commit()
+                    for user_setting in user_settings:
+                        db.refresh(user_setting)
+
+                bots = []
+                for user_setting in user_settings:
+                    bot_list = crud.get_all_subscription_by_principal_id(db, principal_id=user_setting.principal_id, bot_mode='ACTIVE')
+                    for bot in bot_list:
+                        rent_date = getattr(bot, "started_at", None)
+                        rent_date_str = rent_date.strftime("%d/%m %H:%M") if rent_date else "N/A"
+                        principal_prefix = str(user_setting.principal_id)[:5]
+
+                        bots.append({
+                            "bot_name": bot.bot.name,
+                            "bot_id": bot.bot.id,
+                            "sub_id": bot.id,
+                            "rent_date": rent_date_str,
+                            "principal_prefix": principal_prefix,
+                            "bot_mode": bot.bot.bot_mode
+                        })
+
+                if not bots:
+                    await interaction.followup.send("❌ You don't have any rented bots.", ephemeral=True)
+                    return
+
+                view = BotListView(bots)
+                await interaction.followup.send("🤖 List of your rented bots:", view=view, ephemeral=True)
+
+        except Exception as e:
+            logger.error(f"Error in view_all_bots: {e}")
+            try:
+                await interaction.followup.send("❌ An error occurred. Please try again later.", ephemeral=True)
+            except:
+                # If interaction is completely expired, log the error
+                logger.error("Could not send error message to user due to expired interaction")
+
+class BotListView(View):
+    def __init__(self, bots: list[dict]):
+        super().__init__(timeout=60)
+        for bot_info in bots:
+            self.add_item(RunBotButton(bot_info))
+
+class RunBotButton(Button):
+    def __init__(self, bot_info):
+        self.bot_id = bot_info["bot_id"]
+        self.subs_id = bot_info["sub_id"]
+        self.bot_name = bot_info["bot_name"]
+        self.rent_date = bot_info["rent_date"]
+        self.principal_prefix = bot_info["principal_prefix"]
+        self.bot_mode = bot_info["bot_mode"]
+        label = f"▶️ {bot_info['bot_name']}-{bot_info['principal_prefix']}-{bot_info['rent_date']}"
+        super().__init__(label=label, style=discord.ButtonStyle.success)
+
+    async def callback(self, interaction: discord.Interaction):
+        user_id = str(interaction.user.id)
+        discord_username = str(interaction.user.name)
+        if self.bot_mode == "PASSIVE":
+            logger.info(f"trigger celery run_bot_signal_logic for {discord_username}")
+            run_bot_signal_logic.delay(self.bot_id, self.subs_id)
+        else:
+            logger.info(f"trigger celery run_bot_logic for {discord_username}")
+            run_bot_logic.delay(self.subs_id)
+
+        await interaction.response.send_message(f"🚀 Running bot `{self.bot_name}`...", ephemeral=True)
 
 class DiscordService:
     def __init__(self, token=None, intents=None, command_prefix="!"):
@@ -104,7 +264,7 @@ class DiscordService:
                 embed.set_footer(text="Bot by AI Team • Marketplace for Rent Bots")
                 
                 # Create view with timeout
-                view = PanelView()
+                view = PanelView(self.bot)
                 message = await ctx.send(embed=embed, view=view)
                 
                 # Try to pin the message
@@ -118,6 +278,36 @@ class DiscordService:
             except Exception as e:
                 logger.error(f"Error in start_panel command: {e}")
                 await ctx.send("❌ An error occurred while creating the panel. Please try again.")
+        @self.bot.command()
+        async def manual_signals_panel(ctx):
+            manual_channel = discord.utils.get(ctx.guild.text_channels, name="manual-passive")
+
+            if not manual_channel:
+                await ctx.send("❌ Not found # 'manual-passive'")
+                return
+
+            embed = discord.Embed(
+                title="⚙️ Manual Bot Control",
+                description="Click **View All Bots** to see and start the bots you have rented.",
+                color=discord.Color.orange()
+            )
+            embed.set_footer(text="Manual Bot Control • Only you can see your bots")
+            await manual_channel.send(embed=embed, view=ManualSignalsPanelView())
+        @self.bot.command()
+        async def manual_active_panel(ctx):
+            manual_channel = discord.utils.get(ctx.guild.text_channels, name="manual-active")
+
+            if not manual_channel:
+                await ctx.send("❌ Not found # 'manual-active'")
+                return
+
+            embed = discord.Embed(
+                title="⚙️ Manual Bot Control",
+                description="Click **View All Bots** to see and start the bots you have rented.",
+                color=discord.Color.orange()
+            )
+            embed.set_footer(text="Manual Bot Control • Only you can see your bots")
+            await manual_channel.send(embed=embed, view=ManualActivePanelView())
 
 
     async def background_dm_worker(self):
