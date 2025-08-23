@@ -50,242 +50,6 @@ def queue_discord_dm(user_id, message):
     r = redis.Redis(host=os.getenv('REDIS_HOST', 'active-trading-redis-1'), port=int(os.getenv('REDIS_PORT', 6379)), db=0)
     payload = {'user_id': user_id, 'message': message}
     r.rpush('discord_dm_queue', json.dumps(payload))
-# def initialize_bot(subscription):
-#     """Initialize bot from subscription - Load from S3"""
-#     try:
-#         # Import here to avoid circular imports
-#         from core import models
-#         from core import schemas
-#         from core.database import SessionLocal
-#         from services.s3_manager import S3Manager
-#         from core.bot_base_classes import get_base_classes
-        
-#         # Initialize S3 manager
-#         s3_manager = S3Manager()
-        
-#         # Get bot information
-#         bot_id = subscription.bot.id
-#         logger.info(f"Initializing bot {bot_id} from S3...")
-        
-#         # Get latest version from S3
-#         try:
-#             latest_version = s3_manager.get_latest_version(bot_id, "code")
-#             logger.info(f"Using latest version: {latest_version}")
-#         except Exception as e:
-#             logger.error(f"Could not get latest version for bot {bot_id}: {e}")
-#             return None
-        
-#         # Download bot code from S3
-#         try:
-#             code_content = s3_manager.download_bot_code(bot_id, latest_version)
-#             logger.info(f"Downloaded bot code from S3: {len(code_content)} characters")
-#         except Exception as e:
-#             logger.error(f"Failed to download bot code from S3: {e}")
-#             return None
-        
-#         # Create temporary file to execute the code
-#         import tempfile
-#         import os
-        
-#         # Load base classes from bot_sdk folder
-#         base_classes = get_base_classes()
-        
-#         # Combine base classes with downloaded bot code
-#         full_code = base_classes + "\n" + code_content
-        
-#         with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
-#             f.write(full_code)
-#             temp_file_path = f.name
-        
-#         try:
-#             # Load bot module from temporary file
-#             spec = importlib.util.spec_from_file_location("bot_module", temp_file_path)
-#             if not spec or not spec.loader:
-#                 logger.error("Could not create module spec")
-#                 return None
-            
-#             bot_module = importlib.util.module_from_spec(spec)
-#             spec.loader.exec_module(bot_module)
-            
-#             # Find bot class in the module
-#             bot_class = None
-#             for attr_name in dir(bot_module):
-#                 attr = getattr(bot_module, attr_name)
-#                 if (inspect.isclass(attr) and 
-#                     hasattr(attr, 'execute_algorithm') and 
-#                     attr_name != 'CustomBot'):
-#                     bot_class = attr
-#                     break
-            
-#             if not bot_class:
-#                 logger.error("No valid bot class found in module")
-#                 return None
-            
-#             # Prepare bot configuration - Rich config for Futures bots
-#             if hasattr(subscription.bot, 'bot_type') and subscription.bot.bot_type and subscription.bot.bot_type.upper() == 'FUTURES':
-#                 # Rich configuration for Futures bots (like main_execution)
-#                 bot_config = {
-#                     'trading_pair': subscription.bot.trading_pair.replace('/', ''),
-#                     'testnet': subscription.is_testnet if subscription.is_testnet else True,
-#                     'leverage': 5,
-#                     'stop_loss_pct': 0.02,  # 2%
-#                     'take_profit_pct': 0.04,  # 4%
-#                     'position_size_pct': 0.1,  # 10% of balance
-                    
-#                     # 🎯 Optimized 3 timeframes for better performance
-#                     'timeframes': subscription.bot.timeframes,
-#                     'primary_timeframe': subscription.bot.timeframe,  # Primary timeframe for final decision
-                    
-#                     'use_llm_analysis': True,  # Enable LLM analysis with full system
-#                     'llm_model': 'openai',  # Primary LLM model to use
-                    
-#                     # Technical indicators (fallback when LLM fails)
-#                     'rsi_period': 14,
-#                     'rsi_oversold': 30,     # Buy signal threshold
-#                     'rsi_overbought': 70,   # Sell signal threshold
-                    
-#                     # Capital management (CRITICAL for risk control)
-#                     'base_position_size_pct': 0.02,    # 2% minimum position
-#                     'max_position_size_pct': 0.10,     # 10% maximum position  
-#                     'max_portfolio_exposure': 0.30,    # 30% total exposure limit
-#                     'max_drawdown_threshold': 0.15,    # 15% stop-loss threshold
-                    
-#                     # Celery execution
-#                     'require_confirmation': False,  # No confirmation for Celery
-#                     'auto_confirm': True  # Auto-confirm trades (for Celery/automated execution)
-#                 }
-#                 logger.info(f"🚀 Applied RICH FUTURES CONFIG: {len(bot_config['timeframes'])} timeframes, {bot_config['leverage']}x leverage")
-#             else:
-#                 # Standard configuration for other bots
-#                 bot_config = {
-#                     'short_window': 50,
-#                     'long_window': 200,
-#                     'position_size': 0.3,
-#                     'min_volume_threshold': 1000000,
-#                     'volatility_threshold': 0.05
-#                 }
-#                 logger.info("📊 Applied STANDARD CONFIG for non-futures bot")
-            
-#             # Override with subscription strategy_config if available (from database)
-#             if subscription.bot.strategy_config:
-#                 logger.info(f"🎯 Merging DATABASE STRATEGY CONFIG: {subscription.bot.strategy_config}")
-#                 bot_config.update(subscription.bot.strategy_config)
-
-#             # Prepare subscription context for bot (includes principal ID)
-#             subscription_context = {
-#                 'subscription_id': subscription.id,
-#                 'user_principal_id': subscription.user_principal_id,
-#                 'exchange': subscription.bot.exchange_type.value if subscription.bot.exchange_type else 'binance',
-#                 'trading_pair': subscription.bot.trading_pair.replace('/', ''),
-#                 'timeframe': subscription.bot.timeframe,
-#                 'is_testnet': subscription.is_testnet if subscription.is_testnet else True,
-#                 'is_marketplace_subscription': getattr(subscription, 'is_marketplace_subscription', False)
-#             }
-            
-#             # Try multiple initialization approaches for compatibility
-#             bot_instance = None
-#             init_success = False
-            
-#             # Create api_keys dict for backward compatibility
-#             api_keys = {
-#                 'exchange': subscription_context['exchange'],
-#                 'testnet': subscription_context['is_testnet']
-#             }
-            
-#             # Method 1: Try BinanceFuturesBot direct initialization (for Futures bots)
-#             if hasattr(subscription.bot, 'bot_type') and subscription.bot.bot_type and subscription.bot.bot_type.upper() == 'FUTURES':
-#                 try:
-#                     logger.info(f"Attempting FUTURES BOT direct initialization...")
-#                     # Import BinanceFuturesBot directly for futures bots
-#                     import sys
-#                     import os
-#                     bot_files_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'bot_files')
-#                     if bot_files_path not in sys.path:
-#                         sys.path.insert(0, bot_files_path)
-                    
-#                     from binance_futures_bot import BinanceFuturesBot
-#                     bot_instance = BinanceFuturesBot(bot_config, api_keys, subscription.user_principal_id)
-#                     init_success = True
-#                     logger.info(f"✅ FUTURES BOT initialized successfully with principal ID")
-#                 except Exception as e:
-#                     logger.warning(f"FUTURES BOT direct init failed: {e}")
-            
-#             # Method 2: Try downloaded bot with 3 arguments (config, api_keys, principal_id)
-#             if not init_success:
-#                 try:
-#                     bot_instance = bot_class(bot_config, api_keys, subscription.user_principal_id)
-#                     init_success = True
-#                     logger.info(f"✅ Downloaded bot initialized with 3 args: {bot_class.__name__}")
-#                 except TypeError as e:
-#                     logger.warning(f"3-arg constructor failed: {e}")
-            
-#             # Method 3: Try downloaded bot with 2 arguments (config, api_keys)
-#             if not init_success:
-#                 try:
-#                     bot_instance = bot_class(bot_config, api_keys)
-#                     init_success = True
-#                     logger.info(f"✅ Downloaded bot initialized with 2 args: {bot_class.__name__}")
-#                 except TypeError as e:
-#                     logger.warning(f"2-arg constructor failed: {e}")
-            
-#             # Method 4: Try downloaded bot with 1 argument (config)
-#             if not init_success:
-#                 try:
-#                     bot_instance = bot_class(bot_config)
-#                     init_success = True
-#                     logger.info(f"✅ Downloaded bot initialized with 1 arg: {bot_class.__name__}")
-#                 except TypeError as e:
-#                     logger.warning(f"1-arg constructor failed: {e}")
-            
-#             # Method 5: Try downloaded bot with no arguments
-#             if not init_success:
-#                 try:
-#                     bot_instance = bot_class()
-#                     init_success = True
-#                     logger.info(f"✅ Downloaded bot initialized with no args: {bot_class.__name__}")
-#                 except Exception as e:
-#                     logger.error(f"No-arg constructor failed: {e}")
-            
-#             # If initialization succeeded, manually inject context for non-futures bots
-#             if init_success and bot_instance:
-#                 # Manually inject subscription context for downloaded bots
-#                 if hasattr(bot_instance, 'user_principal_id'):
-#                     bot_instance.user_principal_id = subscription_context['user_principal_id']
-#                 if hasattr(bot_instance, 'subscription_id'):
-#                     bot_instance.subscription_id = subscription_context['subscription_id']
-#                 if hasattr(bot_instance, 'trading_pair'):
-#                     bot_instance.trading_pair = subscription_context['trading_pair']
-#                 if hasattr(bot_instance, 'timeframe'):
-#                     bot_instance.timeframe = subscription_context['timeframe']
-#                 if hasattr(bot_instance, 'is_testnet'):
-#                     bot_instance.is_testnet = subscription_context['is_testnet']
-                
-#                 # Set config manually if the bot has attributes for it
-#                 if hasattr(bot_instance, 'short_window'):
-#                     bot_instance.short_window = bot_config.get('short_window', 50)
-#                 if hasattr(bot_instance, 'long_window'):
-#                     bot_instance.long_window = bot_config.get('long_window', 200)
-#                 if hasattr(bot_instance, 'position_size'):
-#                     bot_instance.position_size = bot_config.get('position_size', 0.3)
-                
-#                 logger.info(f"Context injected - Principal ID: {subscription_context['user_principal_id']}")
-#             else:
-#                 logger.error(f"All bot initialization methods failed")
-#                 return None
-            
-#             return bot_instance
-            
-#         finally:
-#             # Clean up temporary file
-#             try:
-#                 os.unlink(temp_file_path)
-#             except:
-#                 pass
-        
-#     except Exception as e:
-#         logger.error(f"Error initializing bot: {e}")
-#         logger.error(traceback.format_exc())
-#         return None
 def initialize_bot(subscription):
     """Initialize bot from subscription - Load from S3"""
     try:
@@ -296,33 +60,39 @@ def initialize_bot(subscription):
         from services.s3_manager import S3Manager
         from core.bot_base_classes import get_base_classes
         
-
+        # Initialize S3 manager
+        s3_manager = S3Manager()
+        
         # Get bot information
         bot_id = subscription.bot.id
-        logger.info(f"Initializing bot {bot_id} from local bot_files...")
-
-        # Lấy đường dẫn code_path từ subscription.bot.code_path
-        code_path = getattr(subscription.bot, 'code_path', None)
-        if not code_path:
-            logger.error(f"No code_path found for bot {bot_id}")
-            return None
-
-        # Đọc code từ file local
+        logger.info(f"Initializing bot {bot_id} from S3...")
+        
+        # Get latest version from S3
         try:
-            with open(code_path, 'r', encoding='utf-8') as f:
-                code_content = f.read()
-            logger.info(f"Read bot code from {code_path}: {len(code_content)} characters")
+            latest_version = s3_manager.get_latest_version(bot_id, "code")
+            logger.info(f"Using latest version: {latest_version}")
         except Exception as e:
-            logger.error(f"Failed to read bot code from {code_path}: {e}")
+            logger.error(f"Could not get latest version for bot {bot_id}: {e}")
             return None
-
+        
+        # Download bot code from S3
+        try:
+            code_content = s3_manager.download_bot_code(bot_id, latest_version)
+            logger.info(f"Downloaded bot code from S3: {len(code_content)} characters")
+        except Exception as e:
+            logger.error(f"Failed to download bot code from S3: {e}")
+            return None
+        
+        # Create temporary file to execute the code
+        import tempfile
+        import os
+        
         # Load base classes from bot_sdk folder
         base_classes = get_base_classes()
-
+        
         # Combine base classes with downloaded bot code
         full_code = base_classes + "\n" + code_content
-
-        import tempfile
+        
         with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
             f.write(full_code)
             temp_file_path = f.name
@@ -516,6 +286,236 @@ def initialize_bot(subscription):
         logger.error(f"Error initializing bot: {e}")
         logger.error(traceback.format_exc())
         return None
+# def initialize_bot(subscription):
+#     """Initialize bot from subscription - Load from S3"""
+#     try:
+#         # Import here to avoid circular imports
+#         from core import models
+#         from core import schemas
+#         from core.database import SessionLocal
+#         from services.s3_manager import S3Manager
+#         from core.bot_base_classes import get_base_classes
+        
+
+#         # Get bot information
+#         bot_id = subscription.bot.id
+#         logger.info(f"Initializing bot {bot_id} from local bot_files...")
+
+#         # Lấy đường dẫn code_path từ subscription.bot.code_path
+#         code_path = getattr(subscription.bot, 'code_path', None)
+#         if not code_path:
+#             logger.error(f"No code_path found for bot {bot_id}")
+#             return None
+
+#         # Đọc code từ file local
+#         try:
+#             with open(code_path, 'r', encoding='utf-8') as f:
+#                 code_content = f.read()
+#             logger.info(f"Read bot code from {code_path}: {len(code_content)} characters")
+#         except Exception as e:
+#             logger.error(f"Failed to read bot code from {code_path}: {e}")
+#             return None
+
+#         # Load base classes from bot_sdk folder
+#         base_classes = get_base_classes()
+
+#         # Combine base classes with downloaded bot code
+#         full_code = base_classes + "\n" + code_content
+
+#         import tempfile
+#         with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+#             f.write(full_code)
+#             temp_file_path = f.name
+        
+#         try:
+#             # Load bot module from temporary file
+#             spec = importlib.util.spec_from_file_location("bot_module", temp_file_path)
+#             if not spec or not spec.loader:
+#                 logger.error("Could not create module spec")
+#                 return None
+            
+#             bot_module = importlib.util.module_from_spec(spec)
+#             spec.loader.exec_module(bot_module)
+            
+#             # Find bot class in the module
+#             bot_class = None
+#             for attr_name in dir(bot_module):
+#                 attr = getattr(bot_module, attr_name)
+#                 if (inspect.isclass(attr) and 
+#                     hasattr(attr, 'execute_algorithm') and 
+#                     attr_name != 'CustomBot'):
+#                     bot_class = attr
+#                     break
+            
+#             if not bot_class:
+#                 logger.error("No valid bot class found in module")
+#                 return None
+            
+#             # Prepare bot configuration - Rich config for Futures bots
+#             if hasattr(subscription.bot, 'bot_type') and subscription.bot.bot_type and subscription.bot.bot_type.upper() == 'FUTURES':
+#                 # Rich configuration for Futures bots (like main_execution)
+#                 bot_config = {
+#                     'trading_pair': subscription.bot.trading_pair.replace('/', ''),
+#                     'testnet': subscription.is_testnet if subscription.is_testnet else True,
+#                     'leverage': 5,
+#                     'stop_loss_pct': 0.02,  # 2%
+#                     'take_profit_pct': 0.04,  # 4%
+#                     'position_size_pct': 0.1,  # 10% of balance
+                    
+#                     # 🎯 Optimized 3 timeframes for better performance
+#                     'timeframes': subscription.bot.timeframes,
+#                     'primary_timeframe': subscription.bot.timeframe,  # Primary timeframe for final decision
+                    
+#                     'use_llm_analysis': True,  # Enable LLM analysis with full system
+#                     'llm_model': 'openai',  # Primary LLM model to use
+                    
+#                     # Technical indicators (fallback when LLM fails)
+#                     'rsi_period': 14,
+#                     'rsi_oversold': 30,     # Buy signal threshold
+#                     'rsi_overbought': 70,   # Sell signal threshold
+                    
+#                     # Capital management (CRITICAL for risk control)
+#                     'base_position_size_pct': 0.02,    # 2% minimum position
+#                     'max_position_size_pct': 0.10,     # 10% maximum position  
+#                     'max_portfolio_exposure': 0.30,    # 30% total exposure limit
+#                     'max_drawdown_threshold': 0.15,    # 15% stop-loss threshold
+                    
+#                     # Celery execution
+#                     'require_confirmation': False,  # No confirmation for Celery
+#                     'auto_confirm': True  # Auto-confirm trades (for Celery/automated execution)
+#                 }
+#                 logger.info(f"🚀 Applied RICH FUTURES CONFIG: {len(bot_config['timeframes'])} timeframes, {bot_config['leverage']}x leverage")
+#             else:
+#                 # Standard configuration for other bots
+#                 bot_config = {
+#                     'short_window': 50,
+#                     'long_window': 200,
+#                     'position_size': 0.3,
+#                     'min_volume_threshold': 1000000,
+#                     'volatility_threshold': 0.05
+#                 }
+#                 logger.info("📊 Applied STANDARD CONFIG for non-futures bot")
+            
+#             # Override with subscription strategy_config if available (from database)
+#             if subscription.bot.strategy_config:
+#                 logger.info(f"🎯 Merging DATABASE STRATEGY CONFIG: {subscription.bot.strategy_config}")
+#                 bot_config.update(subscription.bot.strategy_config)
+
+#             # Prepare subscription context for bot (includes principal ID)
+#             subscription_context = {
+#                 'subscription_id': subscription.id,
+#                 'user_principal_id': subscription.user_principal_id,
+#                 'exchange': subscription.bot.exchange_type.value if subscription.bot.exchange_type else 'binance',
+#                 'trading_pair': subscription.bot.trading_pair.replace('/', ''),
+#                 'timeframe': subscription.bot.timeframe,
+#                 'is_testnet': subscription.is_testnet if subscription.is_testnet else True,
+#                 'is_marketplace_subscription': getattr(subscription, 'is_marketplace_subscription', False)
+#             }
+            
+#             # Try multiple initialization approaches for compatibility
+#             bot_instance = None
+#             init_success = False
+            
+#             # Create api_keys dict for backward compatibility
+#             api_keys = {
+#                 'exchange': subscription_context['exchange'],
+#                 'testnet': subscription_context['is_testnet']
+#             }
+            
+#             # Method 1: Try BinanceFuturesBot direct initialization (for Futures bots)
+#             if hasattr(subscription.bot, 'bot_type') and subscription.bot.bot_type and subscription.bot.bot_type.upper() == 'FUTURES':
+#                 try:
+#                     logger.info(f"Attempting FUTURES BOT direct initialization...")
+#                     # Import BinanceFuturesBot directly for futures bots
+#                     import sys
+#                     import os
+#                     bot_files_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'bot_files')
+#                     if bot_files_path not in sys.path:
+#                         sys.path.insert(0, bot_files_path)
+                    
+#                     from binance_futures_bot import BinanceFuturesBot
+#                     bot_instance = BinanceFuturesBot(bot_config, api_keys, subscription.user_principal_id)
+#                     init_success = True
+#                     logger.info(f"✅ FUTURES BOT initialized successfully with principal ID")
+#                 except Exception as e:
+#                     logger.warning(f"FUTURES BOT direct init failed: {e}")
+            
+#             # Method 2: Try downloaded bot with 3 arguments (config, api_keys, principal_id)
+#             if not init_success:
+#                 try:
+#                     bot_instance = bot_class(bot_config, api_keys, subscription.user_principal_id)
+#                     init_success = True
+#                     logger.info(f"✅ Downloaded bot initialized with 3 args: {bot_class.__name__}")
+#                 except TypeError as e:
+#                     logger.warning(f"3-arg constructor failed: {e}")
+            
+#             # Method 3: Try downloaded bot with 2 arguments (config, api_keys)
+#             if not init_success:
+#                 try:
+#                     bot_instance = bot_class(bot_config, api_keys)
+#                     init_success = True
+#                     logger.info(f"✅ Downloaded bot initialized with 2 args: {bot_class.__name__}")
+#                 except TypeError as e:
+#                     logger.warning(f"2-arg constructor failed: {e}")
+            
+#             # Method 4: Try downloaded bot with 1 argument (config)
+#             if not init_success:
+#                 try:
+#                     bot_instance = bot_class(bot_config)
+#                     init_success = True
+#                     logger.info(f"✅ Downloaded bot initialized with 1 arg: {bot_class.__name__}")
+#                 except TypeError as e:
+#                     logger.warning(f"1-arg constructor failed: {e}")
+            
+#             # Method 5: Try downloaded bot with no arguments
+#             if not init_success:
+#                 try:
+#                     bot_instance = bot_class()
+#                     init_success = True
+#                     logger.info(f"✅ Downloaded bot initialized with no args: {bot_class.__name__}")
+#                 except Exception as e:
+#                     logger.error(f"No-arg constructor failed: {e}")
+            
+#             # If initialization succeeded, manually inject context for non-futures bots
+#             if init_success and bot_instance:
+#                 # Manually inject subscription context for downloaded bots
+#                 if hasattr(bot_instance, 'user_principal_id'):
+#                     bot_instance.user_principal_id = subscription_context['user_principal_id']
+#                 if hasattr(bot_instance, 'subscription_id'):
+#                     bot_instance.subscription_id = subscription_context['subscription_id']
+#                 if hasattr(bot_instance, 'trading_pair'):
+#                     bot_instance.trading_pair = subscription_context['trading_pair']
+#                 if hasattr(bot_instance, 'timeframe'):
+#                     bot_instance.timeframe = subscription_context['timeframe']
+#                 if hasattr(bot_instance, 'is_testnet'):
+#                     bot_instance.is_testnet = subscription_context['is_testnet']
+                
+#                 # Set config manually if the bot has attributes for it
+#                 if hasattr(bot_instance, 'short_window'):
+#                     bot_instance.short_window = bot_config.get('short_window', 50)
+#                 if hasattr(bot_instance, 'long_window'):
+#                     bot_instance.long_window = bot_config.get('long_window', 200)
+#                 if hasattr(bot_instance, 'position_size'):
+#                     bot_instance.position_size = bot_config.get('position_size', 0.3)
+                
+#                 logger.info(f"Context injected - Principal ID: {subscription_context['user_principal_id']}")
+#             else:
+#                 logger.error(f"All bot initialization methods failed")
+#                 return None
+            
+#             return bot_instance
+            
+#         finally:
+#             # Clean up temporary file
+#             try:
+#                 os.unlink(temp_file_path)
+#             except:
+#                 pass
+        
+#     except Exception as e:
+#         logger.error(f"Error initializing bot: {e}")
+#         logger.error(traceback.format_exc())
+#         return None
 
 def execute_trade_action(db, subscription, exchange, action, current_price):
     """Execute trade action"""
