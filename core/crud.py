@@ -564,10 +564,16 @@ def create_trial_subscription(db: Session, trial: schemas.SubscriptionTrialCreat
 def get_subscription_by_id(db: Session, sub_id: int):
     return db.query(models.Subscription).filter(models.Subscription.id == sub_id).first()
 
-def get_all_subscription_by_principal_id(db: Session, principal_id: int):
-    return db.query(models.Subscription).filter(
-        models.Subscription.user_principal_id == principal_id
-    ).all()
+def get_all_subscription_by_principal_id(db: Session, principal_id: int, bot_mode: str):
+    return (
+        db.query(models.Subscription)
+        .join(models.Subscription.bot)  # join bằng relationship
+        .filter(
+            models.Subscription.user_principal_id == principal_id,
+            models.Bot.bot_mode == bot_mode
+        )
+        .all()
+    )
 
 def get_subscription_by_id_and_bot(db: Session, sub_id: int, bot_id: int):
     return db.query(models.Subscription).filter(models.Subscription.id == sub_id, models.Subscription.bot_id == bot_id).first()
