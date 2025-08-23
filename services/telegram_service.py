@@ -21,7 +21,7 @@ import telegramify_markdown
 from core.database import SessionLocal, get_db
 from core import crud, models
 import datetime
-from core.tasks import run_bot_signal_logic
+from core.tasks import run_bot_signal_logic, run_bot_logic
 
 logger = logging.getLogger(__name__)
 
@@ -94,10 +94,9 @@ class TelegramService:
                 chat_id = body["callback_query"]["message"]["chat"]["id"]
                 print(f"🔘 Processing callback query: {data} from chat {chat_id}")
 
-                if data.startswith("run_manual_bot:"):
+                if data.startswith("run_manual_bot_signal:"):
                     action = data.split(":")[1] 
                     bot_id, sub_id, bot_name = action.split("|")
-                    print(f"🤖 Running manual bot for bot_id: {bot_id} and sub_id: {sub_id}")
 
                     # Sửa thành gọi không đồng bộ
                     await asyncio.to_thread(
@@ -105,7 +104,25 @@ class TelegramService:
                         f"https://api.telegram.org/bot{self.bot_token}/answerCallbackQuery",
                         json={"callback_query_id": body["callback_query"]["id"]}
                     )
+
+                    logger.info(f"trigger run_bot_signal_logic for sub_id: {sub_id}")
                     run_bot_signal_logic.delay(bot_id, sub_id)
+
+                    await self.send_telegram_message(chat_id, f"🚀 Bot {bot_name} is starting...")
+                    return {"ok": True}
+                
+                if data.startswith("run_manual_bot_active:"):
+                    action = data.split(":")[1] 
+                    bot_id, sub_id, bot_name = action.split("|")
+
+                    # Sửa thành gọi không đồng bộ
+                    await asyncio.to_thread(
+                        requests.post,
+                        f"https://api.telegram.org/bot{self.bot_token}/answerCallbackQuery",
+                        json={"callback_query_id": body["callback_query"]["id"]}
+                    )
+                    logger.info(f"trigger run_bot_logic for sub_id: {sub_id}")
+                    run_bot_logic.delay(sub_id)
 
                     await self.send_telegram_message(chat_id, f"🚀 Bot {bot_name} is starting...")
                     return {"ok": True}
@@ -144,10 +161,9 @@ class TelegramService:
             if text.startswith("/start"):
                 return await self.handle_start_command(chat_id)
             elif text.startswith("/query_signals"):
-                user_setting = user_settings[0]
                 bots = []
                 for user_setting in user_settings:
-                    bot_list = crud.get_all_subscription_by_principal_id(db, principal_id=user_setting.principal_id)
+                    bot_list = crud.get_all_subscription_by_principal_id(db, principal_id=user_setting.principal_id, bot_mode='PASSIVE')
                     if bot_list:
                         for bot in bot_list:
                             rent_date = getattr(bot, "started_at", None)
@@ -163,7 +179,27 @@ class TelegramService:
                                 "rent_date": rent_date_str,
                                 "principal_prefix": principal_prefix
                             })
-                return await self.handle_query_command(chat_id, bots, db)
+                return await self.handle_query_command(chat_id, bots, 'PASSIVE', db)
+            elif text.startswith("/query_active"):
+                bots = []
+                for user_setting in user_settings:
+                    bot_list = crud.get_all_subscription_by_principal_id(db, principal_id=user_setting.principal_id, bot_mode='ACTIVE')
+                    if bot_list:
+                        for bot in bot_list:
+                            rent_date = getattr(bot, "started_at", None)
+                            rent_date_str = rent_date.strftime("%d/%m %H:%M") if rent_date else "N/A"
+
+                            # Lấy 5 ký tự đầu principal_id
+                            principal_prefix = str(user_setting.principal_id)[:5]
+
+                            bots.append({
+                                "bot_name": bot.bot.name,
+                                "bot_id": bot.bot.id,
+                                "sub_id": bot.id,
+                                "rent_date": rent_date_str,
+                                "principal_prefix": principal_prefix
+                            })
+                return await self.handle_query_command(chat_id, bots, 'ACTIVE', db)
         except Exception as e:
             logger.error(f"Error handling Telegram message: {e}", exc_info=True)
             await self.send_telegram_message(chat_id, "❌ An error occurred while processing your request. Please try again later.")
@@ -172,25 +208,34 @@ class TelegramService:
         await self.send_telegram_message(
             chat_id,
             (
-                "✅ Welcome! You have successfully started the bot.\n\n"
-                "ℹ️ This bot helps you manage and monitor your trading bots with ease.\n\n"
-                "Available command:\n"
-                "• /query_signals – List all of your active bots. "
-                "👉 If you have rented passive bots, you can also use this command to view them and run them manually.\n\n"
-                "🚀 Let's get started and take control of your trading bots!"
+                "✅ Welcome! The bot has been successfully activated.\n\n"
+                "ℹ️ With this bot, you can easily manage and monitor all your trading bots.\n\n"
+                "📌 Available commands:\n"
+                "• /query_signals – View all your signal bots.\n"
+                "   👉 If you have rented passive bots, this command will also list them so you can run them manually.\n"
+                "• /query_active – View all your active bots.\n"
+                "   👉 If you have rented active bots, this command will also show them for easy control.\n\n"
+                "🚀 Ready to take control? Start managing your trading bots now!"
             )
         )
         return {"ok": True}
-    async def handle_query_command(self, chat_id: int, bots: list[str], db: Session):
+    async def handle_query_command(self, chat_id: int, bots: list[str], bot_mode: str, db: Session):
         if not bots:
             await self.send_telegram_message(chat_id, "❌ No active subscriptions found. Please rent a bot first.")
             return {"ok": False}
         
-        buttons = [
-            [{"text": f"🚀 Run {bot['bot_name']}-{bot['principal_prefix']}-{bot['rent_date']}",
-            "callback_data": f"run_manual_bot:{bot['bot_id']}|{bot['sub_id']}|{bot['bot_name']}"}]
-            for bot in bots
-        ]
+        if bot_mode == 'ACTIVE':
+            buttons = [
+                [{"text": f"🚀 Run {bot['bot_name']}-{bot['principal_prefix']}-{bot['rent_date']}",
+                "callback_data": f"run_manual_bot_active:{bot['bot_id']}|{bot['sub_id']}|{bot['bot_name']}"}]
+                for bot in bots
+            ]
+        else:
+            buttons = [
+                [{"text": f"🚀 Run {bot['bot_name']}-{bot['principal_prefix']}-{bot['rent_date']}",
+                "callback_data": f"run_manual_bot_signal:{bot['bot_id']}|{bot['sub_id']}|{bot['bot_name']}"}]
+                for bot in bots
+            ]
 
         self.send_telegram_message_v2(
             chat_id,
