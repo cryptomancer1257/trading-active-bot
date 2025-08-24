@@ -1,0 +1,1 @@
+ALTER TABLE bots ADD COLUMN image_url VARCHAR(255) COMMENT 'URL of the bot image';

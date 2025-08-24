@@ -112,6 +112,7 @@ async def submit_new_bot_with_code(
     name: str = Form(...),
     description: str = Form(...),
     category_id: int = Form(...),
+    image_url: Optional[str] = Form(None),
     price_per_month: float = Form(0.0),
     is_free: bool = Form(True),
     bot_type: str = Form("TECHNICAL"),
@@ -154,7 +155,8 @@ async def submit_new_bot_with_code(
             is_free=is_free,
             bot_type=bot_type_enum,
             config_schema=json.loads(config_schema),
-            default_config=json.loads(default_config)
+            default_config=json.loads(default_config),
+            image_url=image_url or ""
         )
         
         # Create bot with S3 upload

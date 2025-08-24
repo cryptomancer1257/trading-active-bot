@@ -266,6 +266,7 @@ class BotBase(BaseModel):
     bot_mode: Optional[BotMode] = None
     trading_pair: Optional[str] = None
     strategy_config: Optional[Any] = None
+    image_url: Optional[str] = None
 
 class PayLoadAnalysis(BaseModel):
     bot_name: str = ""
