@@ -199,7 +199,8 @@ class Bot(Base):
     developer_id = Column(Integer, ForeignKey("users.id"))
     category_id = Column(Integer, ForeignKey("bot_categories.id"))
     status = Column(Enum(BotStatus), default=BotStatus.PENDING)
-    
+    image_url = Column(String(500), nullable=True)
+
     # Bot files and metadata
     code_path = Column(String(500))  # Path to uploaded bot code
     version = Column(String(50), default="1.0.0")
