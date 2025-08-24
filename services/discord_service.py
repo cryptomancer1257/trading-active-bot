@@ -11,6 +11,7 @@ from discord.ui import View, Button
 from core import crud, models
 from core.database import SessionLocal
 from core.tasks import run_bot_signal_logic, run_bot_logic
+import discord.errors
 
 logger = logging.getLogger(__name__)
 
@@ -25,11 +26,11 @@ class PanelView(View):
         username = f"{interaction.user.name}"
         
         try:
-            await interaction.response.defer(ephemeral=True)
+            await interaction.response.defer(thinking=True, ephemeral=True)
             logger.info(f"🔔 User {username} ({user_id}) clicked Follow Bot button")
             
             # Respond immediately to prevent interaction timeout
-            await interaction.response.send_message("⏳ Processing your request...", ephemeral=True)
+            # await interaction.followup.send("⏳ Processing your request...", ephemeral=True)
             
             success, message = await self.handle_discord_subscription(user_id, username)
 
@@ -88,7 +89,7 @@ class ManualSignalsPanelView(View):
     @discord.ui.button(label="🔍 View All Bots Passive", style=discord.ButtonStyle.primary)
     async def view_all_bots(self, interaction: discord.Interaction, button: discord.ui.Button):
         try:
-            await interaction.response.defer(ephemeral=True) 
+            await interaction.response.defer(thinking=True, ephemeral=True)
 
             with SessionLocal() as db:
                 user_id = str(interaction.user.id)
@@ -99,8 +100,9 @@ class ManualSignalsPanelView(View):
                 # Gọi DB để lấy danh sách bot mà user đã thuê
                 user_settings = crud.get_users_setting_by_discord_username(db, username)
                 if not user_settings or len(user_settings) == 0:
-                    return False, "❌ Account not found. Please rent bot first."
-                
+                    await interaction.followup.send("❌ Account not found. Please rent bot first.", ephemeral=True)
+                    return
+
                 updated = False
                 for user_setting in user_settings:
                     if user_setting.discord_user_id != user_id:
@@ -134,11 +136,11 @@ class ManualSignalsPanelView(View):
                                 })
 
                 if not bots:
-                    await interaction.response.send_message("❌ You don't have any rented bots.", ephemeral=True)
+                    await interaction.followup.send("❌ You don't have any rented bots.", ephemeral=True)
                     return
 
                 view = BotListView(bots)
-                await interaction.response.send_message("🤖 List of your rented bots:", view=view, ephemeral=True)
+                await interaction.followup.send("🤖 List of your rented bots:", view=view, ephemeral=True)
         except Exception as e:
             logger.error(f"Error in view_all_bots: {e}")
             try:
@@ -151,7 +153,7 @@ class ManualActivePanelView(View):
     @discord.ui.button(label="🔍 View All Bots Active", style=discord.ButtonStyle.primary)
     async def view_all_bots(self, interaction: discord.Interaction, button: discord.ui.Button):
         try:
-            await interaction.response.defer(ephemeral=True)
+            await interaction.response.defer(thinking=True, ephemeral=True)
 
             with SessionLocal() as db:
                 user_id = str(interaction.user.id)
@@ -210,7 +212,7 @@ class ManualActivePanelView(View):
 
 class BotListView(View):
     def __init__(self, bots: list[dict]):
-        super().__init__(timeout=60)
+        super().__init__(timeout=300)
         for bot_info in bots:
             self.add_item(RunBotButton(bot_info))
 
@@ -226,16 +228,21 @@ class RunBotButton(Button):
         super().__init__(label=label, style=discord.ButtonStyle.success)
 
     async def callback(self, interaction: discord.Interaction):
-        user_id = str(interaction.user.id)
-        discord_username = str(interaction.user.name)
-        if self.bot_mode == "PASSIVE":
-            logger.info(f"trigger celery run_bot_signal_logic for {discord_username}")
-            run_bot_signal_logic.delay(self.bot_id, self.subs_id)
-        else:
-            logger.info(f"trigger celery run_bot_logic for {discord_username}")
-            run_bot_logic.delay(self.subs_id)
+        try:
+            await interaction.response.defer(thinking=True, ephemeral=True)
+            user_id = str(interaction.user.id)
+            discord_username = str(interaction.user.name)
+            if self.bot_mode == "PASSIVE":
+                logger.info(f"trigger celery run_bot_signal_logic for {discord_username}")
+                run_bot_signal_logic.delay(self.bot_id, self.subs_id)
+            else:
+                logger.info(f"trigger celery run_bot_logic for {discord_username}")
+                run_bot_logic.delay(self.subs_id)
 
-        await interaction.response.send_message(f"🚀 Running bot `{self.bot_name}`...", ephemeral=True)
+            await interaction.followup.send(f"🚀 Running bot `{self.bot_name}`...", ephemeral=True)
+        except Exception as e:
+            logger.error(f"Error in RunBotButton callback: {e}")
+            await interaction.followup.send("❌ An error occurred while starting the bot. Please try again later.", ephemeral=True)
 
 class DiscordService:
     def __init__(self, token=None, intents=None, command_prefix="!"):
@@ -256,6 +263,10 @@ class DiscordService:
         @self.bot.command()
         async def start_panel(ctx):
             try:
+                general_channel = discord.utils.get(ctx.guild.text_channels, name="general")
+                if not general_channel:
+                    await ctx.send("❌ Not found # 'general'")
+                    return
                 embed = discord.Embed(
                     title="🤖 AI Trading Bot Marketplace",
                     description="Welcome! Please **Follow Bot** to receive notifications for bot rentals.",
@@ -264,8 +275,8 @@ class DiscordService:
                 embed.set_footer(text="Bot by AI Team • Marketplace for Rent Bots")
                 
                 # Create view with timeout
-                view = PanelView(self.bot)
-                message = await ctx.send(embed=embed, view=view)
+                # view = PanelView(self.bot)
+                message = await general_channel.send(embed=embed, view=PanelView(self.bot))
                 
                 # Try to pin the message
                 try:
@@ -385,9 +396,3 @@ class DiscordService:
         if current_chunk:
             chunks.append(current_chunk)
         return chunks
-
-    def add_command(self, *args, **kwargs):
-        return self.bot.command(*args, **kwargs)
-
-    def add_event(self, func):
-        return self.bot.event(func)
