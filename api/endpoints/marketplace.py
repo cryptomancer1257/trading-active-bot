@@ -1,10 +1,13 @@
+from io import BytesIO
 import sys
 import os
+from PIL import Image
+import uuid
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from fastapi import APIRouter, Depends, HTTPException, status, Header
+from fastapi import APIRouter, Depends, HTTPException, status, Header, UploadFile, File
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone, timedelta
 import logging
@@ -22,6 +25,7 @@ import os
 import time
 from jose import jwt
 from jose.exceptions import ExpiredSignatureError, JWTError
+from google.cloud import storage
 
 # Initialize logger
 logger = logging.getLogger(__name__)
@@ -912,6 +916,7 @@ def bot_by_token(token: str, db: Session = Depends(get_db)):
         'aiStudioBotId': bot.id,
         'apiBaseUrl': api_base,
         'apiEndpoints': api_endpoints,
+        'image_url': bot.image_url or ''
     }
 
 
@@ -1156,3 +1161,65 @@ async def create_subscription_from_paypal(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create subscription: {str(e)}"
         )
+
+@router.post("/upload/image-bot")
+async def upload_image_bot(
+    file: UploadFile = File(...),
+    x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
+    db: Session = Depends(get_db)
+):
+    GCS_BUCKET_NAME = os.getenv('GCS_BUCKET_NAME', 'bot_bucket')
+    client = storage.Client.from_service_account_json(os.getenv('GOOGLE_APPLICATION_CREDENTIALS'))
+    storage_client = client.bucket(GCS_BUCKET_NAME)
+    
+    try:
+        marketplace_key = os.getenv('MARKETPLACE_API_KEY', 'marketplace_dev_api_key_12345')
+        if not x_api_key:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="API key is required",
+                headers={"WWW-Authenticate": "ApiKey"},
+            )
+        allowed_types = ["image/jpeg", "image/png", "image/webp"]
+        if file.content_type not in allowed_types:
+            raise HTTPException(status_code=400, detail="Chỉ hỗ trợ JPEG, PNG, WebP")
+        
+        is_marketplace_key = x_api_key == marketplace_key
+        bot_registration = None
+        if not is_marketplace_key:
+            bot_registration = crud.get_bot_registration_by_api_key(db, x_api_key)
+            if not bot_registration:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid marketplace API key",
+                    headers={"WWW-Authenticate": "ApiKey"},
+                )
+        if file.size and file.size > 5 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="File too large (max 5MB)")
+        image = Image.open(BytesIO(await file.read()))
+
+        max_width = 1024
+        if image.width > max_width:
+            ratio = max_width / float(image.width)
+            new_height = int(image.height * ratio)
+            image = image.resize((max_width, new_height), Image.LANCZOS)
+
+        output_buffer = BytesIO()
+        image = image.convert("RGB") 
+        image.save(output_buffer, format="JPEG", quality=95, optimize=True)
+        output_buffer.seek(0)
+
+        file_name = f"uploads/{uuid.uuid4()}.jpg"
+        blob = storage_client.blob(file_name)
+        blob.upload_from_file(output_buffer, content_type="image/jpeg")
+        # blob.make_public()
+
+        GCS_PUBLIC_URL = f"https://storage.googleapis.com/{GCS_BUCKET_NAME}"
+
+        public_url = f"{GCS_PUBLIC_URL}/{file_name}"
+        logger.info(f"Uploaded image to {public_url}")
+
+        return {"url": public_url}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
