@@ -50,7 +50,19 @@ class PositionMonitor:
         # Initialize Binance client
         self.binance_client = BinanceFuturesIntegration(self.api_key, self.api_secret, testnet)
         logger.info(f"✅ Position Monitor initialized with database keys for principal: {user_principal_id}")
-        
+
+        db_credentials_mainnet = get_bot_api_keys(
+            user_principal_id=user_principal_id,
+            exchange="BINANCE",
+            is_testnet=False
+        )
+
+        self.api_key_mainnet = db_credentials_mainnet.get('api_key', None)
+        self.api_secret_mainnet = db_credentials_mainnet.get('api_secret', None)
+
+        # Initialize Binance client
+        self.binance_client_mainnet = BinanceFuturesIntegration(self.api_key_mainnet, self.api_secret_mainnet, False)
+
         # Monitoring config
         self.check_interval = 60  # Check every 60 seconds
         self.max_loss_threshold = -0.05  # -5% max loss before emergency close
@@ -110,7 +122,7 @@ class PositionMonitor:
         """Lấy context thị trường để cung cấp cho LLM"""
         try:
             # Lấy dữ liệu thị trường gần đây
-            klines = self.binance_client.get_klines(symbol, "1h", 24)  # 24h data
+            klines = self.binance_client_mainnet.get_klines(symbol, "1h", 24)  # 24h data
             
             # Fix DataFrame check - use .empty or len() for proper validation
             klines_valid = False
