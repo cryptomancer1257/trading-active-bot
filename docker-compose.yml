@@ -23,6 +23,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    container_name: app_api
     ports:
       - "8000:8000"
     environment:
@@ -71,6 +72,7 @@ services:
 
   db:
     image: mysql:8.0
+    container_name: mysql_db
     environment:
       MYSQL_ROOT_PASSWORD: rootpassword123
       MYSQL_DATABASE: bot_marketplace
@@ -85,6 +87,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    container_name: redis_db
     ports:
       - "6379:6379"
     restart: unless-stopped

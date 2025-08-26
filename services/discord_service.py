@@ -263,6 +263,9 @@ class DiscordService:
         @self.bot.command()
         async def start_panel(ctx):
             try:
+                if ctx.channel.name != "general":
+                    await ctx.send("❌ command this only using channel #general.")
+                    return
                 general_channel = discord.utils.get(ctx.guild.text_channels, name="general")
                 if not general_channel:
                     await ctx.send("❌ Not found # 'general'")
@@ -322,7 +325,7 @@ class DiscordService:
 
 
     async def background_dm_worker(self):
-        r = redis.Redis(host=os.getenv('REDIS_HOST', 'active-trading-redis-1'), port=int(os.getenv('REDIS_PORT', 6379)), db=0)
+        r = redis.Redis(host=os.getenv('REDIS_HOST', 'redis_db'), port=int(os.getenv('REDIS_PORT', 6379)), db=0)
         while True:
             try:
                 item = r.blpop('discord_dm_queue', timeout=5)
