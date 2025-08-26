@@ -555,10 +555,10 @@ class BinanceFuturesBot(CustomBot):
             exchange="BINANCE",
             is_testnet=config.get('testnet', True)
         )
-        
+
         if not db_credentials:
             raise ValueError(f"No exchange API credentials found in database for principal ID: {user_principal_id}. Please store your Binance API keys in the database first.")
-        
+
         client_api_key = db_credentials['api_key']
         client_api_secret = db_credentials['api_secret']
         client_testnet = db_credentials['testnet']
@@ -569,6 +569,21 @@ class BinanceFuturesBot(CustomBot):
             api_key=client_api_key,
             api_secret=client_api_secret,
             testnet=client_testnet
+        )
+
+        db_credentials_mainnet = get_bot_api_keys(
+            user_principal_id=user_principal_id,
+            exchange="BINANCE",
+            is_testnet=False
+        )
+
+        client_api_key_mainnet = db_credentials_mainnet.get('api_key', None)
+        client_api_secret_mainnet = db_credentials_mainnet.get('api_secret', None)
+
+        self.futures_client_mainnet = BinanceFuturesIntegration(
+            api_key=client_api_key_mainnet,
+            api_secret=client_api_secret_mainnet,
+            testnet=False
         )
         
         # Initialize LLM service - get LLM keys from api_keys or environment
@@ -1412,7 +1427,7 @@ class BinanceFuturesBot(CustomBot):
                     logger.info(f"📊 [{i}/{total_timeframes}] Fetching {limit} {timeframe} candles for {self.trading_pair}")
                     
                     # Get data from Binance Futures
-                    df = self.futures_client.get_klines(self.trading_pair, timeframe, limit)
+                    df = self.futures_client_mainnet.get_klines(self.trading_pair, timeframe, limit)
                     # df = self.generate_fake_klines_df()  # Disabled fake data
                     
                     # Convert to list of dictionaries with proper timestamp handling
