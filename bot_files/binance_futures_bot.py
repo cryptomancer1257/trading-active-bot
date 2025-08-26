@@ -23,8 +23,9 @@ import os
 from datetime import datetime
 from dataclasses import dataclass
 
-from bots.bot_sdk.CustomBot import CustomBot
-from bots.bot_sdk.Action import Action
+# from bots.bot_sdk.CustomBot import CustomBot
+# from bots.bot_sdk.Action import Action
+from bots.bot_sdk import CustomBot, Action
 from services.llm_integration import create_llm_service
 from bot_files.capital_management import CapitalManagement, RiskMetrics, PositionSizeRecommendation
 from core.api_key_manager import get_bot_api_keys

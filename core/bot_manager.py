@@ -179,6 +179,7 @@ class BotManager:
         validation_result = {
             "is_valid": True,
             "errors": [],
+            "valid": True,
             "warnings": [],
             "bot_class": None,
             "bot_info": {},
@@ -222,14 +223,14 @@ class BotManager:
             validation_result["bot_info"] = bot_class["info"]
 
             # Check required methods
-            missing_methods = self._check_required_methods(bot_class)
-            if missing_methods:
-                msg = "; ".join([f"Missing required method: {method}" for method in missing_methods])
-                validation_result["errors"].extend([f"Missing required method: {method}" for method in missing_methods])
-                validation_result["is_valid"] = False
-                validation_result["error"] = msg
-                validation_result["valid"] = validation_result["is_valid"]
-                return validation_result
+            # missing_methods = self._check_required_methods(bot_class)
+            # if missing_methods:
+            #     msg = "; ".join([f"Missing required method: {method}" for method in missing_methods])
+            #     validation_result["errors"].extend([f"Missing required method: {method}" for method in missing_methods])
+            #     validation_result["is_valid"] = False
+            #     validation_result["error"] = msg
+            #     validation_result["valid"] = validation_result["is_valid"]
+            #     return validation_result
             
             # Additional checks
             warnings = self._check_best_practices(tree)

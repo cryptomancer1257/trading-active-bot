@@ -47,7 +47,7 @@ logger = logging.getLogger(__name__)
 
 # Helper to push DM to Redis queue
 def queue_discord_dm(user_id, message):
-    r = redis.Redis(host=os.getenv('REDIS_HOST', 'active-trading-redis-1'), port=int(os.getenv('REDIS_PORT', 6379)), db=0)
+    r = redis.Redis(host=os.getenv('REDIS_HOST', 'redis_db'), port=int(os.getenv('REDIS_PORT', 6379)), db=0)
     payload = {'user_id': user_id, 'message': message}
     r.rpush('discord_dm_queue', json.dumps(payload))
 def initialize_bot(subscription):
