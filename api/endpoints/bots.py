@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Any
 from datetime import datetime
 from decimal import Decimal
 import json
@@ -107,12 +107,21 @@ def submit_new_bot(
     """Developer submit a new bot, bot will be in PENDING status"""
     return crud.create_bot(db=db, bot=bot_in, developer_id=current_user.id)
 
+def parse_timeframes(timeframes: str = Form(...)) -> List[str]:
+    return json.loads(timeframes)
+
 @router.post("/with-code", response_model=schemas.BotInDB, status_code=status.HTTP_201_CREATED)
 async def submit_new_bot_with_code(
     name: str = Form(...),
     description: str = Form(...),
     category_id: int = Form(...),
     image_url: Optional[str] = Form(None),
+    timeframes: List[str] = Depends(parse_timeframes),
+    timeframe: Optional[str] = Form(None),
+    bot_mode: Optional[schemas.BotMode] = Form(None),
+    trading_pair: Optional[str] = Form(None),
+    strategy_config: Optional[Any] = Form(None),
+    exchange_type: Optional[schemas.ExchangeType] = Form(None),
     price_per_month: float = Form(0.0),
     is_free: bool = Form(True),
     bot_type: str = Form("TECHNICAL"),
@@ -124,6 +133,7 @@ async def submit_new_bot_with_code(
 ):
     """Developer submit a new bot with code file"""
     try:
+        logger.info(f"[SUBMIT BOT] Start submission with data ")
         # Validate file type
         if not file.filename or not file.filename.endswith('.py'):
             raise HTTPException(status_code=400, detail="Only Python files are allowed")
@@ -131,20 +141,25 @@ async def submit_new_bot_with_code(
         # Read file content
         content = await file.read()
         code_content = content.decode('utf-8')
+
+        logger.info(f"[SUBMIT BOT] File read successfully: {file.filename}, size={len(content)} bytes")
         
         # Validate bot code
         validation_result = bot_manager.validate_bot_code(code_content)
+        logger.info(f"[SUBMIT BOT] Bot code validation result: {validation_result}")    
         if not validation_result["valid"]:
             raise HTTPException(
                 status_code=400, 
                 detail=f"Bot code validation failed: {validation_result['error']}"
             )
-        
+        logger.info(f"[SUBMIT BOT] Bot code validation passed")
         # Parse bot type
         try:
             bot_type_enum = schemas.BotType(bot_type)
         except ValueError:
             bot_type_enum = schemas.BotType.TECHNICAL
+
+        logger.info(f"[SUBMIT BOT] Bot code validated successfully for user_id={current_user.id}, filename={file.filename}")
         
         # Create bot data
         bot_data = schemas.BotCreate(
@@ -156,9 +171,17 @@ async def submit_new_bot_with_code(
             bot_type=bot_type_enum,
             config_schema=json.loads(config_schema),
             default_config=json.loads(default_config),
-            image_url=image_url or ""
+            image_url=image_url or "",
+            timeframes=timeframes or [],
+            timeframe=timeframe or None,
+            bot_mode=bot_mode or None,
+            exchange_type=exchange_type or None,
+            trading_pair=trading_pair or None,
+            strategy_config=json.loads(strategy_config) if strategy_config else None
         )
-        
+
+        logger.info(f"[SUBMIT BOT] Bot data created successfully for bot_data={bot_data}")
+
         # Create bot with S3 upload
         bot_record = crud.save_bot_with_s3(
             db=db,
@@ -167,12 +190,18 @@ async def submit_new_bot_with_code(
             file_content=code_content,
             file_name=file.filename
         )
-        
+
+        logger.info(f"[SUBMIT BOT] upload s3 {file.filename}")
+
         return bot_record
         
     except json.JSONDecodeError:
+        import traceback
+        logger.error(f"ERROR: {traceback.format_exc()}")
         raise HTTPException(status_code=400, detail="Invalid JSON in config fields")
     except Exception as e:
+        import traceback
+        logger.error(f"ERROR: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Failed to create bot: {str(e)}")
 
 @router.get("/me/bots", response_model=List[schemas.BotInDB])
