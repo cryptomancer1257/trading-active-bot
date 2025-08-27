@@ -438,13 +438,16 @@ class BinanceFuturesIntegration:
             logger.error(f"Failed to create managed orders: {e}")
             raise
     
-    def get_klines(self, symbol: str, interval: str, limit: int = 100) -> pd.DataFrame:
+    def get_klines(self, symbol: str, interval: str, limit: int = 100, start_time: int = None,
+           end_time: int = None) -> pd.DataFrame:
         """Get futures kline data"""
         try:
             params = {
                 'symbol': symbol,
                 'interval': interval,
-                'limit': limit
+                'limit': limit,
+                'startTime': start_time,
+                'endTime': end_time
             }
             
             response = self._make_request("GET", "/fapi/v1/klines", params)
@@ -1402,6 +1405,32 @@ class BinanceFuturesBot(CustomBot):
         Crawl historical data for multiple timeframes dynamically
         Optimized for 3 timeframes: ["30m", "1h", "4h"]
         """
+
+        import time
+
+        # Thời điểm hiện tại (ms)
+        end_time = int(time.time() * 1000)
+
+        # Định nghĩa độ dài timeframe (ms)
+        timeframe_to_ms = {
+            "1m": 60_000,
+            "3m": 3 * 60_000,
+            "5m": 5 * 60_000,
+            "15m": 15 * 60_000,
+            "30m": 30 * 60_000,
+            "1h": 60 * 60_000,
+            "2h": 2 * 60 * 60_000,
+            "4h": 4 * 60 * 60_000,
+            "6h": 6 * 60 * 60_000,
+            "8h": 8 * 60 * 60_000,
+            "12h": 12 * 60 * 60_000,
+            "1d": 24 * 60 * 60_000,
+            "3d": 3 * 24 * 60 * 60_000,
+            "1w": 7 * 24 * 60 * 60_000,
+            "1M": 30 * 24 * 60 * 60_000,  # gần đúng
+        }
+
+
         try:
             if not self.futures_client:
                 logger.warning("No futures client - returning multi-timeframe sample data")
@@ -1424,11 +1453,14 @@ class BinanceFuturesBot(CustomBot):
             
             for i, timeframe in enumerate(self.timeframes, 1):
                 try:
+
                     limit = timeframe_limits.get(timeframe, 100)
                     logger.info(f"📊 [{i}/{total_timeframes}] Fetching {limit} {timeframe} candles for {self.trading_pair}")
-                    
+                    interval_ms = timeframe_to_ms[timeframe]
+                    start_time = end_time - limit * interval_ms
                     # Get data from Binance Futures
-                    df = self.futures_client_mainnet.get_klines(self.trading_pair, timeframe, limit)
+                    df = self.futures_client_mainnet.get_klines(self.trading_pair, timeframe, limit, start_time=start_time,
+    end_time=end_time)
                     # df = self.generate_fake_klines_df()  # Disabled fake data
                     
                     # Convert to list of dictionaries with proper timestamp handling
