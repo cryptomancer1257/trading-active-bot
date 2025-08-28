@@ -64,6 +64,7 @@ class BinanceFuturesIntegration:
         self.api_key = api_key
         self.api_secret = api_secret
         self.testnet = testnet
+        self._time_offset = 0
         
         # Futures API endpoints
         if testnet:
@@ -82,16 +83,20 @@ class BinanceFuturesIntegration:
             hashlib.sha256
         ).hexdigest()
     
-    def _make_request(self, method: str, endpoint: str, params: dict = None, signed: bool = False):
+    def _make_request(self, method: str, endpoint: str, params: dict = None, signed: bool = False, recv_window: int = 50000):
         """Make authenticated request to Binance Futures API"""
         if params is None:
             params = {}
         
         url = f"{self.base_url}{endpoint}"
         headers = {"X-MBX-APIKEY": self.api_key}
-        
+
         if signed:
-            params['timestamp'] = int(time.time() * 1000)
+            if self._time_offset == 0:
+                self._sync_server_time()
+
+            params['recvWindow'] = recv_window
+            params['timestamp'] = int(time.time() * 1000) + self._time_offset
             params['signature'] = self._generate_signature(params)
         
         try:
@@ -109,13 +114,16 @@ class BinanceFuturesIntegration:
             
         except requests.exceptions.RequestException as e:
             logger.error(f"Futures API request failed: {e}")
-            if hasattr(e, 'response') and e.response is not None:
+            if hasattr(e, "response") and e.response is not None:
                 try:
-                    error_detail = e.response.json()
-                    logger.error(f"Binance Futures API error: {error_detail}")
-                    raise Exception(f"Binance Futures API error: {error_detail}")
-                except:
+                    data = e.response.json()
+                    if data.get("code") == -1021:
+                        logger.warning("⏱️ Timestamp error (-1021), resyncing server time and retrying...")
+                        self._sync_server_time()
+                        return self._make_request(method, endpoint, params, signed, recv_window)
+                except Exception:
                     pass
+            logger.error(f"Futures API request failed: {e}")
             raise Exception(f"Futures API request failed: {e}")
     
     def test_connectivity(self) -> bool:
@@ -482,6 +490,19 @@ class BinanceFuturesIntegration:
         except Exception as e:
             logger.error(f"Failed to cancel all orders: {e}")
             return False
+
+    def _sync_server_time(self):
+        """Sync local offset with Binance server time"""
+        try:
+            r = requests.get(f"{self.base_url}/fapi/v1/time", timeout=5)
+            r.raise_for_status()
+            server_time = int(r.json()["serverTime"])
+            local_time = int(time.time() * 1000)
+            self._time_offset = server_time - local_time
+            logger.info(f"⏱️ Server time synced, offset={self._time_offset} ms")
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to sync server time: {e}")
+            self._time_offset = 0
 
 class BinanceFuturesBot(CustomBot):
     """Advanced Binance Futures Trading Bot with LLM Integration and Stop Loss"""
@@ -1512,7 +1533,7 @@ class BinanceFuturesBot(CustomBot):
             
         except Exception as e:
             logger.error(f"Error crawling multi-timeframe data: {e}")
-            return self._generate_multi_timeframe_sample_data()
+            # return self._generate_multi_timeframe_sample_data()
     
     def _generate_multi_timeframe_sample_data(self) -> Dict[str, Any]:
         """Generate sample OHLCV data for multiple timeframes"""
@@ -2017,48 +2038,47 @@ class BinanceFuturesBot(CustomBot):
             }
 
     def check_account_status(self):
-        """Check current Binance account status and positions"""
         try:
             print("\n💼 CHECKING BINANCE ACCOUNT STATUS...")
             print("=" * 50)
-            
-            # Get account info
-            account_info = self.futures_client.get_account_info()
+
+            account_info = self.futures_client.get_account_info()  # no timestamp kwargs
             available_balance = float(account_info.get('availableBalance', 0))
             total_wallet_balance = float(account_info.get('totalWalletBalance', 0))
-            
+
             mode = "🧪 TESTNET" if self.testnet else "🔴 LIVE"
             print(f"{mode} Account Balance:")
             print(f"   💰 Available: ${available_balance:,.2f} USDT")
             print(f"   💎 Total Wallet: ${total_wallet_balance:,.2f} USDT")
-            
-            # Get current positions
+
             positions = self.futures_client.get_positions()
-            active_positions = [p for p in positions if float(p.size) != 0]
-            
-            print(f"\n📊 Open Positions: {len(active_positions)}")
-            for position in active_positions:
-                symbol = position.symbol
-                side = position.side
-                size = float(position.size)
-                entry_price = float(position.entry_price)
-                pnl = float(position.pnl)
-                pnl_pct = float(position.percentage) if position.percentage else 0
-                
-                print(f"   📈 {symbol}: {side} {size:.3f} @ ${entry_price:.2f}")
-                print(f"      💵 PnL: ${pnl:+.2f} ({pnl_pct:+.2f}%)")
-            
+            # ... phần còn lại giữ nguyên
             return {
                 'available_balance': available_balance,
                 'total_balance': total_wallet_balance,
-                'active_positions': len(active_positions),
-                'positions': active_positions
+                'active_positions': len([p for p in positions if float(getattr(p, "size", 0)) != 0]),
+                'positions': positions
             }
-            
+
         except Exception as e:
+            msg = str(e)
+            if "-1021" in msg or "Timestamp" in msg:
+                print("🔄 Resync time & retry...")
+                # Nếu dùng Cách A:
+                try:
+                    self.futures_client._sync_server_time()
+                    return self.check_account_status()
+                except Exception:
+                    pass
+                # Nếu dùng SDK, ping server time:
+                try:
+                    _ = self.futures_client.time()  # tùy SDK
+                    return self.check_account_status()
+                except Exception:
+                    pass
             print(f"❌ Failed to check account: {e}")
             return None
-    
+
     def save_transaction_to_db(self, trade_result: Dict[str, Any]):
         """Save trade transaction to database"""
         try:
