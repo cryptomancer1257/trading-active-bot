@@ -1432,9 +1432,9 @@ class BinanceFuturesBot(CustomBot):
 
 
         try:
-            if not self.futures_client:
-                logger.warning("No futures client - returning multi-timeframe sample data")
-                return self._generate_multi_timeframe_sample_data()
+            # if not self.futures_client:
+            #     logger.warning("No futures client - returning multi-timeframe sample data")
+            #     return self._generate_multi_timeframe_sample_data()
             
             # Enhanced timeframe limits with more options
             timeframe_limits = {
@@ -1453,14 +1453,24 @@ class BinanceFuturesBot(CustomBot):
             
             for i, timeframe in enumerate(self.timeframes, 1):
                 try:
-
                     limit = timeframe_limits.get(timeframe, 100)
-                    logger.info(f"📊 [{i}/{total_timeframes}] Fetching {limit} {timeframe} candles for {self.trading_pair}")
                     interval_ms = timeframe_to_ms[timeframe]
-                    start_time = end_time - limit * interval_ms
-                    # Get data from Binance Futures
-                    df = self.futures_client_mainnet.get_klines(self.trading_pair, timeframe, limit, start_time=start_time,
-    end_time=end_time)
+
+                    # Snap end về openTime của nến đã đóng gần nhất + interval - 1 (để chắc chắn < endTime)
+                    now_ms = int(time.time() * 1000)
+                    last_closed_open = (now_ms // interval_ms) * interval_ms - interval_ms  # openTime nến đã đóng gần nhất
+                    end_time = last_closed_open + interval_ms - 1
+
+                    start_time = end_time - (limit - 1) * interval_ms
+                    logger.info(
+                        f"📊 [{i}/{total_timeframes}] Fetching {limit} {timeframe} candles for {self.trading_pair}")
+                    df = self.futures_client_mainnet.get_klines(
+                        symbol=self.trading_pair,
+                        interval=timeframe,
+                        start_time=start_time,
+                        end_time=end_time,
+                        limit=limit
+                    )
                     # df = self.generate_fake_klines_df()  # Disabled fake data
                     
                     # Convert to list of dictionaries with proper timestamp handling
