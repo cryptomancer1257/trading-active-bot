@@ -199,7 +199,7 @@ STEP 5: FIBONACCI CONFLUENCE (BONUS)
     - BONUS POINTS: Entry price within ±0.5% of Fibonacci level
     - SKIP: If no clear Fibonacci structure
 EXCLUSION CRITERIA (AUTO-HOLD):
-    Volume insufficient (< 130% average)
+    Volume insufficient (< 110% average)
     Extreme RSI (>75 or <25)
     Conflicting timeframes (no 2/3 agreement)
     Sideways consolidation (price within 1.5% range for 10+ candles)
@@ -250,7 +250,7 @@ OUTPUT RULES:
     No text outside JSON: Pure JSON response only
     Confidence < 55%: Force action = "HOLD"
 FINAL VALIDATION CHECKLIST:
-    ✓ Volume > 130% average?
+    ✓ Volume > 110% average?
     ✓ 2/3 timeframes agree on trend?
     ✓ RSI in valid range (not extreme)?
     ✓ Clear support/resistance level?
