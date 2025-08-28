@@ -160,8 +160,8 @@ ANALYSIS WORKFLOW (STRICT ORDER):
 STEP 1: VOLUME VALIDATION (MANDATORY FIRST CHECK)
     CALCULATE: Current volume vs Average of last 20 candles
     REQUIREMENTS:
-    - BUY/SELL: Current volume ≥ 130% of 20-period average
-    - HOLD: Current volume < 130% of 20-period average
+    - BUY/SELL: Current volume ≥ 110% of 20-period average
+    - HOLD: Current volume < 110% of 20-period average
     IF volume fails → STOP analysis → Return HOLD immediately
 
 STEP 2: MULTI-TIMEFRAME TREND CONFIRMATION
