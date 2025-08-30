@@ -273,7 +273,8 @@ async def create_marketplace_subscription_v2(
             marketplace_subscription_end=request.subscription_end,
             
             is_testnet=request.is_testnet,
-            # network_type=network_type_model,
+            network_type=request.trading_network,
+            trading_pair=request.trading_pair,
 
             # configs
             execution_config=execution_config.dict(),
