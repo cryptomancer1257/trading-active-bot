@@ -504,6 +504,8 @@ class MarketplaceSubscriptionCreateV2(BaseModel):
     
     # Trading configuration
     is_testnet: bool = True
+    trading_pair: str = Field(..., description="Trading pair like BTC/USDT")
+    trading_network: str = Field(..., description="Trading network like MAINNET, TESTNET")
 
     # Optional configurations with defaults
     execution_config: Optional[ExecutionConfig] = None
