@@ -1239,10 +1239,10 @@ async def update_marketplace_subscription(
         )
 
         # Check if subscription is paused (only PAUSED subscriptions can be resumed)
-        if subscription.status != models.SubscriptionStatus.PAUSED:
+        if subscription.status != models.SubscriptionStatus.ACTIVE:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Cannot resume subscription with status: {subscription.status}. Only PAUSED subscriptions can be resumed."
+                detail=f"Cannot update subscription with status: {subscription.status}. Only ACTIVE subscriptions can be updated."
             )
 
         # Check if subscription hasn't expired
@@ -1252,10 +1252,10 @@ async def update_marketplace_subscription(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Cannot resume expired subscription"
             )
-        data_need_update = request.dict(exclude_unset=True)
+        # data_need_update = schemas.SubscriptionUpdate(trading_pair=request.trading_pair)
         # Update subscription status to ACTIVE
         updated_subscription = crud.update_subscription(
-            db, request.subscription_id, data_need_update
+            db, request.subscription_id, request
         )
 
         logger.info(f"Update marketplace subscription {request.subscription_id} for principal {request.principal_id}")
@@ -1269,8 +1269,8 @@ async def update_marketplace_subscription(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to resume marketplace subscription: {e}")
+        logger.error(f"Failed to update marketplace subscription: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to resume subscription"
+            detail="Failed to update subscription"
         )

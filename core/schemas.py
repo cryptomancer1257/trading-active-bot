@@ -533,7 +533,7 @@ class MarketplaceSubscriptionResponse(BaseModel):
         from_attributes = True
 
 class SubscriptionUpdate(BaseModel):
-    subscription_id: int
+    subscription_id: Optional[int] = None
     instance_name: Optional[str] = None
     exchange_type: Optional[ExchangeType] = None
     trading_pair: Optional[str] = None
