@@ -1224,3 +1224,53 @@ async def upload_image_bot(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/subscription/update", response_model=schemas.SubscriptionResponse)
+async def update_marketplace_subscription(
+        request: schemas.SubscriptionUpdate,
+        db: Session = Depends(get_db)
+):
+    """Resume a paused marketplace subscription - restarts bot execution"""
+    try:
+        # Validate subscription access with enhanced security
+        subscription, bot_registration = crud.validate_marketplace_subscription_access(
+            db, request.subscription_id, request.principal_id, request.api_key
+        )
+
+        # Check if subscription is paused (only PAUSED subscriptions can be resumed)
+        if subscription.status != models.SubscriptionStatus.ACTIVE:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Cannot update subscription with status: {subscription.status}. Only ACTIVE subscriptions can be updated."
+            )
+
+        # Check if subscription hasn't expired
+        now = datetime.utcnow()
+        if subscription.expires_at and subscription.expires_at < now:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot resume expired subscription"
+            )
+        # data_need_update = schemas.SubscriptionUpdate(trading_pair=request.trading_pair)
+        # Update subscription status to ACTIVE
+        updated_subscription = crud.update_subscription(
+            db, request.subscription_id, request
+        )
+
+        logger.info(f"Update marketplace subscription {request.subscription_id} for principal {request.principal_id}")
+
+        return schemas.SubscriptionResponse(
+            subscription_id=updated_subscription.id,
+            status=updated_subscription.status,
+            message="Subscription updated successfully. Bot execution will restart shortly."
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update marketplace subscription: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update subscription"
+        )
