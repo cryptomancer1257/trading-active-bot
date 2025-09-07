@@ -298,7 +298,15 @@ class Subscription(Base):
     user_principal_id = Column(String(255))  # ICP Principal ID
     trade_evaluation_period = Column(Integer)  # Minutes for bot analysis period
     network_type = Column(Enum(NetworkType), default=NetworkType.TESTNET)
-    
+
+    payment_method = Column(
+        Enum(PaymentMethod, name="payment_method_enum", native_enum=False),  # native_enum=False để portable
+        default=PaymentMethod.STRIPE,
+        server_default="STRIPE",
+        nullable=False,
+    )
+    paypal_payment_id = Column(String(255))  # nullable (chỉ dùng khi PAYPAL)
+
     # Marketplace subscription fields (for users without studio account)
     is_marketplace_subscription = Column(Boolean, default=False)
     marketplace_subscription_start = Column(DateTime, nullable=True)
