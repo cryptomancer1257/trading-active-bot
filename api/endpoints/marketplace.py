@@ -275,6 +275,9 @@ async def create_marketplace_subscription_v2(
             is_testnet=request.is_testnet,
             network_type=request.trading_network,
             trading_pair=request.trading_pair,
+            payment_method=request.payment_method,
+            paypal_payment_id=request.paypal_payment_id,
+
 
             # configs
             execution_config=execution_config.dict(),
