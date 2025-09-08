@@ -296,12 +296,21 @@ class Subscription(Base):
     is_testnet = Column(Boolean, default=False)  # True for testnet subscriptions
     is_trial = Column(Boolean, default=False)    # True for trial subscriptions
     trial_expires_at = Column(DateTime)          # Trial expiration (can be different from expires_at)
-  
+    trading_pair = Column(String(20))  # Trading pair like BTC/USDT
+
     # New fields for marketplace bot registration
     user_principal_id = Column(String(255))  # ICP Principal ID
     trade_evaluation_period = Column(Integer)  # Minutes for bot analysis period
     network_type = Column(Enum(NetworkType), default=NetworkType.TESTNET)
-    
+
+    payment_method = Column(
+        Enum(PaymentMethod, name="payment_method_enum", native_enum=False),  # native_enum=False để portable
+        default=PaymentMethod.STRIPE,
+        server_default="STRIPE",
+        nullable=False,
+    )
+    paypal_payment_id = Column(String(255))  # nullable (chỉ dùng khi PAYPAL)
+
     # Marketplace subscription fields (for users without studio account)
     is_marketplace_subscription = Column(Boolean, default=False)
     marketplace_subscription_start = Column(DateTime, nullable=True)
@@ -328,7 +337,8 @@ class Subscription(Base):
     billing_cycle = Column(String(20), default="MONTHLY")  # MONTHLY, QUARTERLY, YEARLY
     next_billing_date = Column(DateTime)
     auto_renew = Column(Boolean, default=True)
-    
+
+
     # Relationships
     user = relationship("User", back_populates="subscriptions")
     bot = relationship("Bot", back_populates="subscriptions")

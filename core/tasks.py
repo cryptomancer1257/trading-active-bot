@@ -125,8 +125,12 @@ def initialize_bot(subscription):
             # Prepare bot configuration - Rich config for Futures bots
             if hasattr(subscription.bot, 'bot_type') and subscription.bot.bot_type and subscription.bot.bot_type.upper() == 'FUTURES':
                 # Rich configuration for Futures bots (like main_execution)
+                if subscription.trading_pair:
+                    trading_pair = subscription.trading_pair
+                else:
+                    trading_pair = subscription.bot.trading_pair.replace("/", "")
                 bot_config = {
-                    'trading_pair': subscription.bot.trading_pair.replace('/', ''),
+                    'trading_pair': trading_pair,
                     'testnet': subscription.is_testnet if subscription.is_testnet else True,
                     'leverage': 5,
                     'stop_loss_pct': 0.02,  # 2%
@@ -171,13 +175,16 @@ def initialize_bot(subscription):
             if subscription.bot.strategy_config:
                 logger.info(f"🎯 Merging DATABASE STRATEGY CONFIG: {subscription.bot.strategy_config}")
                 bot_config.update(subscription.bot.strategy_config)
-
+            if subscription.trading_pair:
+                trading_pair = subscription.trading_pair
+            else:
+                trading_pair = subscription.bot.trading_pair.replace("/", "")
             # Prepare subscription context for bot (includes principal ID)
             subscription_context = {
                 'subscription_id': subscription.id,
                 'user_principal_id': subscription.user_principal_id,
                 'exchange': subscription.bot.exchange_type.value if subscription.bot.exchange_type else 'binance',
-                'trading_pair': subscription.bot.trading_pair.replace('/', ''),
+                'trading_pair': trading_pair,
                 'timeframe': subscription.bot.timeframe,
                 'is_testnet': subscription.is_testnet if subscription.is_testnet else True,
                 'is_marketplace_subscription': getattr(subscription, 'is_marketplace_subscription', False)

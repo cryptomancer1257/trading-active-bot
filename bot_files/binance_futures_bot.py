@@ -1424,117 +1424,169 @@ class BinanceFuturesBot(CustomBot):
     def crawl_data(self) -> Dict[str, Any]:
         """
         Crawl historical data for multiple timeframes dynamically
-        Optimized for 3 timeframes: ["30m", "1h", "4h"]
+        - Đảm bảo mỗi timeframe có ÍT NHẤT 20 nến đã đóng
+        - Tự backfill (mở rộng lookback) nếu lần fetch đầu chưa đủ
+        - Snap end_time về nến đã đóng gần nhất để tránh dính nến đang chạy
         """
 
         import time
+        from datetime import datetime
+        import pandas as pd
 
-        # Thời điểm hiện tại (ms)
-        end_time = int(time.time() * 1000)
+        # ==== Helper: đồng bộ time offset nếu class có hàm/thuộc tính ====
+        def _now_ms():
+            # Nếu class có self._time_offset (đã sync server time trước đó) thì dùng
+            offset = getattr(self, "_time_offset", 0)
+            return int(time.time() * 1000) + int(offset)
 
-        # Định nghĩa độ dài timeframe (ms)
+        # ==== Helper: chuyển DataFrame/records => list[dict] chuẩn output ====
+        def _df_to_records(df: pd.DataFrame) -> list:
+            out = []
+            for _, row in df.iterrows():
+                ts = row["timestamp"]
+                if hasattr(ts, "timestamp"):
+                    ts_ms = int(ts.timestamp() * 1000)
+                elif isinstance(ts, (int, float)):
+                    ts_ms = int(ts) if ts > 1e12 else int(ts * 1000)
+                else:
+                    ts_ms = int(pd.to_datetime(ts).timestamp() * 1000)
+
+                out.append({
+                    "timestamp": ts_ms,
+                    "open": float(row["open"]),
+                    "high": float(row["high"]),
+                    "low": float(row["low"]),
+                    "close": float(row["close"]),
+                    "volume": float(row["volume"]),
+                })
+            return out
+
+        # ==== Cấu hình ====
         timeframe_to_ms = {
-            "1m": 60_000,
-            "3m": 3 * 60_000,
-            "5m": 5 * 60_000,
-            "15m": 15 * 60_000,
-            "30m": 30 * 60_000,
-            "1h": 60 * 60_000,
-            "2h": 2 * 60 * 60_000,
-            "4h": 4 * 60 * 60_000,
-            "6h": 6 * 60 * 60_000,
-            "8h": 8 * 60 * 60_000,
-            "12h": 12 * 60 * 60_000,
-            "1d": 24 * 60 * 60_000,
-            "3d": 3 * 24 * 60 * 60_000,
-            "1w": 7 * 24 * 60 * 60_000,
-            "1M": 30 * 24 * 60 * 60_000,  # gần đúng
+            "1m": 60_000, "3m": 3 * 60_000, "5m": 5 * 60_000, "15m": 15 * 60_000,
+            "30m": 30 * 60_000, "1h": 60 * 60_000, "2h": 2 * 60 * 60_000, "4h": 4 * 60 * 60_000,
+            "6h": 6 * 60 * 60_000, "8h": 8 * 60 * 60_000, "12h": 12 * 60 * 60_000,
+            "1d": 24 * 60 * 60_000, "3d": 3 * 24 * 60 * 60_000, "1w": 7 * 24 * 60 * 60_000,
+            "1M": 30 * 24 * 60 * 60_000,
         }
 
+        # Giới hạn mặc định theo TF (có thể lớn hơn 20 để vẽ chỉ báo đẹp hơn)
+        timeframe_limits = {
+            "30m": 200, "1h": 168, "4h": 42,
+            "1m": 1000, "3m": 1000, "5m": 500, "15m": 500,
+            "2h": 84, "6h": 28, "8h": 21, "12h": 14,
+            "1d": 30, "3d": 30, "1w": 52, "1M": 12
+        }
 
+        MIN_NEEDED = 20  # Bắt buộc tối thiểu
+        INITIAL_LOOKBACK_MULT = 1.5  # lần đầu lấy rộng hơn limit 1.5x
+        MAX_RETRIES = 3  # số vòng backfill tối đa nếu thiếu
+        SYMBOL = self.trading_pair
+        CLIENT = self.futures_client_mainnet  # client mainnet
+
+        timeframes_data = {}
         try:
-            # if not self.futures_client:
-            #     logger.warning("No futures client - returning multi-timeframe sample data")
-            #     return self._generate_multi_timeframe_sample_data()
-            
-            # Enhanced timeframe limits with more options
-            timeframe_limits = {
-                # Minutes
-                '1m': 1000,  '3m': 1000,  '5m': 500,  '15m': 500,  '30m': 200,
-                # Hours  
-                '1h': 168,   '2h': 84,    '4h': 42,   '6h': 28,    '8h': 21,   '12h': 14,
-                # Days+
-                '1d': 30,    '3d': 30,    '1w': 52,   '1M': 12
-            }
-            
-            timeframes_data = {}
-            total_timeframes = len(self.timeframes)
-            
-            logger.info(f"🔄 Crawling data for {total_timeframes} timeframes: {self.timeframes}")
-            
+            logger.info(f"🔄 Crawling data for timeframes: {self.timeframes}")
+
             for i, timeframe in enumerate(self.timeframes, 1):
                 try:
-                    limit = timeframe_limits.get(timeframe, 100)
-                    interval_ms = timeframe_to_ms[timeframe]
+                    if timeframe not in timeframe_to_ms:
+                        raise ValueError(f"Unsupported timeframe: {timeframe}")
 
-                    # Snap end về openTime của nến đã đóng gần nhất + interval - 1 (để chắc chắn < endTime)
-                    now_ms = int(time.time() * 1000)
-                    last_closed_open = (now_ms // interval_ms) * interval_ms - interval_ms  # openTime nến đã đóng gần nhất
+                    interval_ms = timeframe_to_ms[timeframe]
+                    # Snap về nến đã đóng gần nhất
+                    now_ms = _now_ms()
+                    last_closed_open = (now_ms // interval_ms) * interval_ms - interval_ms
                     end_time = last_closed_open + interval_ms - 1
 
-                    start_time = end_time - (limit - 1) * interval_ms
-                    logger.info(
-                        f"📊 [{i}/{total_timeframes}] Fetching {limit} {timeframe} candles for {self.trading_pair}")
+                    # Số nến mong muốn ban đầu (ít nhất MIN_NEEDED)
+                    base_limit = timeframe_limits.get(timeframe, 100)
+                    desired_limit = max(base_limit, MIN_NEEDED)
+
+                    # Lấy cửa sổ rộng hơn để chắc ăn
+                    lookback = int(max(desired_limit, int(desired_limit * INITIAL_LOOKBACK_MULT)))
+                    start_time = end_time - (lookback - 1) * interval_ms
+
+                    logger.info(f"📊 [{i}/{len(self.timeframes)}] Fetching {lookback} {timeframe} candles for {SYMBOL}")
+
+                    # ---- Lần fetch đầu
                     df = self.futures_client_mainnet.get_klines(
-                        symbol=self.trading_pair,
+                        symbol=SYMBOL,
                         interval=timeframe,
                         start_time=start_time,
                         end_time=end_time,
-                        limit=limit
+                        limit=lookback
                     )
-                    # df = self.generate_fake_klines_df()  # Disabled fake data
-                    
-                    # Convert to list of dictionaries with proper timestamp handling
-                    timeframe_data = []
-                    for _, row in df.iterrows():
-                        # Handle different timestamp formats
-                        if hasattr(row['timestamp'], 'timestamp'):
-                            timestamp_ms = int(row['timestamp'].timestamp() * 1000)
-                        elif isinstance(row['timestamp'], (int, float)):
-                            # If already a number, assume it's in the right format
-                            timestamp_ms = int(row['timestamp']) if row['timestamp'] > 1e12 else int(row['timestamp'] * 1000)
-                        else:
-                            timestamp_ms = int(pd.to_datetime(row['timestamp']).timestamp() * 1000)
-                        
-                        timeframe_data.append({
-                            'timestamp': timestamp_ms,
-                            'open': float(row['open']),
-                            'high': float(row['high']),
-                            'low': float(row['low']),
-                            'close': float(row['close']),
-                            'volume': float(row['volume'])
-                        })
-                    
-                    timeframes_data[timeframe] = timeframe_data
-                    logger.info(f"✅ [{i}/{total_timeframes}] Successfully fetched {len(timeframe_data)} {timeframe} candles")
-                    
-                except Exception as e:
-                    logger.error(f"❌ [{i}/{total_timeframes}] Failed to fetch {timeframe} data: {e}")
-                    # Generate sample data for this timeframe as fallback
-                    timeframes_data[timeframe] = self._generate_single_timeframe_sample_data(timeframe)
-                    logger.info(f"🔄 [{i}/{total_timeframes}] Using sample data for {timeframe}")
-            
-            logger.info(f"🎯 Completed crawling {len(timeframes_data)} timeframes")
+
+                    if df is None or len(df) == 0:
+                        raise RuntimeError(f"Empty klines for {timeframe}")
+
+                    # Backfill nếu thiếu < MIN_NEEDED (mở rộng cửa sổ lùi)
+                    retries = 0
+                    while len(df) < MIN_NEEDED and retries < MAX_RETRIES:
+                        retries += 1
+                        # dịch cửa sổ lùi thêm 3x MIN_NEEDED nến mỗi vòng
+                        add_lookback = MIN_NEEDED * 3 * interval_ms
+                        new_start = max(0, start_time - add_lookback)
+                        new_end = start_time - 1  # nối liền trước cửa sổ cũ
+
+                        logger.warning(f"⚠️ {timeframe} thiếu nến {len(df)}/{MIN_NEEDED}, backfill lần {retries}...")
+                        df_more = self.futures_client_mainnet.get_klines(
+                            symbol=SYMBOL,
+                            interval=timeframe,
+                            start_time=new_start,
+                            end_time=new_end,
+                            limit=MIN_NEEDED * 3
+                        )
+
+                        # Gộp, bỏ trùng, sort theo timestamp
+                        if df_more is not None and len(df_more) > 0:
+                            df = pd.concat([df_more, df], axis=0).drop_duplicates(subset=["timestamp"]).sort_values(
+                                "timestamp")
+                        start_time = new_start  # cập nhật để có thể lùi tiếp nếu cần
+
+                    # Xử lý cuối: đảm bảo sort & chỉ giữ gần nhất 'desired_limit' nến (đủ to cho chỉ báo)
+                    df = df.sort_values("timestamp")
+                    if len(df) < MIN_NEEDED:
+                        logger.warning(f"❗ {timeframe} vẫn thiếu nến sau backfill: {len(df)}/{MIN_NEEDED}")
+
+                    if len(df) > desired_limit:
+                        df = df.iloc[-desired_limit:]
+
+                    # Convert ra list records
+                    records = _df_to_records(df)
+                    timeframes_data[timeframe] = records
+
+                    logger.info(
+                        f"✅ [{i}/{len(self.timeframes)}] Got {len(records)} {timeframe} candles (>=20 required)")
+
+                except Exception as tf_err:
+                    logger.error(f"❌ [{i}/{len(self.timeframes)}] Failed to fetch {timeframe}: {tf_err}")
+                    # Fallback: nếu muốn, có thể tạo sample; ở đây mình trả mảng rỗng để bạn dễ debug
+                    timeframes_data[timeframe] = []
+                    # hoặc: timeframes_data[timeframe] = self._generate_single_timeframe_sample_data(timeframe)
+
+            # Báo cáo tổng thể
+            report = {tf: len(candles) for tf, candles in timeframes_data.items()}
+            logger.info(f"🎯 Completed crawling {len(timeframes_data)} TFs. Candle counts: {report}")
+
             return {
                 "timeframes": timeframes_data,
                 "crawl_timestamp": datetime.now().isoformat(),
                 "total_timeframes": len(timeframes_data)
             }
-            
+
         except Exception as e:
             logger.error(f"Error crawling multi-timeframe data: {e}")
+            # Có thể fallback sample toàn bộ nếu muốn
             # return self._generate_multi_timeframe_sample_data()
-    
+            return {
+                "timeframes": timeframes_data,
+                "crawl_timestamp": datetime.now().isoformat(),
+                "total_timeframes": len(timeframes_data),
+                "error": str(e)
+            }
+
     def _generate_multi_timeframe_sample_data(self) -> Dict[str, Any]:
         """Generate sample OHLCV data for multiple timeframes"""
         try:
@@ -1901,7 +1953,8 @@ class BinanceFuturesBot(CustomBot):
                 except (ValueError, TypeError) as e:
                     logger.warning(f"Failed to parse confidence '{confidence_raw}': {e}")
                     confidence = 0.0
-                
+
+
                 reasoning = recommendation.get("reasoning", "LLM multi-timeframe analysis")
                 
                 # Extract additional recommendation details
