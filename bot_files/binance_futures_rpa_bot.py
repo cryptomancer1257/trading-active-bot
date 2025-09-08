@@ -1025,10 +1025,10 @@ class BinanceFuturesRPABot(CustomBot):
             quantity = position_value / entry_price
             
             # Round to proper precision
-            # quantity = round(quantity, 3)
-            # quantity_str = f"{quantity:.3f}"
-            test_quantity = 0.001
-            quantity_str = f"{test_quantity:.3f}"
+            quantity = round(quantity, 3)
+            quantity_str = f"{quantity:.3f}"
+            # test_quantity = 0.001
+            # quantity_str = f"{test_quantity:.3f}"
             
             logger.info(f"🚀 Opening {action.action} position:")
             logger.info(f"   Symbol: {symbol}")
