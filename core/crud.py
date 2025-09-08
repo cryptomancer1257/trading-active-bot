@@ -307,7 +307,7 @@ def update_bot_code_path(db: Session, bot_id: int, code_path: str):
 
 def save_bot_with_s3(db: Session, bot_data: schemas.BotCreate, developer_id: int, 
                      file_content: Optional[str] = None, file_name: str = "bot.py", 
-                     version: Optional[str] = None) -> models.Bot:
+                     version: Optional[str] = None, file_content_rpa_robot: Optional[str] = None, file_name_rpa_robot: str = "rpa_robot.robot") -> models.Bot:
     """Create bot and upload code to S3 in one operation"""
     try:
         # Create bot record first
@@ -319,7 +319,8 @@ def save_bot_with_s3(db: Session, bot_data: schemas.BotCreate, developer_id: int
                 bot_id=db_bot.id,
                 code_content=file_content,
                 filename=file_name,
-                version=version
+                version=version,
+                file_type="code"
             )
             
             # Update bot with S3 information
@@ -327,7 +328,20 @@ def save_bot_with_s3(db: Session, bot_data: schemas.BotCreate, developer_id: int
             db_bot.version = upload_result['version']
             db.commit()
             db.refresh(db_bot)
-        
+
+        if file_content_rpa_robot:
+            upload_result = get_s3_manager().upload_bot_code(
+                bot_id=db_bot.id,
+                code_content=file_content_rpa_robot,
+                filename=file_name_rpa_robot,
+                version=version,
+                file_type="rpa"
+            )
+            db_bot.code_path_rpa = upload_result['s3_key']
+            db_bot.version_rpa = upload_result['version']
+            db.commit()
+            db.refresh(db_bot)
+
         return db_bot
         
     except Exception as e:

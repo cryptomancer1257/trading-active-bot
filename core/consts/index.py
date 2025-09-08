@@ -1,5 +1,5 @@
 #BINANCE
-MAIN_INDICATORS = ["BOLL", "EMA", "SMA", "WMA", "AVL", "TRIX", "SAR"]
+MAIN_INDICATORS = ["BOLL", "EMA", "WMA", "AVL", "TRIX", "SAR", "MA", "VWAP"]
 SUB_INDICATORS = ["VOL", "MACD", "RSI", "MFI", "KDJ", "OBV", "CCI", "StochRSI", "WR", "DMI", "MTM", "EMV"]
 
 TIMEFRAME_ROBOT_MAP = {

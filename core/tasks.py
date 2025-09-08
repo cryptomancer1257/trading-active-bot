@@ -1,19 +1,3 @@
-def format_notification_message(bot_name, balance_info, action, reason, current_price=None, available=None, total_wallet=None):
-    """
-    Format notification message for all channels (Telegram, Discord, Email)
-    """
-
-    available_str = available if available is not None else "N/A"
-    total_wallet_str = total_wallet if total_wallet is not None else "N/A"
-    msg = (
-        f"{bot_name}\n"
-        f"TESTNET Account Balance:\n"
-        f" 💰 Available: ${available_str:,.2f} USDT\n"
-        f" 💎 Total Wallet: ${total_wallet_str:,.2f} USDT\n"
-        f"Action: {action}\n"
-        f"Reason: {reason}"
-    )
-    return msg
 import logging
 import traceback
 import time
@@ -44,6 +28,23 @@ from sqlalchemy.orm import Session
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+def format_notification_message(bot_name, balance_info=None, action=None, reason=None, current_price=None, available=None, total_wallet=None):
+    """
+    Format notification message for all channels (Telegram, Discord, Email)
+    """
+
+    available_str = available if available is not None else "N/A"
+    total_wallet_str = total_wallet if total_wallet is not None else "N/A"
+    msg = (
+        f"{bot_name}\n"
+        f"TESTNET Account Balance:\n"
+        f" 💰 Available: ${available_str:,.2f} USDT\n"
+        f" 💎 Total Wallet: ${total_wallet_str:,.2f} USDT\n"
+        f"Action: {action}\n"
+        f"Reason: {reason}"
+    )
+    return msg
 
 # Helper to push DM to Redis queue
 def queue_discord_dm(user_id, message):
@@ -216,7 +217,22 @@ def initialize_bot(subscription):
                     logger.info(f"✅ FUTURES BOT initialized successfully with principal ID")
                 except Exception as e:
                     logger.warning(f"FUTURES BOT direct init failed: {e}")
-            
+            # elif subscription.bot.bot_type == 'FUTURES_RPA':
+            #     try:
+            #         logger.info(f"Attempting FUTURES_RPA BOT direct initialization...")
+            #         # Import FuturesRPABot directly for futures RPA bots
+            #         import sys
+            #         import os
+            #         bot_files_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'bot_files')
+            #         if bot_files_path not in sys.path:
+            #             sys.path.insert(0, bot_files_path)
+                    
+            #         from binance_futures_rpa_bot import BinanceFuturesRPABot
+            #         bot_instance = BinanceFuturesRPABot(bot_config, api_keys, subscription.user_principal_id)
+            #         init_success = True
+            #         logger.info(f"✅ FUTURES_RPA BOT initialized successfully with principal ID")
+            #     except Exception as e:
+            #         logger.warning(f"FUTURES_RPA BOT direct init failed: {e}")
             # Method 2: Try downloaded bot with 3 arguments (config, api_keys, principal_id)
             if not init_success:
                 try:
@@ -293,236 +309,260 @@ def initialize_bot(subscription):
         logger.error(f"Error initializing bot: {e}")
         logger.error(traceback.format_exc())
         return None
-# def initialize_bot(subscription):
-#     """Initialize bot from subscription - Load from S3"""
-#     try:
-#         # Import here to avoid circular imports
-#         from core import models
-#         from core import schemas
-#         from core.database import SessionLocal
-#         from services.s3_manager import S3Manager
-#         from core.bot_base_classes import get_base_classes
+    
+def initialize_bot_rpa_v1(subscription):
+    """Initialize bot from subscription - Load from S3"""
+    try:
+        # Import here to avoid circular imports
+        from core import models
+        from core import schemas
+        from core.database import SessionLocal
+        from services.s3_manager import S3Manager
+        from core.bot_base_classes import get_base_classes
+        from core.consts.index import MAIN_INDICATORS, SUB_INDICATORS, TIMEFRAME_ROBOT_MAP
+        # Initialize S3 manager
+        s3_manager = S3Manager()
         
-
-#         # Get bot information
-#         bot_id = subscription.bot.id
-#         logger.info(f"Initializing bot {bot_id} from local bot_files...")
-
-#         # Lấy đường dẫn code_path từ subscription.bot.code_path
-#         code_path = getattr(subscription.bot, 'code_path', None)
-#         if not code_path:
-#             logger.error(f"No code_path found for bot {bot_id}")
-#             return None
-
-#         # Đọc code từ file local
-#         try:
-#             with open(code_path, 'r', encoding='utf-8') as f:
-#                 code_content = f.read()
-#             logger.info(f"Read bot code from {code_path}: {len(code_content)} characters")
-#         except Exception as e:
-#             logger.error(f"Failed to read bot code from {code_path}: {e}")
-#             return None
-
-#         # Load base classes from bot_sdk folder
-#         base_classes = get_base_classes()
-
-#         # Combine base classes with downloaded bot code
-#         full_code = base_classes + "\n" + code_content
-
-#         import tempfile
-#         with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
-#             f.write(full_code)
-#             temp_file_path = f.name
+        # Get bot information
+        bot_id = subscription.bot.id
+        logger.info(f"Initializing bot {bot_id} from S3...")
         
-#         try:
-#             # Load bot module from temporary file
-#             spec = importlib.util.spec_from_file_location("bot_module", temp_file_path)
-#             if not spec or not spec.loader:
-#                 logger.error("Could not create module spec")
-#                 return None
-            
-#             bot_module = importlib.util.module_from_spec(spec)
-#             spec.loader.exec_module(bot_module)
-            
-#             # Find bot class in the module
-#             bot_class = None
-#             for attr_name in dir(bot_module):
-#                 attr = getattr(bot_module, attr_name)
-#                 if (inspect.isclass(attr) and 
-#                     hasattr(attr, 'execute_algorithm') and 
-#                     attr_name != 'CustomBot'):
-#                     bot_class = attr
-#                     break
-            
-#             if not bot_class:
-#                 logger.error("No valid bot class found in module")
-#                 return None
-            
-#             # Prepare bot configuration - Rich config for Futures bots
-#             if hasattr(subscription.bot, 'bot_type') and subscription.bot.bot_type and subscription.bot.bot_type.upper() == 'FUTURES':
-#                 # Rich configuration for Futures bots (like main_execution)
-#                 bot_config = {
-#                     'trading_pair': subscription.bot.trading_pair.replace('/', ''),
-#                     'testnet': subscription.is_testnet if subscription.is_testnet else True,
-#                     'leverage': 5,
-#                     'stop_loss_pct': 0.02,  # 2%
-#                     'take_profit_pct': 0.04,  # 4%
-#                     'position_size_pct': 0.1,  # 10% of balance
-                    
-#                     # 🎯 Optimized 3 timeframes for better performance
-#                     'timeframes': subscription.bot.timeframes,
-#                     'primary_timeframe': subscription.bot.timeframe,  # Primary timeframe for final decision
-                    
-#                     'use_llm_analysis': True,  # Enable LLM analysis with full system
-#                     'llm_model': 'openai',  # Primary LLM model to use
-                    
-#                     # Technical indicators (fallback when LLM fails)
-#                     'rsi_period': 14,
-#                     'rsi_oversold': 30,     # Buy signal threshold
-#                     'rsi_overbought': 70,   # Sell signal threshold
-                    
-#                     # Capital management (CRITICAL for risk control)
-#                     'base_position_size_pct': 0.02,    # 2% minimum position
-#                     'max_position_size_pct': 0.10,     # 10% maximum position  
-#                     'max_portfolio_exposure': 0.30,    # 30% total exposure limit
-#                     'max_drawdown_threshold': 0.15,    # 15% stop-loss threshold
-                    
-#                     # Celery execution
-#                     'require_confirmation': False,  # No confirmation for Celery
-#                     'auto_confirm': True  # Auto-confirm trades (for Celery/automated execution)
-#                 }
-#                 logger.info(f"🚀 Applied RICH FUTURES CONFIG: {len(bot_config['timeframes'])} timeframes, {bot_config['leverage']}x leverage")
-#             else:
-#                 # Standard configuration for other bots
-#                 bot_config = {
-#                     'short_window': 50,
-#                     'long_window': 200,
-#                     'position_size': 0.3,
-#                     'min_volume_threshold': 1000000,
-#                     'volatility_threshold': 0.05
-#                 }
-#                 logger.info("📊 Applied STANDARD CONFIG for non-futures bot")
-            
-#             # Override with subscription strategy_config if available (from database)
-#             if subscription.bot.strategy_config:
-#                 logger.info(f"🎯 Merging DATABASE STRATEGY CONFIG: {subscription.bot.strategy_config}")
-#                 bot_config.update(subscription.bot.strategy_config)
+        # Get latest version from S3
+        try:
+            latest_version = s3_manager.get_latest_version(bot_id, "code")
+            latest_version_rpa = s3_manager.get_latest_version(bot_id, "rpa")
+            logger.info(f"Using latest version: {latest_version}, RPA version: {latest_version_rpa}")
+        except Exception as e:
+            logger.error(f"Could not get latest version for bot {bot_id}: {e}")
+            return None
+        
+        # Download bot code from S3
+        try:
+            code_content = s3_manager.download_bot_code(bot_id, latest_version, file_type="code")
+            rpa_code_content = s3_manager.download_bot_code(bot_id, latest_version_rpa, file_type="rpa")
+            logger.info(f"Downloaded bot code from S3: {len(code_content)} characters")
+        except Exception as e:
+            logger.error(f"Failed to download bot code from S3: {e}")
+            return None
+        
+        # Create temporary file to execute the code
+        import tempfile
+        import os
+        
+        # Load base classes from bot_sdk folder
+        base_classes = get_base_classes()
+        
+        # Combine base classes with downloaded bot code
+        full_code = base_classes + "\n" + code_content
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+            f.write(full_code)
+            temp_file_path = f.name
 
-#             # Prepare subscription context for bot (includes principal ID)
-#             subscription_context = {
-#                 'subscription_id': subscription.id,
-#                 'user_principal_id': subscription.user_principal_id,
-#                 'exchange': subscription.bot.exchange_type.value if subscription.bot.exchange_type else 'binance',
-#                 'trading_pair': subscription.bot.trading_pair.replace('/', ''),
-#                 'timeframe': subscription.bot.timeframe,
-#                 'is_testnet': subscription.is_testnet if subscription.is_testnet else True,
-#                 'is_marketplace_subscription': getattr(subscription, 'is_marketplace_subscription', False)
-#             }
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.robot', delete=False) as rf:
+            rf.write(rpa_code_content)
+            robot_file_path = rf.name
+        
+        try:
+            # Load bot module from temporary file
+            spec = importlib.util.spec_from_file_location("bot_module", temp_file_path)
+            if not spec or not spec.loader:
+                logger.error("Could not create module spec")
+                return None
             
-#             # Try multiple initialization approaches for compatibility
-#             bot_instance = None
-#             init_success = False
+            bot_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(bot_module)
             
-#             # Create api_keys dict for backward compatibility
-#             api_keys = {
-#                 'exchange': subscription_context['exchange'],
-#                 'testnet': subscription_context['is_testnet']
-#             }
+            # Find bot class in the module
+            bot_class = None
+            for attr_name in dir(bot_module):
+                attr = getattr(bot_module, attr_name)
+                if (inspect.isclass(attr) and 
+                    hasattr(attr, 'execute_algorithm') and 
+                    attr_name != 'CustomBot'):
+                    bot_class = attr
+                    break
             
-#             # Method 1: Try BinanceFuturesBot direct initialization (for Futures bots)
-#             if hasattr(subscription.bot, 'bot_type') and subscription.bot.bot_type and subscription.bot.bot_type.upper() == 'FUTURES':
-#                 try:
-#                     logger.info(f"Attempting FUTURES BOT direct initialization...")
-#                     # Import BinanceFuturesBot directly for futures bots
-#                     import sys
-#                     import os
-#                     bot_files_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'bot_files')
-#                     if bot_files_path not in sys.path:
-#                         sys.path.insert(0, bot_files_path)
+            if not bot_class:
+                logger.error("No valid bot class found in module")
+                return None
+            
+            # Prepare bot configuration - Rich config for Futures bots
+            if hasattr(subscription.bot, 'bot_type') and subscription.bot.bot_type and subscription.bot.bot_type.upper() == 'FUTURES_RPA':
+                # Rich configuration for Futures bots (like main_execution)
+                all_strategies = subscription.bot.strategy_config
+                main_selected = [s for s in all_strategies if s in MAIN_INDICATORS]
+                sub_selected = [s for s in all_strategies if s in SUB_INDICATORS]
+
+                trading_pair = subscription.bot.trading_pair.replace('/', '_') or 'BTC_USDT'
+
+                timeframes_binance = [
+                    TIMEFRAME_ROBOT_MAP.get(tf.lower(), tf)
+                    for tf in subscription.bot.timeframes
+                ]
+
+                logger.info(f"RPA Bot Config - Trading Pair: {trading_pair}, Timeframes: {timeframes_binance}")
+                bot_config = {
+                    'trading_pair': trading_pair,
+                    'testnet': subscription.is_testnet if subscription.is_testnet else True,
+                    'leverage': 5,
+                    'stop_loss_pct': 0.02,  # 2%
+                    'take_profit_pct': 0.04,  # 4%
+                    'position_size_pct': 0.1,  # 10% of balance
                     
-#                     from binance_futures_bot import BinanceFuturesBot
-#                     bot_instance = BinanceFuturesBot(bot_config, api_keys, subscription.user_principal_id)
-#                     init_success = True
-#                     logger.info(f"✅ FUTURES BOT initialized successfully with principal ID")
-#                 except Exception as e:
-#                     logger.warning(f"FUTURES BOT direct init failed: {e}")
+                    # 🎯 Optimized 3 timeframes for better performance
+                    'timeframes': timeframes_binance,
+                    'primary_timeframe': subscription.bot.timeframe,  # Primary timeframe for final decision
+                    'main_indicators': main_selected,
+                    'sub_indicators': sub_selected,
+                    'use_llm_analysis': True,  # Enable LLM analysis with full system
+                    'llm_model': 'openai',  # Primary LLM model to use
+                    
+                    # Technical indicators (fallback when LLM fails)
+                    'rsi_period': 14,
+                    'rsi_oversold': 30,     # Buy signal threshold
+                    'rsi_overbought': 70,   # Sell signal threshold
+                    
+                    # Capital management (CRITICAL for risk control)
+                    'base_position_size_pct': 0.02,    # 2% minimum position
+                    'max_position_size_pct': 0.10,     # 10% maximum position  
+                    'max_portfolio_exposure': 0.30,    # 30% total exposure limit
+                    'max_drawdown_threshold': 0.15,    # 15% stop-loss threshold
+                    
+                    # Celery execution
+                    'require_confirmation': False,  # No confirmation for Celery
+                    'auto_confirm': True,  # Auto-confirm trades (for Celery/automated execution)
+
+                    # robot file
+                    'robot_file': robot_file_path or 'binance.robot'
+                }
+                logger.info(f"🚀 Applied RICH FUTURES CONFIG: {len(bot_config['timeframes'])} timeframes, {bot_config['leverage']}x leverage")
+            else:
+                # Standard configuration for other bots
+                bot_config = {
+                    'short_window': 50,
+                    'long_window': 200,
+                    'position_size': 0.3,
+                    'min_volume_threshold': 1000000,
+                    'volatility_threshold': 0.05
+                }
+                logger.info("📊 Applied STANDARD CONFIG for non-futures bot")
             
-#             # Method 2: Try downloaded bot with 3 arguments (config, api_keys, principal_id)
-#             if not init_success:
-#                 try:
-#                     bot_instance = bot_class(bot_config, api_keys, subscription.user_principal_id)
-#                     init_success = True
-#                     logger.info(f"✅ Downloaded bot initialized with 3 args: {bot_class.__name__}")
-#                 except TypeError as e:
-#                     logger.warning(f"3-arg constructor failed: {e}")
+            # Override with subscription strategy_config if available (from database)
+            # Prepare subscription context for bot (includes principal ID)
+            subscription_context = {
+                'subscription_id': subscription.id,
+                'user_principal_id': subscription.user_principal_id,
+                'exchange': subscription.bot.exchange_type.value if subscription.bot.exchange_type else 'binance',
+                'trading_pair': trading_pair,
+                'timeframe': subscription.bot.timeframe,
+                'is_testnet': subscription.is_testnet if subscription.is_testnet else True,
+                'is_marketplace_subscription': getattr(subscription, 'is_marketplace_subscription', False)
+            }
             
-#             # Method 3: Try downloaded bot with 2 arguments (config, api_keys)
-#             if not init_success:
-#                 try:
-#                     bot_instance = bot_class(bot_config, api_keys)
-#                     init_success = True
-#                     logger.info(f"✅ Downloaded bot initialized with 2 args: {bot_class.__name__}")
-#                 except TypeError as e:
-#                     logger.warning(f"2-arg constructor failed: {e}")
+            # Try multiple initialization approaches for compatibility
+            bot_instance = None
+            init_success = False
             
-#             # Method 4: Try downloaded bot with 1 argument (config)
-#             if not init_success:
-#                 try:
-#                     bot_instance = bot_class(bot_config)
-#                     init_success = True
-#                     logger.info(f"✅ Downloaded bot initialized with 1 arg: {bot_class.__name__}")
-#                 except TypeError as e:
-#                     logger.warning(f"1-arg constructor failed: {e}")
+            # Create api_keys dict for backward compatibility
+            api_keys = {
+                'exchange': subscription_context['exchange'],
+                'testnet': subscription_context['is_testnet']
+            }
             
-#             # Method 5: Try downloaded bot with no arguments
-#             if not init_success:
-#                 try:
-#                     bot_instance = bot_class()
-#                     init_success = True
-#                     logger.info(f"✅ Downloaded bot initialized with no args: {bot_class.__name__}")
-#                 except Exception as e:
-#                     logger.error(f"No-arg constructor failed: {e}")
+            # Method 1: Try BinanceFuturesBot direct initialization (for Futures bots)
+            if hasattr(subscription.bot, 'bot_type') and subscription.bot.bot_type and subscription.bot.bot_type.upper() == 'FUTURES_RPA':
+                try:
+                    logger.info(f"Attempting FUTURES_RPA BOT direct initialization...")
+                    # Import FuturesRPABot directly for futures RPA bots
+                    import sys
+                    import os
+                    bot_files_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'bot_files')
+                    if bot_files_path not in sys.path:
+                        sys.path.insert(0, bot_files_path)
+                    
+                    from binance_futures_rpa_bot import BinanceFuturesRPABot
+                    bot_instance = BinanceFuturesRPABot(bot_config, api_keys, subscription.user_principal_id)
+                    init_success = True
+                    logger.info(f"✅ FUTURES_RPA BOT initialized successfully with principal ID")
+                except Exception as e:
+                    logger.warning(f"FUTURES_RPA BOT direct init failed: {e}")
+            # Method 2: Try downloaded bot with 3 arguments (config, api_keys, principal_id)
+            if not init_success:
+                try:
+                    bot_instance = bot_class(bot_config, api_keys, subscription.user_principal_id)
+                    init_success = True
+                    logger.info(f"✅ Downloaded bot initialized with 3 args: {bot_class.__name__}")
+                except TypeError as e:
+                    logger.warning(f"3-arg constructor failed: {e}")
             
-#             # If initialization succeeded, manually inject context for non-futures bots
-#             if init_success and bot_instance:
-#                 # Manually inject subscription context for downloaded bots
-#                 if hasattr(bot_instance, 'user_principal_id'):
-#                     bot_instance.user_principal_id = subscription_context['user_principal_id']
-#                 if hasattr(bot_instance, 'subscription_id'):
-#                     bot_instance.subscription_id = subscription_context['subscription_id']
-#                 if hasattr(bot_instance, 'trading_pair'):
-#                     bot_instance.trading_pair = subscription_context['trading_pair']
-#                 if hasattr(bot_instance, 'timeframe'):
-#                     bot_instance.timeframe = subscription_context['timeframe']
-#                 if hasattr(bot_instance, 'is_testnet'):
-#                     bot_instance.is_testnet = subscription_context['is_testnet']
+            # Method 3: Try downloaded bot with 2 arguments (config, api_keys)
+            if not init_success:
+                try:
+                    bot_instance = bot_class(bot_config, api_keys)
+                    init_success = True
+                    logger.info(f"✅ Downloaded bot initialized with 2 args: {bot_class.__name__}")
+                except TypeError as e:
+                    logger.warning(f"2-arg constructor failed: {e}")
+            
+            # Method 4: Try downloaded bot with 1 argument (config)
+            if not init_success:
+                try:
+                    bot_instance = bot_class(bot_config)
+                    init_success = True
+                    logger.info(f"✅ Downloaded bot initialized with 1 arg: {bot_class.__name__}")
+                except TypeError as e:
+                    logger.warning(f"1-arg constructor failed: {e}")
+            
+            # Method 5: Try downloaded bot with no arguments
+            if not init_success:
+                try:
+                    bot_instance = bot_class()
+                    init_success = True
+                    logger.info(f"✅ Downloaded bot initialized with no args: {bot_class.__name__}")
+                except Exception as e:
+                    logger.error(f"No-arg constructor failed: {e}")
+            
+            # If initialization succeeded, manually inject context for non-futures bots
+            if init_success and bot_instance:
+                # Manually inject subscription context for downloaded bots
+                if hasattr(bot_instance, 'user_principal_id'):
+                    bot_instance.user_principal_id = subscription_context['user_principal_id']
+                if hasattr(bot_instance, 'subscription_id'):
+                    bot_instance.subscription_id = subscription_context['subscription_id']
+                if hasattr(bot_instance, 'trading_pair'):
+                    bot_instance.trading_pair = subscription_context['trading_pair']
+                if hasattr(bot_instance, 'timeframe'):
+                    bot_instance.timeframe = subscription_context['timeframe']
+                if hasattr(bot_instance, 'is_testnet'):
+                    bot_instance.is_testnet = subscription_context['is_testnet']
                 
-#                 # Set config manually if the bot has attributes for it
-#                 if hasattr(bot_instance, 'short_window'):
-#                     bot_instance.short_window = bot_config.get('short_window', 50)
-#                 if hasattr(bot_instance, 'long_window'):
-#                     bot_instance.long_window = bot_config.get('long_window', 200)
-#                 if hasattr(bot_instance, 'position_size'):
-#                     bot_instance.position_size = bot_config.get('position_size', 0.3)
+                # Set config manually if the bot has attributes for it
+                if hasattr(bot_instance, 'short_window'):
+                    bot_instance.short_window = bot_config.get('short_window', 50)
+                if hasattr(bot_instance, 'long_window'):
+                    bot_instance.long_window = bot_config.get('long_window', 200)
+                if hasattr(bot_instance, 'position_size'):
+                    bot_instance.position_size = bot_config.get('position_size', 0.3)
                 
-#                 logger.info(f"Context injected - Principal ID: {subscription_context['user_principal_id']}")
-#             else:
-#                 logger.error(f"All bot initialization methods failed")
-#                 return None
+                logger.info(f"Context injected - Principal ID: {subscription_context['user_principal_id']}")
+            else:
+                logger.error(f"All bot initialization methods failed")
+                return None
             
-#             return bot_instance
+            return bot_instance
             
-#         finally:
-#             # Clean up temporary file
-#             try:
-#                 os.unlink(temp_file_path)
-#             except:
-#                 pass
+        finally:
+            # Clean up temporary file
+            try:
+                os.unlink(temp_file_path)
+            except:
+                pass
         
-#     except Exception as e:
-#         logger.error(f"Error initializing bot: {e}")
-#         logger.error(traceback.format_exc())
-#         return None
+    except Exception as e:
+        logger.error(f"Error initializing bot: {e}")
+        logger.error(traceback.format_exc())
+        return None
 
 def execute_trade_action(db, subscription, exchange, action, current_price):
     """Execute trade action"""
@@ -1139,6 +1179,315 @@ def run_bot_logic(self, subscription_id: int):
             logger.warning(f"Failed to release Redis lock: {e}")
 
 @app.task(bind=True, autoretry_for=(Exception,), retry_kwargs={'max_retries': 3, 'countdown': 60})
+def run_bot_rpa_logic(self, subscription_id: int):
+    """Run bot RPA logic for a specific subscription"""
+    lock_key = f"bot_execution_rpa_lock_{subscription_id}"
+    redis_client = None
+
+    try:
+        # Try to acquire Redis lock
+        from redis import Redis
+        redis_client = Redis(host='redis', port=6379, db=0, decode_responses=True)
+        
+        # Set lock with 5-minute expiration (longer than typical bot execution)
+        lock_acquired = redis_client.set(lock_key, "locked", nx=True, ex=300)
+        
+        if not lock_acquired:
+            logger.info(f"🔒 Bot execution for subscription {subscription_id} already in progress by another worker, skipping")
+            return {"status": "skipped", "reason": "duplicate_execution_prevented"}
+            
+        logger.info(f"🔓 Acquired execution lock for subscription {subscription_id}")
+        
+    except Exception as e:
+        logger.warning(f"Failed to acquire Redis lock, proceeding without lock: {e}")
+        redis_client = None  # Disable lock cleanup if Redis unavailable
+    
+    try:
+        from core.database import SessionLocal
+        from core import models
+        from core import schemas
+        from core import crud
+        from services.exchange_factory import ExchangeFactory
+
+        db = SessionLocal()
+
+        try:
+            logger.info(f"Running bot logic for subscription {subscription_id}")
+            # Get subscription
+            subscription = crud.get_subscription_by_id(db, subscription_id)
+            if not subscription:
+                logger.error(f"Subscription {subscription_id} not found")
+                return
+
+            # Skip if subscription is not active
+            if subscription.status != models.SubscriptionStatus.ACTIVE:
+                logger.info(f"Subscription {subscription_id} is not active (status: {subscription.status}), skipping")
+                return
+
+            # Skip if subscription has expired
+            from datetime import datetime
+            now = datetime.utcnow()
+            if subscription.expires_at and subscription.expires_at < now:
+                logger.info(f"Subscription {subscription_id} has expired (ended at {subscription.expires_at}), skipping")
+                return
+            
+            # Skip if subscription hasn't started yet
+            if subscription.started_at and subscription.started_at > now:
+                logger.info(f"Subscription {subscription_id} hasn't started yet (starts at {subscription.started_at}), skipping")
+                return
+
+            # Initialize bot
+            bot = initialize_bot_rpa_v1(subscription)
+            if not bot:
+                logger.error(f"Failed to initialize bot for subscription {subscription_id}")
+                crud.update_subscription_status(db, subscription_id, schemas.SubscriptionStatus.ERROR)
+                return
+            
+            exchange_type = subscription.bot.exchange_type or schemas.ExchangeType.BINANCE
+            use_testnet = getattr(subscription, 'is_testnet', True)
+            if getattr(subscription, 'is_trial', False):
+                use_testnet = True
+            
+            api_key = None
+            api_secret = None
+
+            if subscription.user_principal_id:
+    # Marketplace user - use principal_id (PRIORITY)
+                logger.info(f"Looking for exchange credentials for marketplace user (principal: {subscription.user_principal_id})")
+                from core.api_key_manager import APIKeyManager
+                api_key_manager = APIKeyManager()
+                creds = api_key_manager.get_user_credentials_by_principal_id(
+                    db=db,
+                    user_principal_id=subscription.user_principal_id,
+                    exchange=exchange_type.value,
+                    is_testnet=use_testnet
+                )
+                if creds:
+                    api_key = creds.get('api_key')
+                    api_secret = creds.get('api_secret')
+                    logger.info(f"Found exchange credentials for marketplace user (testnet={use_testnet})")
+                else:
+                    logger.error(f"No exchange credentials found for marketplace user {subscription.user_principal_id}")
+            elif subscription.user_id:
+                # Studio user - use user_id (FALLBACK)
+                logger.info(f"Looking for exchange credentials for studio user {subscription.user.email}")
+                from core.api_key_manager import APIKeyManager
+                api_key_manager = APIKeyManager()
+                creds = api_key_manager.get_user_exchange_credentials(
+                    db=db, 
+                    user_id=subscription.user.id, 
+                    exchange=exchange_type.value,
+                    is_testnet=use_testnet
+                )
+                if creds:
+                    api_key = creds['api_key']
+                    api_secret = creds['api_secret']
+                    logger.info(f"Found exchange credentials for {exchange_type.value} (testnet={use_testnet})")
+                else:
+                    # Fallback to user's direct API credentials
+                    logger.info(f"No exchange credentials found, checking user direct credentials")
+                    api_key = subscription.user.api_key
+                    api_secret = subscription.user.api_secret
+                    if api_key and api_secret:
+                        logger.info(f"Using user direct API credentials")
+            else:
+                logger.error(f"No user_id or user_principal_id found for subscription {subscription_id}")
+            if not api_key or not api_secret:
+                logger.error(f"No valid API credentials for subscription {subscription_id}")
+                crud.log_bot_action(
+                    db, subscription_id, "ERROR", 
+                    "No exchange API credentials configured. Please add your exchange credentials in settings."
+                )
+                return
+
+            logger.info(f"Creating exchange client for subscription {subscription_id} (testnet={use_testnet})")
+            
+            exchange = ExchangeFactory.create_exchange(
+                exchange_name=exchange_type.value,
+                api_key=api_key,
+                api_secret=api_secret,
+                testnet=use_testnet
+            )
+            
+            # Get current market data
+            trading_pair = subscription.bot.trading_pair or 'BTC/USDT'
+            exchange_symbol = trading_pair.replace('/', '')
+            try:
+                ticker = exchange.get_ticker(exchange_symbol)
+                current_price = float(ticker['price'])
+            except Exception as e:
+                logger.error(f"Failed to get ticker for {trading_pair}: {e}")
+                crud.log_bot_action(
+                    db, subscription_id, "ERROR", 
+                    f"Failed to get ticker for {trading_pair}: {str(e)}"
+                )
+                return
+
+            # Set bot's exchange client
+            bot.exchange_client = exchange
+            
+            # Create subscription config
+            subscription_config = {
+                'subscription_id': subscription_id,
+                'timeframe': subscription.bot.timeframe,
+                'trading_pair': trading_pair,
+                'is_testnet': use_testnet,
+                'exchange_type': exchange_type.value,
+                'user_id': subscription.user_id or 0  # 0 for marketplace users
+            }
+
+                # Execute bot prediction - Advanced workflow for Futures bots
+            if hasattr(subscription.bot, 'bot_type') and subscription.bot.bot_type and subscription.bot.bot_type.upper() == 'FUTURES_RPA':
+                logger.info(f"🚀 Using ADVANCED FUTURES WORKFLOW for {subscription.bot.name}")
+                # Run async workflow in event loop
+                import asyncio
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    final_action, account_status = loop.run_until_complete(
+                        run_advanced_futures_rpa_workflow(bot, subscription_id, subscription_config, db)
+                    )
+                finally:
+                    loop.close()
+            else:
+                logger.info(f"📊 Using STANDARD WORKFLOW for {subscription.bot.name}")
+                final_action = bot.execute_full_cycle(subscription.bot.timeframe, subscription_config)
+                
+            if final_action:
+                logger.info(f"Bot {subscription.bot.name} executed with action: {final_action.action}, value: {final_action.value}, reason: {final_action.reason}")
+                
+                # Log action to database
+                crud.log_bot_action(
+                    db, subscription_id, final_action.action,
+                    f"{final_action.reason}. Value: {final_action.value or 0.0}. Price: ${current_price}"
+                )
+
+                # return {
+                #     "status": "success",
+                #     "action": final_action.action,
+                #     "confidence": final_action.value,
+                #     "reason": final_action.reason
+                # }
+                trade_result = False
+                trade_details = None
+                
+                if final_action.action != "HOLD":
+                    try:
+                        trade_result_data = execute_trade_action(db, subscription, exchange, final_action, current_price)
+                        trade_result = trade_result_data.get('success', False)
+                        trade_details = trade_result_data
+                        
+                        if trade_result:
+                            logger.info(f"Trade executed successfully: {final_action.action}")
+                        else:
+                            logger.warning(f"Trade execution failed: {final_action.action}")
+                    except Exception as e:
+                        logger.error(f"Failed to execute trade: {e}")
+                        trade_details = {
+                            'success': False,
+                            'error': str(e)
+                        }
+                        crud.log_bot_action(
+                            db, subscription_id, "TRADE_ERROR",
+                            f"Failed to execute trade: {str(e)}"
+                        )
+                else:
+                    # For HOLD actions, no trade execution
+                    trade_details = {
+                        'success': True,
+                        'message': 'No trade executed (HOLD signal)'
+                    }
+                
+                # Send email notification AFTER trade execution
+                try:
+                    from datetime import datetime
+                    from services.email_templates import send_combined_notification
+                    # Different emoji for different actions
+                    action_emoji = {
+                        "BUY": "🟢",
+                        "SELL": "🔴", 
+                        "HOLD": "🟡"
+                    }.get(final_action.action, "📊")
+                    
+                    # Send combined notification with trade result
+                    # Get email for notification (studio user or marketplace user)
+                    user_email = subscription.user.email if subscription.user_id else None
+                    body_details = {
+                            'trading_pair': trading_pair,
+                            'current_price': current_price,
+                            'reason': final_action.reason,
+                            'confidence': final_action.value or 'N/A',
+                            'timeframe': subscription.bot.timeframe,
+                            'is_testnet': bool(subscription.is_testnet),
+                            # 'balance_info': balance_info,
+                            'subscription_id': subscription_id,
+                            'trade_details': trade_details
+                        }
+                    send_combined_notification(
+                        user_email,
+                        subscription.bot.name,
+                        final_action.action,
+                        body_details
+                    )
+
+                    telegram_chat_id = None
+                    discord_user_id = None
+                    # Studio user: get from user.user_settings
+                    if hasattr(subscription.user, 'user_settings') and subscription.user.user_settings:
+                        telegram_chat_id = getattr(subscription.user.user_settings, 'telegram_chat_id', None)
+                        discord_user_id = getattr(subscription.user.user_settings, 'discord_user_id', None)
+                    # Marketplace user: get from UserSettings by principal_id
+                    if not telegram_chat_id or discord_user_id and subscription.user_principal_id:
+                        from core import crud
+                        users_settings = crud.get_user_settings_by_principal(db, subscription.user_principal_id)
+                        if users_settings:
+                            telegram_chat_id = getattr(users_settings, 'telegram_chat_id', None)
+                            discord_user_id = getattr(users_settings, 'discord_user_id', None)
+                    if telegram_chat_id or discord_user_id:
+                        logger.info(f"trade_result: {trade_result}")
+
+                        # Format message for all channels using unified format
+                        message = format_notification_message(
+                            bot_name=subscription.bot.name,
+                            # balance_info=balance_info,
+                            available=account_status.get('available_balance', 0),
+                            action=final_action.action,
+                            reason=final_action.reason,
+                            total_wallet=account_status.get('total_balance', 0)
+                        )
+                        if telegram_chat_id:
+                            send_telegram_notification.delay(telegram_chat_id, message)
+                        if discord_user_id:
+                            send_discord_notification.delay(discord_user_id, message)
+                    else:
+                        logger.warning(f"No telegram_chat_id found in user settings for user {subscription.user.id if subscription.user else subscription.user_principal_id or 'N/A'}")
+
+                except Exception as e:
+                    logger.error(f"Failed to send signal notification: {e}")
+                
+            else:
+                logger.warning(f"Bot {subscription.bot.name} returned no action")
+                crud.log_bot_action(
+                    db, subscription_id, "NO_ACTION",
+                    "Bot analysis completed but no action was taken"
+                )
+        finally:
+            db.close()
+            
+    except Exception as e:
+        logger.error(f"Error in RPA bot execution: {e}")
+        return {"status": "error", "reason": str(e)}
+        
+    finally:
+        # Release lock
+        if redis_client:
+            try:
+                redis_client.delete(lock_key)
+                logger.info(f"🔓 Released execution lock for subscription {subscription_id}")
+            except Exception as e:
+                logger.warning(f"Failed to release lock: {e}")
+
+@app.task(bind=True, autoretry_for=(Exception,), retry_kwargs={'max_retries': 3, 'countdown': 60})
 def run_bot_signal_logic(self, bot_id: int, subscription_id: int):
     """Run bot signal logic for a specific subscription"""
     lock_key = f"bot_execution_signal_lock_{subscription_id}"
@@ -1170,7 +1519,7 @@ def run_bot_signal_logic(self, bot_id: int, subscription_id: int):
         import uuid
         import subprocess
         from core.consts.index import MAIN_INDICATORS, SUB_INDICATORS, TIMEFRAME_ROBOT_MAP
-        from services.image_analysis import analyze_image_with_openai
+        from services.image_analysis import analyze_image_with_openai_text
         from core.schemas import PayLoadAnalysis
         db = SessionLocal()
 
@@ -1288,7 +1637,7 @@ def run_bot_signal_logic(self, bot_id: int, subscription_id: int):
                         # custom_prompt=subscription.risk_config
                     )
 
-                    response = analyze_image_with_openai(image_paths, bot_config)
+                    response = analyze_image_with_openai_text(image_paths, bot_config)
                     bot_name = f"🤖 BOT {subscription.bot.name}"
                     final_response = f"{bot_name}\n\n{response}"
 
@@ -1357,6 +1706,7 @@ def run_bot_signal_logic(self, bot_id: int, subscription_id: int):
                 logger.info(f"🔓 Released execution lock for subscription {subscription_id}")
         except Exception as e:
             logger.warning(f"Failed to release Redis lock: {e}")
+
 @app.task
 def schedule_active_bots():
     """Schedule active bots for execution"""
@@ -1399,9 +1749,11 @@ def schedule_active_bots():
                 if should_run:
                     logger.info(f"Scheduling bot execution for subscription {subscription.id}")
                     
-                    if subscription.bot.bot_mode != "PASSIVE":
+                    if subscription.bot.bot_mode != "PASSIVE" and subscription.bot.bot_type == "FUTURES":
                         run_bot_logic.delay(subscription.id)
                         # Queue the bot execution task      
+                    elif subscription.bot.bot_type == "FUTURES_RPA":
+                        run_bot_rpa_logic.delay(subscription.id)
                     else:
                         # Handle PASSIVE bots
                         run_bot_signal_logic.delay(subscription.bot.id, subscription.id)
@@ -1784,6 +2136,84 @@ async def run_advanced_futures_workflow(bot, subscription_id: int, subscription_
         logger.error(traceback.format_exc())
         from bots.bot_sdk.Action import Action
         return Action(action="HOLD", value=0.0, reason=f"Advanced workflow error: {e}")
+
+async def run_advanced_futures_rpa_workflow(bot, subscription_id: int, subscription_config: Dict[str, Any], db):
+    """
+    Advanced multi-timeframe futures trading workflow với RPA
+    """
+    try:
+        from bots.bot_sdk.Action import Action
+        logger.info(f"🎯 Starting ADVANCED FUTURES RPA WORKFLOW for subscription {subscription_id}")
+        
+        # 1. Check account status
+        logger.info("💰 Step 1: Checking account status...")
+        account_status = bot.check_account_status()
+        if account_status:
+            logger.info(f"Account Balance: ${account_status.get('available_balance', 0):.2f}")
+        
+        # 2. Capture multi-timeframe data using RPA
+        logger.info("📊 Step 2: Capturing multi-timeframe data with RPA...")
+        image_paths = bot.capture_chart_data()
+        if not image_paths:
+            logger.error("❌ Failed to capture multi-timeframe data with RPA")
+            return Action(action="HOLD", value=0.0, reason="RPA data capture failed"), account_status
+
+        # 3. Analyze images with LLM
+        logger.info("🔍 Step 3: Analyzing multi-timeframe data with LLM...")
+        action = await bot.analyze_images_with_llm(image_paths)
+        logger.info(f"🎯 RPA LLM Analysis Result: {action}")
+        if action.action == "HOLD":
+            logger.info("📊 Signal is HOLD - no position setup needed")
+            return action, account_status
+        
+        logger.info(f"📊 ADVANCED RPA SIGNAL: {action.action} | Confidence: {action.value*100:.1f}%")
+        
+        # 4. Execute advanced position setup
+        logger.info(f"🚀 Step 4: Executing ADVANCED POSITION SETUP for {action.action}...")
+        # trade_result = await bot.setup_position(action)
+
+        if hasattr(action, 'recommendation') and action.recommendation:
+            rec = action.recommendation
+            logger.info(f"🎯 LLM Recommendation Details:")
+            logger.info(f"   Strategy: {rec.get('action', 'N/A')}")
+            logger.info(f"   Strategy: {rec.get('strategy', 'N/A')}")
+            logger.info(f"   Entry Price: {rec.get('entry_price', 'Market')}")
+            logger.info(f"   Take Profit: {rec.get('take_profit', 'N/A')}")
+            logger.info(f"   Stop Loss: {rec.get('stop_loss', 'N/A')}")
+            logger.info(f"   Risk/Reward: {rec.get('risk_reward', 'N/A')}")
+        
+        # 5. Execute advanced position setup (if not HOLD)
+        if action.action != "HOLD":
+            logger.info(f"🚀 Step 5: Executing ADVANCED POSITION SETUP for {action.action}...")
+            logger.info("🤖 AUTO-CONFIRMED via Celery (no user confirmation required)")
+            
+            # Use advanced setup_position with capital management, stop loss, take profit
+            trade_result = await bot.setup_position(action)
+            
+            if trade_result.get('status') == 'success':
+                logger.info(f"✅ Advanced trade executed successfully!")
+                logger.info(f"   Order ID: {trade_result.get('main_order_id')}")
+                logger.info(f"   Position Value: ${trade_result.get('position_value', 0):.2f}")
+                logger.info(f"   Leverage: {trade_result.get('leverage', 'N/A')}x")
+                logger.info(f"   Stop Loss Order: {trade_result.get('stop_loss', {}).get('order_id', 'N/A')}")
+                logger.info(f"   Take Profit Order: {trade_result.get('take_profit', {}).get('order_id', 'N/A')}")
+                
+                # Save transaction to database (like main_execution)
+                bot.save_transaction_to_db(trade_result)
+                logger.info("💾 Transaction saved to database")
+            else:
+                logger.error(f"❌ Advanced trade execution failed: {trade_result}")
+        else:
+            logger.info("📊 Signal is HOLD - no position setup needed")
+        
+        logger.info(f"🎉 ADVANCED FUTURES RPA WORKFLOW completed successfully")
+        return action, account_status
+        
+    except Exception as e:
+        logger.error(f"❌ Error in advanced futures RPA workflow: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return Action(action="HOLD", value=0.0, reason=f"Advanced RPA workflow error: {e}"), None
 
 @app.task(bind=True, max_retries=3)
 def create_subscription_from_paypal_task(self, payment_id: str):
