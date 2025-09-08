@@ -508,6 +508,10 @@ class MarketplaceSubscriptionCreateV2(BaseModel):
     
     # Trading configuration
     is_testnet: bool = True
+    trading_pair: str = Field(..., description="Trading pair like BTC/USDT")
+    trading_network: str = Field(..., description="Trading network like MAINNET, TESTNET")
+    payment_method:  Optional[str] = None
+    paypal_payment_id: Optional[str] = None
 
     # Optional configurations with defaults
     execution_config: Optional[ExecutionConfig] = None
@@ -535,6 +539,7 @@ class MarketplaceSubscriptionResponse(BaseModel):
         from_attributes = True
 
 class SubscriptionUpdate(BaseModel):
+    subscription_id: Optional[int] = None
     instance_name: Optional[str] = None
     exchange_type: Optional[ExchangeType] = None
     trading_pair: Optional[str] = None
@@ -543,6 +548,8 @@ class SubscriptionUpdate(BaseModel):
     execution_config: Optional[ExecutionConfig] = None
     risk_config: Optional[RiskConfig] = None
     is_testnet: Optional[bool] = None
+    principal_id: Optional[str] = None
+    api_key: Optional[str] = None
 
 class SubscriptionInDB(SubscriptionBase):
     id: int
@@ -1026,6 +1033,25 @@ class MarketplaceSubscriptionControlRequest(BaseModel):
             raise ValueError('API key cannot be empty')
         return v.strip()
 
+
+class MarketplaceSubscriptionTradingPairRequest(BaseModel):
+    """Request model for controlling marketplace subscriptions"""
+    subscription_id: int = Field(..., description="Subscription ID")
+    principal_id: str = Field(..., description="User Principal ID")
+    api_key: str = Field(..., description="Bot API key for authentication")
+    trading_pair: str = Field(..., description="Trading pair like BTC/USDT")
+
+    @validator('principal_id')
+    def validate_principal_id(cls, v):
+        if not v or len(v.strip()) == 0:
+            raise ValueError('Principal ID cannot be empty')
+        return v.strip()
+
+    @validator('api_key')
+    def validate_api_key(cls, v):
+        if not v or len(v.strip()) == 0:
+            raise ValueError('API key cannot be empty')
+        return v.strip()
 
 class MarketplaceSubscriptionControlResponse(BaseModel):
     """Response model for marketplace subscription control actions"""
