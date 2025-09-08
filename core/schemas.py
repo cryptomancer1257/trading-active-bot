@@ -23,6 +23,8 @@ class BotType(str, Enum):
     LLM = "LLM"             # Large Language Model
     SPOT = "SPOT"           # Spot Trading
     FUTURES = "FUTURES"     # Futures Trading
+    FUTURES_RPA = "FUTURES_RPA"  # Futures Trading with RPA
+    FUTURES_API = "FUTURES_API"  # temp
 
 class BotMode(str, Enum):
     PASSIVE = "PASSIVE"
@@ -268,6 +270,8 @@ class BotBase(BaseModel):
     exchange_type: Optional[ExchangeType] = None
     strategy_config: Optional[Any] = None
     image_url: Optional[str] = None
+    code_path_rpa: Optional[str] = None
+    version_rpa: Optional[str] = None
 
 class PayLoadAnalysis(BaseModel):
     bot_name: str = ""
@@ -504,8 +508,8 @@ class MarketplaceSubscriptionCreateV2(BaseModel):
     
     # Trading configuration
     is_testnet: bool = True
-    trading_pair: str = Field(..., description="Trading pair like BTC/USDT")
-    trading_network: str = Field(..., description="Trading network like MAINNET, TESTNET")
+    trading_pair: Optional[str] = Field(None, description="Trading pair like BTC/USDT")
+    trading_network: Optional[str] = Field(None, description="Trading network like MAINNET, TESTNET")
     payment_method:  Optional[str] = None
     paypal_payment_id: Optional[str] = None
 
