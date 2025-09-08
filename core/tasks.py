@@ -29,7 +29,7 @@ from sqlalchemy.orm import Session
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def format_notification_message(bot_name, balance_info, action, reason, current_price=None, available=None, total_wallet=None):
+def format_notification_message(bot_name, balance_info=None, action=None, reason=None, current_price=None, available=None, total_wallet=None):
     """
     Format notification message for all channels (Telegram, Discord, Email)
     """
