@@ -276,8 +276,16 @@ class BotBase(BaseModel):
 class PayLoadAnalysis(BaseModel):
     bot_name: str = ""
     trading_pair: str
-    timeframe: List[str]
+    primary_timeframe: str
+    timeframes: List[str]
     strategies: List[str]
+
+    @validator('timeframes', pre=True, always=True)
+    def remove_primary_from_timeframes(cls, v, values):
+        primary = values.get('primary_timeframe')
+        if primary and v:
+            return [tf for tf in v if tf != primary]
+        return v
 
 class BotCreate(BotBase):
     pass
