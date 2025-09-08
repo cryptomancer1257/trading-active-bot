@@ -37,6 +37,7 @@ app.conf.update(
     ],
     task_routes={
         'core.tasks.run_bot_logic': {'queue': 'bot_execution'},
+        'core.tasks.run_bot_rpa_logic': {'queue': 'bot_execution'},
         'core.tasks.run_bot_signal_logic': {'queue': 'bot_execution_signal'},
         'core.tasks.run_futures_bot_trading': {'queue': 'futures_trading'},
         'core.tasks.schedule_futures_bot_trading': {'queue': 'futures_trading'},

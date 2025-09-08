@@ -259,7 +259,7 @@ class BotManager:
         
         # Forbidden functions/modules
         forbidden_imports = {
-            'subprocess', 'eval', 'exec', 'compile',
+            'eval', 'exec', 'compile',
             '__import__', 'globals', 'vars',
             'raw_input', 'file', 'execfile', 'reload'
         }

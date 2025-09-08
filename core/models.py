@@ -204,6 +204,10 @@ class Bot(Base):
     # Bot files and metadata
     code_path = Column(String(500))  # Path to uploaded bot code
     version = Column(String(50), default="1.0.0")
+
+    #Bot rpa code path and version
+    code_path_rpa = Column(String(500))  # Path to uploaded bot RPA
+    version_rpa = Column(String(50), default="1.0.0")
     
     # Bot type and ML model support
     bot_type = Column(String(50), default="TECHNICAL")  # TECHNICAL, ML, DL, LLM
