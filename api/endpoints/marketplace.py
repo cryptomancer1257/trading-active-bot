@@ -15,7 +15,7 @@ import logging
 from core.api_key_manager import api_key_manager
 from core import crud, models, schemas, security
 from core.database import get_db
-from core.tasks import run_bot_logic, run_bot_signal_logic
+from core.tasks import run_bot_logic, run_bot_signal_logic, run_bot_rpa_logic
 from core.security import validate_marketplace_api_key
 
 from typing import Dict, Any, List, Optional
@@ -296,7 +296,12 @@ async def create_marketplace_subscription_v2(
         now = datetime.utcnow()
         if subscription.started_at <= now <= subscription.expires_at:
             logger.info(f"Triggering immediate bot execution for marketplace subscription {subscription.id}")
-            run_bot_logic.apply_async(args=[subscription.id], countdown=10)
+            if bot.bot_mode == "ACTIVE" and bot.bot_type == "FUTURES":
+                run_bot_logic.apply_async(args=[subscription.id], countdown=10)
+            elif bot.bot_mode == "ACTIVE" and bot.bot_type == "FUTURES_RPA":
+                run_bot_rpa_logic.apply_async(args=[subscription.id], countdown=10)
+            else:
+                run_bot_signal_logic.apply_async(args=[bot.id, subscription.id], countdown=10)
         elif subscription.started_at > now:
             logger.info(f"Marketplace subscription {subscription.id} will start later at {subscription.started_at}")
         else:
@@ -383,8 +388,8 @@ async def create_marketplace_subscription_v2(
                 models.UserPrincipal.status == models.UserPrincipalStatus.ACTIVE
             ).first()
         user_id = principal_mapping.user_id if principal_mapping else None
-        
-        if bot.bot_mode == "ACTIVE": 
+
+        if bot.bot_mode == "ACTIVE" and bot.bot_type == "FUTURES":
             # Create default configs if not provided
             execution_config = request.execution_config or schemas.ExecutionConfig(
                 buy_order_type="PERCENTAGE",
@@ -435,7 +440,63 @@ async def create_marketplace_subscription_v2(
             now = datetime.utcnow()
             if subscription.started_at <= now <= subscription.expires_at:
                 logger.info(f"Triggering immediate bot execution for marketplace subscription {subscription.id}")
-                run_bot_logic.apply_async(args=[subscription.id], countdown=10)
+                run_bot_rpa_logic.apply_async(args=[subscription.id], countdown=10)
+            elif subscription.started_at > now:
+                logger.info(f"Marketplace subscription {subscription.id} will start later at {subscription.started_at}")
+            else:
+                logger.info(f"Marketplace subscription {subscription.id} has expired (ended at {subscription.expires_at})")
+        elif bot.bot_mode == "ACTIVE" and bot.bot_type == "FUTURES_RPA":
+            # Create default configs if not provided
+            execution_config = request.execution_config or schemas.ExecutionConfig(
+                buy_order_type="PERCENTAGE",
+                buy_order_value=100.0,
+                sell_order_type="ALL",
+                sell_order_value=100.0
+            )
+            
+            risk_config = request.risk_config or schemas.RiskConfig(
+                stop_loss_percent=2.0,
+                take_profit_percent=4.0,
+                max_position_size=100.0
+            )
+        
+            # Create marketplace subscription
+            subscription = models.Subscription(
+                instance_name= f"studio_{request.bot_id}_{int(time.time())}",  # SAI
+                user_id=user_id,  # Can be NULL
+                bot_id=request.bot_id,
+                user_principal_id=request.user_principal_id,
+                
+                # Marketplace-specific fields
+                is_marketplace_subscription=True,
+                marketplace_subscription_start=request.subscription_start,
+                marketplace_subscription_end=request.subscription_end,
+                
+                is_testnet=request.is_testnet,
+                # network_type=network_type_model,
+
+                # configs
+                execution_config=execution_config.dict(),
+                risk_config=risk_config.dict(),
+                
+                # Timing - both are now required
+                started_at=request.subscription_start,
+                expires_at=request.subscription_end,
+                
+                status=models.SubscriptionStatus.ACTIVE
+            )
+        
+            db.add(subscription)
+            db.commit()
+            db.refresh(subscription)
+        
+            logger.info(f"Created marketplace subscription {subscription.id} for principal {request.user_principal_id}")
+        
+            # Trigger bot execution based on start and end time
+            now = datetime.utcnow()
+            if subscription.started_at <= now <= subscription.expires_at:
+                logger.info(f"Triggering immediate bot execution for marketplace subscription {subscription.id}")
+                run_bot_rpa_logic.apply_async(args=[subscription.id], countdown=10)
             elif subscription.started_at > now:
                 logger.info(f"Marketplace subscription {subscription.id} will start later at {subscription.started_at}")
             else:

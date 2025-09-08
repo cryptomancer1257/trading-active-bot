@@ -15,6 +15,7 @@ import tempfile
 import zipfile
 from pathlib import Path
 from dotenv import load_dotenv
+import mimetypes
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -220,71 +221,66 @@ class S3Manager:
             "using_custom_endpoint": bool(self.endpoint_url)
         }
     
-    def upload_bot_code(self, bot_id: int, code_content: str, filename: str = "bot.py", 
-                       version: Optional[str] = None) -> Dict[str, Any]:
-        """
-        Upload bot code to S3
-        
-        Args:
-            bot_id: Bot ID
-            code_content: Python code content
-            filename: Filename for the code
-            version: Version identifier (optional)
-            
-        Returns:
-            Dict with upload information
-        """
+    def upload_bot_code(self, bot_id: int, code_content: str, filename: str = "bot.py",
+                        version: Optional[str] = None, file_type: str = "code") -> Dict[str, Any]:
         try:
-            # Generate version if not provided
             if not version:
                 version = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-            
-            # Create S3 key
-            s3_key = f"bots/{bot_id}/code/{version}/{filename}"
-            
-            # Calculate file hash
-            file_hash = hashlib.sha256(code_content.encode()).hexdigest()
-            
-            # Create metadata
+
+            s3_key = f"bots/{bot_id}/{file_type}/{version}/{filename}"
+
+            # Bytes for hashing / size / body
+            body_bytes = code_content.encode('utf-8')
+            file_hash = hashlib.sha256(body_bytes).hexdigest()
+            file_size = str(len(body_bytes))
+
+            # Guess content type from filename, fallback to octet-stream
+            content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+            # Optionally override for python files
+            if filename.endswith('.py'):
+                content_type = "text/x-python"
+            elif filename.endswith('.robot'):
+                content_type = "text/plain"
+
             metadata = {
                 "bot_id": str(bot_id),
                 "version": version,
                 "filename": filename,
                 "file_hash": file_hash,
                 "upload_time": datetime.utcnow().isoformat(),
-                "file_type": "code",
-                "file_size": str(len(code_content.encode()))
+                "file_type": file_type,
+                "file_size": file_size
             }
-            
-            # Upload to S3
+
+            # Upload code file
             self.s3_client.put_object(
                 Bucket=self.bucket_name,
                 Key=s3_key,
-                Body=code_content.encode(),
-                ContentType="text/x-python",
-                Metadata=metadata
+                Body=body_bytes,
+                ContentType=content_type,
+                Metadata={k: str(v) for k, v in metadata.items()}
             )
-            
-            # Store metadata separately
-            metadata_key = f"bots/{bot_id}/metadata/{version}/code_metadata.json"
+
+            # Store metadata under file_type-specific name
+            metadata_key = f"bots/{bot_id}/metadata/{version}/{file_type}_metadata.json"
             self.s3_client.put_object(
                 Bucket=self.bucket_name,
                 Key=metadata_key,
                 Body=json.dumps(metadata),
                 ContentType="application/json"
             )
-            
-            logger.info(f"Uploaded bot code: {s3_key}")
-            
+
+            logger.info(f"Uploaded bot file to S3: {s3_key}")
+
             return {
                 "s3_key": s3_key,
                 "version": version,
                 "file_hash": file_hash,
                 "metadata": metadata
             }
-            
+
         except ClientError as e:
-            logger.error(f"Error uploading bot code: {e}")
+            logger.error(f"Error uploading bot file: {e}")
             raise
     
     def upload_ml_model(self, bot_id: int, model_data: bytes, filename: str, 
@@ -348,7 +344,7 @@ class S3Manager:
             logger.error(f"Error uploading ML model: {e}")
             raise
     
-    def download_bot_code(self, bot_id: int, version: Optional[str] = None, filename: Optional[str] = None) -> str:
+    def download_bot_code(self, bot_id: int, version: Optional[str] = None, filename: Optional[str] = None, file_type: str = "code") -> str:
         """
         Download bot code from S3
         
@@ -367,39 +363,41 @@ class S3Manager:
         try:
             # Get version if not specified
             if not version:
-                version = self.get_latest_version(bot_id, "code")
+                version = self.get_latest_version(bot_id, file_type)
                 logger.info(f"Using latest version: {version}")
             
             # If filename not specified, find the Python file in the version directory
             if not filename:
-                prefix = f"bots/{bot_id}/code/{version}/"
+                prefix = f"bots/{bot_id}/{file_type}/{version}/"
                 response = self.s3_client.list_objects_v2(
                     Bucket=self.bucket_name,
                     Prefix=prefix
                 )
                 
-                python_files = []
+                candidate_files = []
                 for obj in response.get('Contents', []):
                     key = obj['Key']
-                    if key.endswith('.py'):
-                        python_files.append(key)
+                    if file_type == "code" and key.endswith('.py'):
+                        candidate_files.append(key)
+                    elif file_type == "rpa" and key.endswith('.robot'):
+                        candidate_files.append(key)
                 
-                if not python_files:
-                    raise FileNotFoundError(f"No Python files found in {prefix}")
-                
-                # Use the first Python file found (should be the main bot file)
-                s3_key = python_files[0]
+                if not candidate_files:
+                    raise FileNotFoundError(f"No {file_type} files found in {prefix}")
+
+                # Use the first candidate file found
+                s3_key = candidate_files[0]
                 filename = s3_key.split('/')[-1]
-                logger.info(f"Found Python file: {filename}")
+                logger.info(f"Found file: {filename}")
             else:
-                s3_key = f"bots/{bot_id}/code/{version}/{filename}"
+                s3_key = f"bots/{bot_id}/{file_type}/{version}/{filename}"
             
             # Download file
             response = self.s3_client.get_object(Bucket=self.bucket_name, Key=s3_key)
-            code_content = response['Body'].read().decode('utf-8')
+            content = response['Body'].read().decode('utf-8')
             
-            logger.info(f"Downloaded bot code: {s3_key} ({len(code_content)} characters)")
-            return code_content
+            logger.info(f"Downloaded {file_type} file: {s3_key} ({len(content)} characters)")
+            return content
             
         except ClientError as e:
             logger.error(f"Error downloading bot code: {e}")
@@ -527,59 +525,37 @@ class S3Manager:
             return []
     
     def get_latest_version(self, bot_id: int, file_type: str = None) -> str:
-        """
-        Get the latest version for a bot
-        
-        Args:
-            bot_id: Bot ID
-            file_type: File type filter (code, models)
-            
-        Returns:
-            Latest version string
-        """
         try:
             prefix = f"bots/{bot_id}/"
             if file_type:
                 prefix += f"{file_type}/"
-            
+
             response = self.s3_client.list_objects_v2(
                 Bucket=self.bucket_name,
                 Prefix=prefix
             )
-            
+
             versions = set()
             for obj in response.get('Contents', []):
                 key_parts = obj['Key'].split('/')
-                # Structure: bots/{bot_id}/code/{version}/filename.py
-                # Indices:   0    1        2     3        4
-                if file_type == "code":
+                # bots/{bot_id}/{file_type}/{version}/filename
+                if file_type:
                     version_index = 3
-                elif file_type:
-                    version_index = 3  # For other file types like models
                 else:
-                    version_index = 2  # When no file_type specified
-                
+                    version_index = 2
+
                 if len(key_parts) > version_index:
                     version = key_parts[version_index]
-                    # Skip if this looks like a filename instead of version
-                    if not version.endswith('.py') and version:
+                    if "." not in version:
                         versions.add(version)
-            
+
             if not versions:
                 raise FileNotFoundError(f"No versions found for bot {bot_id} with file_type {file_type}")
-            
-            # Sort versions properly (semantic versioning)
-            def version_key(v):
-                try:
-                    return tuple(map(int, v.split('.')))
-                except:
-                    return (0, 0, 0)  # Fallback for non-numeric versions
-            
-            sorted_versions = sorted(versions, key=version_key, reverse=True)
-            latest = sorted_versions[0]
-            logger.info(f"Found versions for bot {bot_id}: {sorted_versions}, using: {latest}")
+
+            latest = max(versions)
+            logger.info(f"Found versions for bot {bot_id}, file_type={file_type}: {sorted(versions)} -> using {latest}")
             return latest
-            
+
         except ClientError as e:
             logger.error(f"Error getting latest version: {e}")
             raise
