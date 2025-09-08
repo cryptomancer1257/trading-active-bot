@@ -401,7 +401,13 @@ def initialize_bot_rpa_v1(subscription):
                     for tf in subscription.bot.timeframes
                 ]
 
-                logger.info(f"RPA Bot Config - Trading Pair: {trading_pair}, Timeframes: {timeframes_binance}")
+                primary_timeframe = subscription.bot.timeframe
+                primary_tf_mapped = TIMEFRAME_ROBOT_MAP.get(primary_timeframe.lower(), primary_timeframe)
+                if primary_tf_mapped not in timeframes_binance:
+                    timeframes_binance.append(primary_tf_mapped)
+                logger.info(f"🔍 DEBUG: timeframes for robot: {timeframes_binance} and primary: {primary_tf_mapped}")
+
+                logger.info(f"RPA Bot Config - Trading Pair: {trading_pair}, Timeframes: {timeframes_binance} (Primary: {primary_tf_mapped}), Main Indicators: {main_selected}, Sub Indicators: {sub_selected}")
                 bot_config = {
                     'trading_pair': trading_pair,
                     'testnet': subscription.is_testnet if subscription.is_testnet else True,
@@ -412,7 +418,7 @@ def initialize_bot_rpa_v1(subscription):
                     
                     # 🎯 Optimized 3 timeframes for better performance
                     'timeframes': timeframes_binance,
-                    'primary_timeframe': subscription.bot.timeframe,  # Primary timeframe for final decision
+                    'primary_timeframe': primary_tf_mapped,  # Primary timeframe for final decision
                     'main_indicators': main_selected,
                     'sub_indicators': sub_selected,
                     'use_llm_analysis': True,  # Enable LLM analysis with full system
@@ -532,8 +538,6 @@ def initialize_bot_rpa_v1(subscription):
                     bot_instance.subscription_id = subscription_context['subscription_id']
                 if hasattr(bot_instance, 'trading_pair'):
                     bot_instance.trading_pair = subscription_context['trading_pair']
-                if hasattr(bot_instance, 'timeframe'):
-                    bot_instance.timeframe = subscription_context['timeframe']
                 if hasattr(bot_instance, 'is_testnet'):
                     bot_instance.is_testnet = subscription_context['is_testnet']
                 
@@ -1555,6 +1559,11 @@ def run_bot_signal_logic(self, bot_id: int, subscription_id: int):
                     for tf in subscription.bot.timeframes
                 ]
 
+                primary_timeframe = subscription.bot.timeframe
+                primary_tf_mapped = TIMEFRAME_ROBOT_MAP.get(primary_timeframe.lower(), primary_timeframe)
+                if primary_tf_mapped not in timeframes_binance:
+                    timeframes_binance.append(primary_tf_mapped)
+                logger.info(f"🔍 DEBUG: timeframes for robot: {timeframes_binance} and primary: {primary_tf_mapped}")
                 robot_file = os.path.abspath("binance.robot")
 
                 driver_path = os.path.abspath("drivers")
@@ -1632,7 +1641,8 @@ def run_bot_signal_logic(self, bot_id: int, subscription_id: int):
                     bot_config = PayLoadAnalysis(
                         bot_name=subscription.bot.name,
                         trading_pair=subscription.bot.trading_pair,
-                        timeframe=subscription.bot.timeframes,
+                        timeframes=subscription.bot.timeframes,
+                        primary_timeframe=subscription.bot.timeframe,
                         strategies=subscription.bot.strategy_config,
                         # custom_prompt=subscription.risk_config
                     )

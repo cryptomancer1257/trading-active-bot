@@ -345,114 +345,6 @@ class BinanceFuturesIntegration:
             logger.error(f"Failed to cancel order {order_id}: {e}")
             return False
     
-    # def create_managed_orders(self, symbol: str, side: str, quantity: str, 
-    #                         stop_price: str, take_profit_price: str, 
-    #                         reduce_only: bool = True) -> Dict[str, Any]:
-    #     """Create orders with proper management - check existing orders first"""
-    #     try:
-    #         # 🔍 STEP 1: Check existing orders
-    #         existing_orders = self.get_open_orders(symbol)
-            
-    #         # Filter existing SL and TP orders for this symbol
-    #         existing_sl = [o for o in existing_orders if o['type'] == 'STOP_MARKET' and o['side'] == side]
-    #         existing_tp = [o for o in existing_orders if o['type'] == 'TAKE_PROFIT_MARKET' and o['side'] == side]
-            
-    #         logger.info(f"📊 Existing orders: {len(existing_sl)} SL, {len(existing_tp)} TP")
-            
-    #         # 🧹 STEP 2: Cancel excessive orders (keep max 1 SL + 2 TP)
-    #         if len(existing_sl) > 0:
-    #             logger.info("⚠️ Stop Loss orders already exist, cancelling old ones...")
-    #             for order in existing_sl:
-    #                 self.cancel_order(symbol, int(order['orderId']))
-            
-    #         if len(existing_tp) > 1:
-    #             logger.info("⚠️ Too many Take Profit orders, cancelling old ones...")
-    #             for order in existing_tp:
-    #                 self.cancel_order(symbol, int(order['orderId']))
-            
-    #         # 🆕 STEP 3: Create new managed orders
-    #         # Split quantity for partial TP strategy
-    #         total_qty = float(quantity)
-    #         partial_qty = total_qty * 0.5  # 50% for first TP (recover capital)
-    #         remaining_qty = total_qty * 0.5  # 50% for second TP (profit)
-            
-    #         # Create stop loss order (full quantity)
-    #         stop_params = {
-    #             'symbol': symbol,
-    #             'side': side,
-    #             'type': 'STOP_MARKET',
-    #             'quantity': f"{total_qty:.5f}",
-    #             'stopPrice': stop_price,
-    #             'timeInForce': 'GTC'
-    #         }
-            
-    #         if reduce_only:
-    #             stop_params['reduceOnly'] = 'true'
-            
-    #         stop_response = self._make_request("POST", "/fapi/v1/order", stop_params, signed=True)
-            
-    #         # Create first take profit order (partial - recover capital)
-    #         tp1_price = float(take_profit_price)
-    #         tp1_params = {
-    #             'symbol': symbol,
-    #             'side': side,
-    #             'type': 'TAKE_PROFIT_MARKET',
-    #             'quantity': f"{partial_qty:.5f}",
-    #             'stopPrice': f"{tp1_price:.2f}",
-    #             'timeInForce': 'GTC'
-    #         }
-            
-    #         if reduce_only:
-    #             tp1_params['reduceOnly'] = 'true'
-            
-    #         tp1_response = self._make_request("POST", "/fapi/v1/order", tp1_params, signed=True)
-            
-    #         # Create second take profit order (remaining - profit taking)
-    #         tp2_price = tp1_price * 1.02  # 2% higher for profit taking
-    #         tp2_params = {
-    #             'symbol': symbol,
-    #             'side': side,
-    #             'type': 'TAKE_PROFIT_MARKET',
-    #             'quantity': f"{remaining_qty:.5f}",
-    #             'stopPrice': f"{tp2_price:.2f}",
-    #             'timeInForce': 'GTC'
-    #         }
-            
-    #         if reduce_only:
-    #             tp2_params['reduceOnly'] = 'true'
-            
-    #         tp2_response = self._make_request("POST", "/fapi/v1/order", tp2_params, signed=True)
-            
-    #         logger.info(f"✅ Managed Orders Created:")
-    #         logger.info(f"🛡️ Stop Loss: {stop_response['orderId']} (Full: {total_qty:.5f})")
-    #         logger.info(f"🎯 Take Profit 1: {tp1_response['orderId']} (Partial: {partial_qty:.5f} @ ${tp1_price:.2f})")
-    #         logger.info(f"🎯 Take Profit 2: {tp2_response['orderId']} (Profit: {remaining_qty:.5f} @ ${tp2_price:.2f})")
-            
-    #         return {
-    #             'stop_loss_order': {
-    #                 'order_id': stop_response['orderId'],
-    #                 'quantity': total_qty,
-    #                 'price': stop_price
-    #             },
-    #             'take_profit_orders': [
-    #                 {
-    #                     'order_id': tp1_response['orderId'],
-    #                     'quantity': partial_qty,
-    #                     'price': tp1_price,
-    #                     'type': 'partial'
-    #                 },
-    #                 {
-    #                     'order_id': tp2_response['orderId'],
-    #                     'quantity': remaining_qty,
-    #                     'price': tp2_price,
-    #                     'type': 'profit'
-    #                 }
-    #             ]
-    #         }
-            
-    #     except Exception as e:
-    #         logger.error(f"Failed to create managed orders: {e}")
-    #         raise
     def create_managed_orders(self, symbol: str, side: str, quantity: str,
                             stop_price: str, take_profit_price: str,
                             reduce_only: bool = True) -> Dict[str, Any]:
@@ -732,6 +624,7 @@ class BinanceFuturesRPABot(CustomBot):
         
         # Timeframe configuration
         self.timeframes = config.get('timeframes', ['1h', '4h'])
+        self.primary_timeframe = config.get('primary_timeframe', '1h')
         
         # LLM configuration
         self.llm_model = config.get('llm_model', 'openai')  # Default to OpenAI
@@ -887,16 +780,15 @@ class BinanceFuturesRPABot(CustomBot):
             if not image_paths:
                 return Action(action="HOLD", value=0.0, reason="No images to analyze")
             
-            # Tạo bot config cho LLM
             bot_config = PayLoadAnalysis(
                 bot_name="BinanceFuturesRPABot",
                 trading_pair=self.trading_pair,
-                timeframe=self.timeframes,
+                timeframes=self.timeframes,
+                primary_timeframe=self.primary_timeframe,
                 strategies=self.main_indicators + self.sub_indicators,
                 custom_prompt="Analyze the trading charts and provide a trading recommendation with entry, stop loss, and take profit levels."
             )
             
-            # Gọi service phân tích ảnh
             analysis_result = analyze_image_with_openai(image_paths, bot_config)
             logger.info(f"Image analysis result: {analysis_result}")
             if 'analysis_result' in analysis_result and analysis_result['analysis_result']:
