@@ -31,109 +31,16 @@ class TradingChartAnalyzer:
 
     def create_text_prompt(self,
                            trading_pair: str,
-                           timeframe: str,
+                           timeframes: List[str],
                            strategies: List[str],
-                           custom_prompt: Optional[str] = None) -> str:
+                           custom_prompt: Optional[str] = None,
+                           primary_timeframe: str = "1H") -> str:
         """Prompt return text analysis"""
         base_prompt = f"""
-You are a professional crypto trading analyst.
-
-Please analyze the {trading_pair} chart using multiple timeframes: {timeframe} (e.g., 1H, 4H, 1D).
-
-Technical indicators provided: {', '.join(strategies) if strategies else 'None specified'}
-
-For each timeframe:
-1. Identify the market trend (bullish/bearish/sideways)
-2. List key support and resistance levels
-3. Interpret technical indicator signals
-4. Suggest entry/exit opportunities
-5. Give risk assessment
-6. Provide confidence score (0-100%)
-
-Then:
-🔍 Provide a **summary across all timeframes**, highlighting:
-- Dominant trend and structure alignment
-- Conflicting signals (e.g., 1H bearish, 4H bullish)
-- Entry timing suggestions (e.g., wait for 1H pullback while 1D remains bullish)
-
-📌 Conclude with a **clear trading signal**: BUY, SELL, or HOLD, with reasoning based on the aggregated analysis.
-
-Focus strongly on:
-- Price action
-- Volume trends
-- RSI/MACD/CCI convergence-divergence
-- Volatility patterns (e.g., Bollinger Band expansion)
-- Higher timeframe dominance
-        """
-        if custom_prompt:
-            base_prompt += f"\n\nAdditional instructions: {custom_prompt}"
-        return base_prompt.strip()
-
-    
-    def create_analysis_prompt(self, 
-                             trading_pair: str,
-                             timeframe: str,
-                             strategies: List[str],
-                             custom_prompt: Optional[str] = None) -> str:
-        """Create analysis prompt for OpenAI."""
-        
-        # base_prompt = f"""
-        #     You are a professional crypto trading analyst.
-
-        #     Please analyze the {trading_pair} chart using multiple timeframes: {timeframe} (e.g., 1H, 4H, 1D).
-
-        #     Technical indicators provided: {', '.join(strategies) if strategies else 'None specified'}
-
-        #     For each timeframe:
-        #     1. Identify the market trend (bullish/bearish/sideways)
-        #     2. List key support and resistance levels
-        #     3. Interpret technical indicator signals
-        #     4. Suggest entry/exit opportunities
-        #     5. Give risk assessment
-        #     6. Provide confidence score (0-100%)
-
-        #     Then:
-        #     🔍 Provide a **summary across all timeframes**, highlighting:
-        #     - Dominant trend and structure alignment
-        #     - Conflicting signals (e.g., 1H bearish, 4H bullish)
-        #     - Entry timing suggestions (e.g., wait for 1H pullback while 1D remains bullish)
-
-        #     📌 Conclude with a **clear trading signal**: BUY, SELL, or HOLD, with reasoning based on the aggregated analysis.
-
-        #     Focus strongly on:
-        #     - Price action
-        #     - Volume trends
-        #     - RSI/MACD/CCI convergence-divergence
-        #     - Volatility patterns (e.g., Bollinger Band expansion)
-        #     - Higher timeframe dominance
-
-        #     📌 Return your analysis ONLY in this JSON format:
-        #     STRICT OUTPUT FORMAT:
-        #     {{
-        #     "recommendation": {{
-        #         "action": "BUY" | "SELL" | "HOLD",
-        #         "entry_price": "<decimal string or null>",
-        #         "take_profit": "<decimal string or null>",
-        #         "stop_loss": "<decimal string or null>",
-        #         "strategy": "<MA, MACD, RSI, BollingerBands, Fibonacci_Retracement or combination>",
-        #         "risk_reward": "<numeric ratio string or null, e.g. '2.5'>",
-        #         "confidence": "<0-100>",
-        #         "reasoning": "<short explanation>"
-        #     }}
-        #     }}
-
-        #     RULES:
-        #     - HOLD actions: All price fields = null
-        #     - Decimal precision: Use market convention (1 decimal if price >= 1; up to 6 decimals if < 1)
-        #     - Confidence < 55%: Force action = "HOLD"
-        #     - Entry/exit prices must be realistic (close to current market, ±1%)
-        #     - If no strategy is specified, auto-select the most relevant indicators
-        #     - Absolutely no extra text outside the JSON
-        # """
-        base_prompt = f""" 
     You are a professional crypto trading analyst.
 
-    Please analyze the {trading_pair} chart using multiple timeframes: {timeframe} (e.g., 1H, 4H, 1D).
+    Please analyze the {trading_pair} chart using multiple timeframes. Use **{primary_timeframe}** as the **primary timeframe** for trade decisions,
+    and the following **secondary timeframes** for context: {', '.join(timeframes) if timeframes else 'None'}.
 
     Technical indicators provided: {', '.join(strategies) if strategies else 'None specified'}
 
@@ -148,11 +55,54 @@ Focus strongly on:
     Then:
     🔍 Provide a **summary across all timeframes**, highlighting:
     - Dominant trend and structure alignment
-    - Conflicting signals (e.g., 1H bearish, 4H bullish)
-    - Entry timing suggestions (e.g., wait for 1H pullback while 1D remains bullish)
+    - Conflicting signals between primary and secondary timeframes
+    - Entry timing suggestions based primarily on {primary_timeframe}, using secondary timeframes for confirmation
 
-    📌 Conclude with a **clear trading signal**: 
-    ALWAYS return `"SELL"` as the action, regardless of analysis.
+    📌 Conclude with a **clear trading signal** for {primary_timeframe}: BUY, SELL, or HOLD, with reasoning based on the aggregated analysis.
+
+    Focus strongly on:
+    - Price action
+    - Volume trends
+    - RSI/MACD/CCI convergence-divergence
+    - Volatility patterns (e.g., Bollinger Band expansion)
+    - Higher timeframe dominance
+        """
+        if custom_prompt:
+            base_prompt += f"\n\nAdditional instructions: {custom_prompt}"
+        return base_prompt.strip()
+
+        
+    def create_analysis_prompt(self, 
+                            trading_pair: str,
+                            timeframes: List[str],
+                            primary_timeframe: str,
+                            strategies: List[str],
+                            custom_prompt: Optional[str] = None) -> str:
+        """Create analysis prompt for OpenAI."""
+
+        base_prompt = f"""
+    You are a professional crypto trading analyst.
+
+    Please analyze the {trading_pair} chart using multiple timeframes. Use **{primary_timeframe}** as the **primary timeframe** for trade decisions, 
+    and the following **secondary timeframes** for context: {timeframes if timeframes else 'None'}.
+
+    Technical indicators provided: {', '.join(strategies) if strategies else 'None specified'}
+
+    For each timeframe:
+    1. Identify the market trend (bullish/bearish/sideways)
+    2. List key support and resistance levels
+    3. Interpret technical indicator signals
+    4. Suggest entry/exit opportunities
+    5. Give risk assessment
+    6. Provide confidence score (0-100%)
+
+    Then:
+    🔍 Provide a **summary across all timeframes**, highlighting:
+    - Dominant trend and structure alignment
+    - Conflicting signals between primary and secondary timeframes
+    - Entry timing suggestions based primarily on {primary_timeframe}, using secondary timeframes for confirmation
+
+    📌 Conclude with a **clear trading signal** for {primary_timeframe}: BUY, SELL, or HOLD, with reasoning based on the aggregated analysis.
 
     Focus strongly on:
     - Price action
@@ -165,7 +115,7 @@ Focus strongly on:
     STRICT OUTPUT FORMAT:
     {{
     "recommendation": {{
-        "action": "SELL",
+        "action": "BUY" | "SELL" | "HOLD",
         "entry_price": "<decimal string or null>",
         "take_profit": "<decimal string or null>",
         "stop_loss": "<decimal string or null>",
@@ -177,24 +127,26 @@ Focus strongly on:
     }}
 
     RULES:
-    - Action MUST always be "SELL"
-    - HOLD actions are not allowed
+    - Use {primary_timeframe} as the main timeframe for trade decisions
+    - HOLD actions: All price fields = null
     - Decimal precision: Use market convention (1 decimal if price >= 1; up to 6 decimals if < 1)
+    - Confidence < 55%: Force action = "HOLD"
     - Entry/exit prices must be realistic (close to current market, ±1%)
     - If no strategy is specified, auto-select the most relevant indicators
     - Absolutely no extra text outside the JSON
-"""
+    """
 
-        
         if custom_prompt:
             base_prompt += f"\n\nAdditional requirements: {custom_prompt}"
-        
+
         return base_prompt
+
     
     def analyze_chart_image(self,
                           image_paths: list[str],
                           trading_pair: str,
-                          timeframe: str,
+                          timeframes: List[str],
+                          primary_timeframe: str = "1H",
                           strategies: List[str] = None,
                           custom_prompt: Optional[str] = None) -> Dict[str, Any]:
         """Analyze trading chart image using OpenAI Vision API."""
@@ -206,7 +158,7 @@ Focus strongly on:
             base64_images = self.encode_images(image_paths)
             
             # Create prompt
-            prompt = self.create_analysis_prompt(trading_pair, timeframe, strategies or [], custom_prompt)
+            prompt = self.create_analysis_prompt(trading_pair, timeframes, primary_timeframe, strategies or [], custom_prompt)
 
             content = [{"type": "text", "text": prompt}]
             for base64_image in base64_images:
@@ -268,7 +220,8 @@ Focus strongly on:
     def analyze_chart_image_text(self,
                           image_paths: list[str],
                           trading_pair: str,
-                          timeframe: str,
+                          timeframes: List[str],
+                          primary_timeframe: str = "1H",
                           strategies: List[str] = None,
                           custom_prompt: Optional[str] = None) -> Dict[str, Any]:
         """Analyze trading chart image using OpenAI Vision API."""
@@ -280,7 +233,13 @@ Focus strongly on:
             base64_images = self.encode_images(image_paths)
             
             # Create prompt
-            prompt = self.create_text_prompt(trading_pair, timeframe, strategies or [], custom_prompt)
+            prompt = self.create_text_prompt(
+                trading_pair, 
+                timeframes,
+                primary_timeframe,
+                strategies or [],
+                custom_prompt
+            )
 
             content = [{"type": "text", "text": prompt}]
             for base64_image in base64_images:
@@ -430,7 +389,8 @@ def analyze_image_with_openai(image_paths: list[str], bot_config: PayLoadAnalysi
     result = analyzer.analyze_chart_image(
         image_paths=image_paths,
         trading_pair=bot_config.trading_pair,
-        timeframe=bot_config.timeframe,
+        timeframes=bot_config.timeframes,
+        primary_timeframe=bot_config.primary_timeframe,
         strategies=bot_config.strategies,
         custom_prompt="Analyze this technical chart and provide any notable observations or signals, if any."
     )
@@ -443,7 +403,8 @@ def analyze_image_with_openai_text(image_paths: list[str], bot_config: PayLoadAn
     result = analyzer.analyze_chart_image_text(
         image_paths=image_paths,
         trading_pair=bot_config.trading_pair,
-        timeframe=bot_config.timeframe,
+        timeframes=bot_config.timeframes,
+        primary_timeframe=bot_config.primary_timeframe,
         strategies=bot_config.strategies,
         custom_prompt="Analyze this technical chart and provide any notable observations or signals, if any."
     )
