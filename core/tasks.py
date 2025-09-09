@@ -29,7 +29,19 @@ from sqlalchemy.orm import Session
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def format_notification_message(bot_name, balance_info=None, action=None, reason=None, current_price=None, available=None, total_wallet=None):
+def format_notification_message(
+    bot_name,
+    balance_info=None,
+    action=None,
+    reason=None,
+    current_price=None,
+    available=None,
+    total_wallet=None,
+    entry_price=None,
+    quantity=None,
+    stop_loss=None,
+    take_profit=None,
+):
     """
     Format notification message for all channels (Telegram, Discord, Email)
     """
@@ -44,6 +56,16 @@ def format_notification_message(bot_name, balance_info=None, action=None, reason
         f"Action: {action}\n"
         f"Reason: {reason}"
     )
+
+    if action and action.upper() != "HOLD":
+        if entry_price is not None:
+            msg += f"🎯 Entry Price: ${entry_price:,.2f}\n"
+        if quantity is not None:
+            msg += f"📦 Quantity: {quantity}\n"
+        if stop_loss is not None:
+            msg += f"🛡️ Stop Loss: ${stop_loss:,.2f}\n"
+        if take_profit is not None:
+            msg += f"🎯 Take Profit: ${take_profit:,.2f}\n"
     return msg
 
 # Helper to push DM to Redis queue
@@ -1457,7 +1479,11 @@ def run_bot_rpa_logic(self, subscription_id: int):
                             available=account_status.get('available_balance', 0),
                             action=final_action.action,
                             reason=final_action.reason,
-                            total_wallet=account_status.get('total_balance', 0)
+                            total_wallet=account_status.get('total_balance', 0),
+                            entry_price= trade_details.get('current_price', current_price) if trade_details else current_price,
+                            quantity=trade_details.get('quantity') if trade_details else None,
+                            stop_loss=trade_details.get('stop_loss') if trade_details else None,
+                            take_profit=trade_details.get('take_profit') if trade_details else None,
                         )
                         if telegram_chat_id:
                             send_telegram_notification.delay(telegram_chat_id, message)
