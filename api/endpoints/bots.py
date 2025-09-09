@@ -143,10 +143,14 @@ async def submit_new_bot_with_code(
         # Read file content
         content = await file.read()
         code_content = content.decode('utf-8')
-        content_rpa_robot = await file_rpa_robot.read()
-        code_content_rpa_robot = content_rpa_robot.decode('utf-8')
+        code_content_rpa_robot = None
+        file_rpa_robot_name = None
+        if file_rpa_robot:
+            content_rpa_robot = await file_rpa_robot.read()
+            code_content_rpa_robot = content_rpa_robot.decode('utf-8')
+            file_rpa_robot_name = file_rpa_robot.filename
+            logger.info(f"[SUBMIT BOT] File rpa robot: {file_rpa_robot.filename}, size={len(await file_rpa_robot.read())} bytes")
 
-        logger.info(f"[SUBMIT BOT] File rpa robot: {file_rpa_robot.filename}, size={len(await file_rpa_robot.read())} bytes")
         logger.info(f"[SUBMIT BOT] File read successfully: {file.filename}, size={len(content)} bytes")
         
         # Validate bot code
@@ -195,7 +199,7 @@ async def submit_new_bot_with_code(
             file_content=code_content,
             file_name=file.filename,
             file_content_rpa_robot=code_content_rpa_robot,
-            file_name_rpa_robot=file_rpa_robot.filename
+            file_name_rpa_robot=file_rpa_robot_name
         )
 
         logger.info(f"[SUBMIT BOT] upload s3 {file.filename}")
