@@ -29,13 +29,14 @@ class TelegramService:
     def __init__(self):
         self.bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
         self.webhook_url = os.getenv("TELEGRAM_WEBHOOK_URL")
-        self.mode = os.getenv("MODE")
+        self.development_mode = os.getenv('DEVELOPMENT_MODE', 'false').lower() == 'true'
 
     async def run(self):
-        if self.mode == "prod":
-            await self.run_webhook()
-        else:
+        logger.info("Starting Telegram Service with mode %s", "development" if self.development_mode else "production")
+        if self.development_mode:
             await self.run_polling()
+        else:
+            await self.run_webhook()
 
     async def run_webhook(self):
         try: 
