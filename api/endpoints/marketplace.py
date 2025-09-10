@@ -691,6 +691,8 @@ def _derive_trading_type(bot: models.Bot) -> str:
     try:
         if bot.bot_type and str(bot.bot_type).upper() == 'LLM':
             return 'passive'
+        elif bot.bot_type and str(bot.bot_type).upper() == 'FUTURES_RPA':
+            return 'active_rpa'
         return 'active'
     except Exception:
         return 'active'
@@ -953,7 +955,14 @@ def bot_by_token(token: str, db: Session = Depends(get_db)):
     price_month = float(bot.price_per_month or 0.0)
     price_daily_icp = round(price_month / 30.0, 8) if price_month > 0 else 2.5
     trading_type = _derive_trading_type(bot)
-    tags = ['Active Trading'] if trading_type == 'active' else ['Signal Provider']
+    if trading_type == 'active':
+        tags = ['Active Trading']
+    elif trading_type == 'passive':
+        tags = ['Signal Provider']
+    elif trading_type == 'active_rpa':
+        tags = ['Futures RPA']
+    else:
+        tags = []
     timeframes = _extract_timeframes(bot)
 
     base_url = os.getenv('STUDIO_BASE_URL', 'http://localhost:8000')

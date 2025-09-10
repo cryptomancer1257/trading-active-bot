@@ -65,7 +65,7 @@ def format_notification_message(
             msg += f"\nStop Loss: ${stop_loss:,.2f}"
         if take_profit is not None:
             msg += f"\nTake Profit: ${take_profit:,.2f}"
-        msg += f"\nReason: {reason}"
+    msg += f"\nReason: {reason}"
     return msg
 
 # Helper to push DM to Redis queue
@@ -2102,7 +2102,7 @@ async def run_advanced_futures_workflow(bot, subscription_id: int, subscription_
     """
     try:
         from datetime import datetime
-        
+        trade_result = None
         logger.info(f"🎯 Starting ADVANCED FUTURES WORKFLOW for subscription {subscription_id}")
         
         # 1. Check account status (like main_execution)
@@ -2117,7 +2117,7 @@ async def run_advanced_futures_workflow(bot, subscription_id: int, subscription_
         if not multi_timeframe_data.get("timeframes"):
             logger.error("❌ Failed to crawl multi-timeframe data")
             from bots.bot_sdk.Action import Action
-            return Action(action="HOLD", value=0.0, reason="Multi-timeframe data crawl failed")
+            return Action(action="HOLD", value=0.0, reason="Multi-timeframe data crawl failed"), account_status, None
         
         timeframes_crawled = list(multi_timeframe_data['timeframes'].keys())
         logger.info(f"✅ Crawled {len(timeframes_crawled)} timeframes: {timeframes_crawled}")
@@ -2128,8 +2128,8 @@ async def run_advanced_futures_workflow(bot, subscription_id: int, subscription_
         if 'error' in analysis:
             logger.error(f"❌ Multi-timeframe analysis error: {analysis['error']}")
             from bots.bot_sdk.Action import Action
-            return Action(action="HOLD", value=0.0, reason=f"Multi-timeframe analysis failed: {analysis['error']}")
-        
+            return Action(action="HOLD", value=0.0, reason=f"Multi-timeframe analysis failed: {analysis['error']}"), account_status, None
+
         analyzed_timeframes = len(analysis.get('multi_timeframe', {}))
         primary_timeframe = analysis.get('primary_timeframe', 'unknown')
         logger.info(f"✅ Analyzed {analyzed_timeframes} timeframes, primary: {primary_timeframe}")
@@ -2152,7 +2152,6 @@ async def run_advanced_futures_workflow(bot, subscription_id: int, subscription_
             logger.info(f"   Risk/Reward: {rec.get('risk_reward', 'N/A')}")
         
         # 5. Execute advanced position setup (if not HOLD)
-        trade_result = None
         if signal.action != "HOLD":
             logger.info(f"🚀 Step 5: Executing ADVANCED POSITION SETUP for {signal.action}...")
             logger.info("🤖 AUTO-CONFIRMED via Celery (no user confirmation required)")
@@ -2194,7 +2193,7 @@ async def run_advanced_futures_rpa_workflow(bot, subscription_id: int, subscript
     try:
         from bots.bot_sdk.Action import Action
         logger.info(f"🎯 Starting ADVANCED FUTURES RPA WORKFLOW for subscription {subscription_id}")
-        
+        trade_result = None
         # 1. Check account status
         logger.info("💰 Step 1: Checking account status...")
         account_status = bot.check_account_status()
@@ -2206,7 +2205,7 @@ async def run_advanced_futures_rpa_workflow(bot, subscription_id: int, subscript
         image_paths = bot.capture_chart_data()
         if not image_paths:
             logger.error("❌ Failed to capture multi-timeframe data with RPA")
-            return Action(action="HOLD", value=0.0, reason="RPA data capture failed"), account_status
+            return Action(action="HOLD", value=0.0, reason="RPA data capture failed"), account_status, None
 
         # 3. Analyze images with LLM
         logger.info("🔍 Step 3: Analyzing multi-timeframe data with LLM...")
@@ -2214,8 +2213,8 @@ async def run_advanced_futures_rpa_workflow(bot, subscription_id: int, subscript
         logger.info(f"🎯 RPA LLM Analysis Result: {action}")
         if action.action == "HOLD":
             logger.info("📊 Signal is HOLD - no position setup needed")
-            return action, account_status
-        
+            return action, account_status, None
+
         logger.info(f"📊 ADVANCED RPA SIGNAL: {action.action} | Confidence: {action.value*100:.1f}%")
         
         # 4. Execute advanced position setup
@@ -2233,7 +2232,6 @@ async def run_advanced_futures_rpa_workflow(bot, subscription_id: int, subscript
             logger.info(f"   Risk/Reward: {rec.get('risk_reward', 'N/A')}")
         
         # 5. Execute advanced position setup (if not HOLD)
-        trade_result = None
         if action.action != "HOLD":
             logger.info(f"🚀 Step 5: Executing ADVANCED POSITION SETUP for {action.action}...")
             logger.info("🤖 AUTO-CONFIRMED via Celery (no user confirmation required)")
