@@ -53,19 +53,19 @@ def format_notification_message(
         f"TESTNET Account Balance:\n"
         f" 💰 Available: ${available_str:,.2f} USDT\n"
         f" 💎 Total Wallet: ${total_wallet_str:,.2f} USDT\n"
-        f"Action: {action}\n"
-        f"Reason: {reason}"
+        f"Action: {action}"
     )
 
     if action and action.upper() != "HOLD":
         if entry_price is not None:
-            msg += f"🎯 Entry Price: ${entry_price:,.2f}\n"
+            msg += f"\nEntry Price: ${entry_price:,.2f}"
         if quantity is not None:
-            msg += f"📦 Quantity: {quantity}\n"
+            msg += f"\nQuantity: {quantity}"
         if stop_loss is not None:
-            msg += f"🛡️ Stop Loss: ${stop_loss:,.2f}\n"
+            msg += f"\nStop Loss: ${stop_loss:,.2f}"
         if take_profit is not None:
-            msg += f"🎯 Take Profit: ${take_profit:,.2f}\n"
+            msg += f"\nTake Profit: ${take_profit:,.2f}"
+    msg += f"\nReason: {reason}"
     return msg
 
 # Helper to push DM to Redis queue
@@ -239,23 +239,6 @@ def initialize_bot(subscription):
                     logger.info(f"✅ FUTURES BOT initialized successfully with principal ID")
                 except Exception as e:
                     logger.warning(f"FUTURES BOT direct init failed: {e}")
-            # elif subscription.bot.bot_type == 'FUTURES_RPA':
-            #     try:
-            #         logger.info(f"Attempting FUTURES_RPA BOT direct initialization...")
-            #         # Import FuturesRPABot directly for futures RPA bots
-            #         import sys
-            #         import os
-            #         bot_files_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'bot_files')
-            #         if bot_files_path not in sys.path:
-            #             sys.path.insert(0, bot_files_path)
-                    
-            #         from binance_futures_rpa_bot import BinanceFuturesRPABot
-            #         bot_instance = BinanceFuturesRPABot(bot_config, api_keys, subscription.user_principal_id)
-            #         init_success = True
-            #         logger.info(f"✅ FUTURES_RPA BOT initialized successfully with principal ID")
-            #     except Exception as e:
-            #         logger.warning(f"FUTURES_RPA BOT direct init failed: {e}")
-            # Method 2: Try downloaded bot with 3 arguments (config, api_keys, principal_id)
             if not init_success:
                 try:
                     bot_instance = bot_class(bot_config, api_keys, subscription.user_principal_id)
@@ -909,20 +892,26 @@ def run_bot_logic(self, subscription_id: int):
                 )
                 return
 
-            logger.info(f"Creating exchange client for subscription {subscription_id} (testnet={use_testnet})")
-            
-            exchange = ExchangeFactory.create_exchange(
-                exchange_name=exchange_type.value,
-                api_key=api_key,
-                api_secret=api_secret,
-                testnet=use_testnet
-            )
+            is_futures = bool(getattr(subscription.bot, 'bot_type', None) and str(subscription.bot.bot_type).upper() == 'FUTURES')
+            if not is_futures:
+                logger.info(f"Creating exchange client for subscription {subscription_id} (testnet={use_testnet})")
+                
+                exchange = ExchangeFactory.create_exchange(
+                    exchange_name=exchange_type.value,
+                    api_key=api_key,
+                    api_secret=api_secret,
+                    testnet=use_testnet
+                )
             
             # Get current market data
             trading_pair = subscription.bot.trading_pair or 'BTC/USDT'
             exchange_symbol = trading_pair.replace('/', '')
             try:
-                ticker = exchange.get_ticker(exchange_symbol)
+                if is_futures:
+                    # Use Futures client base_url and endpoints
+                    ticker = bot.futures_client.get_ticker(exchange_symbol)
+                else:
+                    ticker = exchange.get_ticker(exchange_symbol)
                 current_price = float(ticker['price'])
             except Exception as e:
                 logger.error(f"Failed to get ticker for {trading_pair}: {e}")
@@ -933,7 +922,8 @@ def run_bot_logic(self, subscription_id: int):
                 return
 
             # Set bot's exchange client
-            bot.exchange_client = exchange
+            if not is_futures:
+                bot.exchange_client = exchange
             
             # Create subscription config
             subscription_config = {
@@ -953,7 +943,7 @@ def run_bot_logic(self, subscription_id: int):
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 try:
-                    final_action, account_status = loop.run_until_complete(
+                    final_action, account_status, trade_result = loop.run_until_complete(
                         run_advanced_futures_workflow(bot, subscription_id, subscription_config, db)
                     )
                 finally:
@@ -973,75 +963,82 @@ def run_bot_logic(self, subscription_id: int):
                 
             # Get balance info for BUY/SELL actions (real API call)
                 balance_info = ""
-                if final_action.action in ["BUY", "SELL"]:
-                    try:
-                    # Get balance from exchange using real API
-                        # Handle different trading pair formats
-                        if '/' in trading_pair:
-                            # Format: BTC/USDT
-                            base_asset = trading_pair.split('/')[0]  # BTC from BTC/USDT
-                            quote_asset = trading_pair.split('/')[1]  # USDT from BTC/USDT
-                        else:
-                            # Format: BTCUSDT - try to extract base and quote
-                            # Common patterns: BTCUSDT, ETHUSDT, etc.
-                            if trading_pair.endswith('USDT'):
-                                base_asset = trading_pair[:-4]  # Remove 'USDT' suffix
-                                quote_asset = 'USDT'
-                            elif trading_pair.endswith('BTC'):
-                                base_asset = trading_pair[:-3]  # Remove 'BTC' suffix
-                                quote_asset = 'BTC'
-                            elif trading_pair.endswith('ETH'):
-                                base_asset = trading_pair[:-3]  # Remove 'ETH' suffix
-                                quote_asset = 'ETH'
+                if not is_futures:
+                    if final_action.action in ["BUY", "SELL"]:
+                        try:
+                        # Get balance from exchange using real API
+                            # Handle different trading pair formats
+                            if '/' in trading_pair:
+                                # Format: BTC/USDT
+                                base_asset = trading_pair.split('/')[0]  # BTC from BTC/USDT
+                                quote_asset = trading_pair.split('/')[1]  # USDT from BTC/USDT
                             else:
-                                # Fallback: assume first 3 chars are base, rest is quote
-                                base_asset = trading_pair[:3]
-                                quote_asset = trading_pair[3:]
-                                logger.warning(f"Unknown trading pair format: {trading_pair}, using fallback parsing")
-                        
-                        base_balance = exchange.get_balance(base_asset)
-                        quote_balance = exchange.get_balance(quote_asset)
-                        
-                        base_total = float(base_balance.free) + float(base_balance.locked)
-                        quote_total = float(quote_balance.free) + float(quote_balance.locked)
-                        
-                        # Calculate portfolio value in USDT
-                        portfolio_value = quote_total + (base_total * current_price)
-                        
-                        mode_label = "TESTNET" if bool(subscription.is_testnet) else "LIVE"
-                        balance_info = f"\n💼 Account Balance ({mode_label}):\n" \
-                                        f"   • {base_asset}: {base_total:.6f} (Free: {base_balance.free}, Locked: {base_balance.locked})\n" \
-                                        f"   • {quote_asset}: {quote_total:.2f} (Free: {quote_balance.free}, Locked: {quote_balance.locked})\n" \
-                                        f"   • Portfolio Value: ~${portfolio_value:.2f} USDT\n"
-                    except Exception as e:
-                        logger.warning(f"Could not get balance info: {e}")
-                        mode_label = "TESTNET" if bool(subscription.is_testnet) else "LIVE"
-                        balance_info = f"\n💼 Account Balance ({mode_label}): Unable to fetch - {str(e)[:100]}\n"
+                                # Format: BTCUSDT - try to extract base and quote
+                                # Common patterns: BTCUSDT, ETHUSDT, etc.
+                                if trading_pair.endswith('USDT'):
+                                    base_asset = trading_pair[:-4]  # Remove 'USDT' suffix
+                                    quote_asset = 'USDT'
+                                elif trading_pair.endswith('BTC'):
+                                    base_asset = trading_pair[:-3]  # Remove 'BTC' suffix
+                                    quote_asset = 'BTC'
+                                elif trading_pair.endswith('ETH'):
+                                    base_asset = trading_pair[:-3]  # Remove 'ETH' suffix
+                                    quote_asset = 'ETH'
+                                else:
+                                    # Fallback: assume first 3 chars are base, rest is quote
+                                    base_asset = trading_pair[:3]
+                                    quote_asset = trading_pair[3:]
+                                    logger.warning(f"Unknown trading pair format: {trading_pair}, using fallback parsing")
+                            
+                            base_balance = exchange.get_balance(base_asset)
+                            quote_balance = exchange.get_balance(quote_asset)
+                            
+                            base_total = float(base_balance.free) + float(base_balance.locked)
+                            quote_total = float(quote_balance.free) + float(quote_balance.locked)
+                            
+                            # Calculate portfolio value in USDT
+                            portfolio_value = quote_total + (base_total * current_price)
+                            
+                            mode_label = "TESTNET" if bool(subscription.is_testnet) else "LIVE"
+                            balance_info = f"\n💼 Account Balance ({mode_label}):\n" \
+                                            f"   • {base_asset}: {base_total:.6f} (Free: {base_balance.free}, Locked: {base_balance.locked})\n" \
+                                            f"   • {quote_asset}: {quote_total:.2f} (Free: {quote_balance.free}, Locked: {quote_balance.locked})\n" \
+                                            f"   • Portfolio Value: ~${portfolio_value:.2f} USDT\n"
+                        except Exception as e:
+                            logger.warning(f"Could not get balance info: {e}")
+                            mode_label = "TESTNET" if bool(subscription.is_testnet) else "LIVE"
+                            balance_info = f"\n💼 Account Balance ({mode_label}): Unable to fetch - {str(e)[:100]}\n"
             
                 # Execute actual trading (if not HOLD)
-                trade_result = False
                 trade_details = None
-                
-                if final_action.action != "HOLD":
-                    try:
-                        trade_result_data = execute_trade_action(db, subscription, exchange, final_action, current_price)
-                        trade_result = trade_result_data.get('success', False)
-                        trade_details = trade_result_data
-                        
-                        if trade_result:
-                            logger.info(f"Trade executed successfully: {final_action.action}")
-                        else:
-                            logger.warning(f"Trade execution failed: {final_action.action}")
-                    except Exception as e:
-                        logger.error(f"Failed to execute trade: {e}")
+                if not is_futures:
+                    trade_result = False
+                    if final_action.action != "HOLD":
+                        try:
+                            trade_result_data = execute_trade_action(db, subscription, exchange, final_action, current_price)
+                            trade_result = trade_result_data.get('success', False)
+                            trade_details = trade_result_data
+                            
+                            if trade_result:
+                                logger.info(f"Trade executed successfully: {final_action.action}")
+                            else:
+                                logger.warning(f"Trade execution failed: {final_action.action}")
+                        except Exception as e:
+                            logger.error(f"Failed to execute trade: {e}")
+                            trade_details = {
+                                'success': False,
+                                'error': str(e)
+                            }
+                            crud.log_bot_action(
+                                db, subscription_id, "TRADE_ERROR",
+                                f"Failed to execute trade: {str(e)}"
+                            )
+                    else:
+                        # For HOLD actions, no trade execution
                         trade_details = {
-                            'success': False,
-                            'error': str(e)
+                            'success': True,
+                            'message': 'No trade executed (HOLD signal)'
                         }
-                        crud.log_bot_action(
-                            db, subscription_id, "TRADE_ERROR",
-                            f"Failed to execute trade: {str(e)}"
-                        )
                 else:
                     # For HOLD actions, no trade execution
                     trade_details = {
@@ -1156,7 +1153,11 @@ def run_bot_logic(self, subscription_id: int):
                             available=account_status.get('available_balance', 0),
                             action=final_action.action,
                             reason=final_action.reason,
-                            total_wallet=account_status.get('total_balance', 0)
+                            total_wallet=account_status.get('total_balance', 0),
+                            entry_price= trade_result.get('entry_price') if trade_result else None,
+                            quantity=trade_result.get('quantity') if trade_result else None,
+                            stop_loss=trade_result.get("stop_loss", {}).get("price") if trade_result else None,
+                            take_profit=trade_result.get("take_profit", {}).get("price") if trade_result else None,
                         )
                         if telegram_chat_id:
                             send_telegram_notification.delay(telegram_chat_id, message)
@@ -1328,18 +1329,28 @@ def run_bot_rpa_logic(self, subscription_id: int):
 
             logger.info(f"Creating exchange client for subscription {subscription_id} (testnet={use_testnet})")
             
-            exchange = ExchangeFactory.create_exchange(
-                exchange_name=exchange_type.value,
-                api_key=api_key,
-                api_secret=api_secret,
-                testnet=use_testnet
-            )
+            is_futures = bool(getattr(subscription.bot, 'bot_type', None) and str(subscription.bot.bot_type).upper() == 'FUTURES_RPA')
+            if not is_futures:
+                logger.info(f"Creating exchange client for subscription {subscription_id} (testnet={use_testnet})")
+                
+                exchange = ExchangeFactory.create_exchange(
+                    exchange_name=exchange_type.value,
+                    api_key=api_key,
+                    api_secret=api_secret,
+                    testnet=use_testnet
+                )
             
             # Get current market data
             trading_pair = subscription.bot.trading_pair or 'BTC/USDT'
             exchange_symbol = trading_pair.replace('/', '')
             try:
-                ticker = exchange.get_ticker(exchange_symbol)
+                if is_futures:
+                    logger.info(f"Using Futures client for {trading_pair}")
+                    # Use Futures client base_url and endpoints
+                    ticker = bot.futures_client.get_ticker(exchange_symbol)
+                    logger.info(f"Futures client ticker: {ticker}")
+                else:
+                    ticker = exchange.get_ticker(exchange_symbol)
                 current_price = float(ticker['price'])
             except Exception as e:
                 logger.error(f"Failed to get ticker for {trading_pair}: {e}")
@@ -1350,7 +1361,8 @@ def run_bot_rpa_logic(self, subscription_id: int):
                 return
 
             # Set bot's exchange client
-            bot.exchange_client = exchange
+            if not is_futures:
+                bot.exchange_client = exchange
             
             # Create subscription config
             subscription_config = {
@@ -1370,7 +1382,7 @@ def run_bot_rpa_logic(self, subscription_id: int):
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 try:
-                    final_action, account_status = loop.run_until_complete(
+                    final_action, account_status, trade_result = loop.run_until_complete(
                         run_advanced_futures_rpa_workflow(bot, subscription_id, subscription_config, db)
                     )
                 finally:
@@ -1394,35 +1406,36 @@ def run_bot_rpa_logic(self, subscription_id: int):
                 #     "confidence": final_action.value,
                 #     "reason": final_action.reason
                 # }
-                trade_result = False
                 trade_details = None
-                
-                if final_action.action != "HOLD":
-                    try:
-                        trade_result_data = execute_trade_action(db, subscription, exchange, final_action, current_price)
-                        trade_result = trade_result_data.get('success', False)
-                        trade_details = trade_result_data
-                        
-                        if trade_result:
-                            logger.info(f"Trade executed successfully: {final_action.action}")
-                        else:
-                            logger.warning(f"Trade execution failed: {final_action.action}")
-                    except Exception as e:
-                        logger.error(f"Failed to execute trade: {e}")
+                if not is_futures:
+                    trade_result = False
+                    logger.info(f"Executing trade action for {trading_pair}")
+                    if final_action.action != "HOLD":
+                        try:
+                            trade_result_data = execute_trade_action(db, subscription, exchange, final_action, current_price)
+                            trade_result = trade_result_data.get('success', False)
+                            trade_details = trade_result_data
+                            logger.info(f"Trade result data: {trade_result_data}")
+                            if trade_result:
+                                logger.info(f"Trade executed successfully: {final_action.action}")
+                            else:
+                                logger.warning(f"Trade execution failed: {final_action.action}")
+                        except Exception as e:
+                            logger.error(f"Failed to execute trade: {e}")
+                            trade_details = {
+                                'success': False,
+                                'error': str(e)
+                            }
+                            crud.log_bot_action(
+                                db, subscription_id, "TRADE_ERROR",
+                                f"Failed to execute trade: {str(e)}"
+                            )
+                    else:
+                        # For HOLD actions, no trade execution
                         trade_details = {
-                            'success': False,
-                            'error': str(e)
+                            'success': True,
+                            'message': 'No trade executed (HOLD signal)'
                         }
-                        crud.log_bot_action(
-                            db, subscription_id, "TRADE_ERROR",
-                            f"Failed to execute trade: {str(e)}"
-                        )
-                else:
-                    # For HOLD actions, no trade execution
-                    trade_details = {
-                        'success': True,
-                        'message': 'No trade executed (HOLD signal)'
-                    }
                 
                 # Send email notification AFTER trade execution
                 try:
@@ -1480,10 +1493,10 @@ def run_bot_rpa_logic(self, subscription_id: int):
                             action=final_action.action,
                             reason=final_action.reason,
                             total_wallet=account_status.get('total_balance', 0),
-                            entry_price= trade_details.get('current_price', current_price) if trade_details else current_price,
-                            quantity=trade_details.get('quantity') if trade_details else None,
-                            stop_loss=trade_details.get('stop_loss') if trade_details else None,
-                            take_profit=trade_details.get('take_profit') if trade_details else None,
+                            entry_price= trade_result.get('entry_price') if trade_result else None,
+                            quantity=trade_result.get('quantity') if trade_result else None,
+                            stop_loss=trade_result.get("stop_loss", {}).get("price") if trade_result else None,
+                            take_profit=trade_result.get("take_profit", {}).get("price") if trade_result else None,
                         )
                         if telegram_chat_id:
                             send_telegram_notification.delay(telegram_chat_id, message)
@@ -2089,7 +2102,7 @@ async def run_advanced_futures_workflow(bot, subscription_id: int, subscription_
     """
     try:
         from datetime import datetime
-        
+        trade_result = None
         logger.info(f"🎯 Starting ADVANCED FUTURES WORKFLOW for subscription {subscription_id}")
         
         # 1. Check account status (like main_execution)
@@ -2104,7 +2117,7 @@ async def run_advanced_futures_workflow(bot, subscription_id: int, subscription_
         if not multi_timeframe_data.get("timeframes"):
             logger.error("❌ Failed to crawl multi-timeframe data")
             from bots.bot_sdk.Action import Action
-            return Action(action="HOLD", value=0.0, reason="Multi-timeframe data crawl failed")
+            return Action(action="HOLD", value=0.0, reason="Multi-timeframe data crawl failed"), account_status, None
         
         timeframes_crawled = list(multi_timeframe_data['timeframes'].keys())
         logger.info(f"✅ Crawled {len(timeframes_crawled)} timeframes: {timeframes_crawled}")
@@ -2115,8 +2128,8 @@ async def run_advanced_futures_workflow(bot, subscription_id: int, subscription_
         if 'error' in analysis:
             logger.error(f"❌ Multi-timeframe analysis error: {analysis['error']}")
             from bots.bot_sdk.Action import Action
-            return Action(action="HOLD", value=0.0, reason=f"Multi-timeframe analysis failed: {analysis['error']}")
-        
+            return Action(action="HOLD", value=0.0, reason=f"Multi-timeframe analysis failed: {analysis['error']}"), account_status, None
+
         analyzed_timeframes = len(analysis.get('multi_timeframe', {}))
         primary_timeframe = analysis.get('primary_timeframe', 'unknown')
         logger.info(f"✅ Analyzed {analyzed_timeframes} timeframes, primary: {primary_timeframe}")
@@ -2164,7 +2177,7 @@ async def run_advanced_futures_workflow(bot, subscription_id: int, subscription_
         
         # Return the signal (for compatibility with existing workflow)
         logger.info(f"🎉 ADVANCED FUTURES WORKFLOW completed successfully")
-        return signal, account_status
+        return signal, account_status, trade_result
         
     except Exception as e:
         logger.error(f"❌ Error in advanced futures workflow: {e}")
@@ -2180,7 +2193,7 @@ async def run_advanced_futures_rpa_workflow(bot, subscription_id: int, subscript
     try:
         from bots.bot_sdk.Action import Action
         logger.info(f"🎯 Starting ADVANCED FUTURES RPA WORKFLOW for subscription {subscription_id}")
-        
+        trade_result = None
         # 1. Check account status
         logger.info("💰 Step 1: Checking account status...")
         account_status = bot.check_account_status()
@@ -2192,7 +2205,7 @@ async def run_advanced_futures_rpa_workflow(bot, subscription_id: int, subscript
         image_paths = bot.capture_chart_data()
         if not image_paths:
             logger.error("❌ Failed to capture multi-timeframe data with RPA")
-            return Action(action="HOLD", value=0.0, reason="RPA data capture failed"), account_status
+            return Action(action="HOLD", value=0.0, reason="RPA data capture failed"), account_status, None
 
         # 3. Analyze images with LLM
         logger.info("🔍 Step 3: Analyzing multi-timeframe data with LLM...")
@@ -2200,8 +2213,8 @@ async def run_advanced_futures_rpa_workflow(bot, subscription_id: int, subscript
         logger.info(f"🎯 RPA LLM Analysis Result: {action}")
         if action.action == "HOLD":
             logger.info("📊 Signal is HOLD - no position setup needed")
-            return action, account_status
-        
+            return action, account_status, None
+
         logger.info(f"📊 ADVANCED RPA SIGNAL: {action.action} | Confidence: {action.value*100:.1f}%")
         
         # 4. Execute advanced position setup
@@ -2231,8 +2244,8 @@ async def run_advanced_futures_rpa_workflow(bot, subscription_id: int, subscript
                 logger.info(f"   Order ID: {trade_result.get('main_order_id')}")
                 logger.info(f"   Position Value: ${trade_result.get('position_value', 0):.2f}")
                 logger.info(f"   Leverage: {trade_result.get('leverage', 'N/A')}x")
-                logger.info(f"   Stop Loss Order: {trade_result.get('stop_loss', {}).get('order_id', 'N/A')}")
-                logger.info(f"   Take Profit Order: {trade_result.get('take_profit', {}).get('order_id', 'N/A')}")
+                logger.info(f"   Stop Loss Order: {trade_result.get('stop_loss', {}).get('order_ids', 'N/A')}")
+                logger.info(f"   Take Profit Order: {trade_result.get('take_profit', {}).get('order_ids', 'N/A')}")
                 
                 # Save transaction to database (like main_execution)
                 bot.save_transaction_to_db(trade_result)
@@ -2243,7 +2256,7 @@ async def run_advanced_futures_rpa_workflow(bot, subscription_id: int, subscript
             logger.info("📊 Signal is HOLD - no position setup needed")
         
         logger.info(f"🎉 ADVANCED FUTURES RPA WORKFLOW completed successfully")
-        return action, account_status
+        return action, account_status, trade_result
         
     except Exception as e:
         logger.error(f"❌ Error in advanced futures RPA workflow: {e}")

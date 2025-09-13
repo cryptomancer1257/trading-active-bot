@@ -140,8 +140,6 @@ class TradingChartAnalyzer:
             base_prompt += f"\n\nAdditional requirements: {custom_prompt}"
 
         return base_prompt
-
-    
     def analyze_chart_image(self,
                           image_paths: list[str],
                           trading_pair: str,

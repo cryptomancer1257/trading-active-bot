@@ -526,6 +526,7 @@ class BinanceFuturesBot(CustomBot):
         # 🔒 Redis client for distributed locking and caching
         self.redis_client = None
         try:
+            import os
             redis_url = os.getenv('REDIS_URL', 'redis://redis_db:6379/0')
             self.redis_client = redis.from_url(redis_url, decode_responses=True)
             # Test connection
