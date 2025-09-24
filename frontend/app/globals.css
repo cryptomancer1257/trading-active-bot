@@ -1,0 +1,164 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 226, 232, 240;
+  --background-start-rgb: 15, 23, 42;
+  --background-end-rgb: 30, 41, 59;
+  --accent-rgb: 168, 85, 247;
+  --cyber-rgb: 34, 211, 238;
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: radial-gradient(ellipse at top, rgba(168, 85, 247, 0.1) 0%, transparent 50%),
+              radial-gradient(ellipse at bottom, rgba(34, 211, 238, 0.1) 0%, transparent 50%),
+              linear-gradient(135deg, rgb(15, 23, 42) 0%, rgb(30, 41, 59) 100%);
+  min-height: 100vh;
+  position: relative;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: 
+    radial-gradient(circle at 20% 80%, rgba(168, 85, 247, 0.1) 0%, transparent 50%),
+    radial-gradient(circle at 80% 20%, rgba(34, 211, 238, 0.1) 0%, transparent 50%),
+    radial-gradient(circle at 40% 40%, rgba(34, 197, 94, 0.05) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: -1;
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50;
+  }
+  
+  .btn-primary {
+    @apply bg-gradient-to-r from-quantum-600 to-primary-600 text-white hover:from-quantum-700 hover:to-primary-700 shadow-lg shadow-quantum-500/25 border border-quantum-500/20;
+  }
+  
+  .btn-secondary {
+    @apply bg-dark-800/50 text-gray-200 hover:bg-dark-700/50 border border-dark-600/50 backdrop-blur-sm;
+  }
+  
+  .btn-danger {
+    @apply bg-gradient-to-r from-danger-600 to-red-600 text-white hover:from-danger-700 hover:to-red-700 shadow-lg shadow-danger-500/25;
+  }
+  
+  .btn-success {
+    @apply bg-gradient-to-r from-neural-600 to-green-600 text-white hover:from-neural-700 hover:to-green-700 shadow-lg shadow-neural-500/25;
+  }
+  
+  .btn-cyber {
+    @apply bg-gradient-to-r from-cyber-600 to-blue-600 text-white hover:from-cyber-700 hover:to-blue-700 shadow-lg shadow-cyber-500/25 animate-pulse-glow;
+  }
+  
+  .form-input {
+    @apply block w-full rounded-md border-dark-600/50 bg-dark-800/50 backdrop-blur-sm shadow-sm focus:border-quantum-500 focus:ring-quantum-500 sm:text-sm text-gray-200 placeholder-gray-400;
+  }
+  
+  .form-label {
+    @apply block text-sm font-medium text-gray-300;
+  }
+  
+  .form-error {
+    @apply mt-1 text-sm text-danger-400;
+  }
+  
+  .card {
+    @apply bg-dark-800/30 backdrop-blur-md rounded-lg shadow-lg border border-dark-600/30;
+  }
+  
+  .card-quantum {
+    @apply bg-gradient-to-br from-dark-800/40 to-quantum-900/20 backdrop-blur-md rounded-lg shadow-xl border border-quantum-500/20 shadow-quantum-500/10;
+  }
+  
+  .card-cyber {
+    @apply bg-gradient-to-br from-dark-800/40 to-cyber-900/20 backdrop-blur-md rounded-lg shadow-xl border border-cyber-500/20 shadow-cyber-500/10;
+  }
+  
+  .card-header {
+    @apply px-6 py-4 border-b border-dark-600/30;
+  }
+  
+  .card-body {
+    @apply px-6 py-4;
+  }
+  
+  .card-footer {
+    @apply px-6 py-4 border-t border-dark-600/30;
+  }
+  
+  .neural-grid {
+    @apply relative;
+    background-image: 
+      linear-gradient(rgba(168, 85, 247, 0.1) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(168, 85, 247, 0.1) 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+  
+  .cyber-text {
+    @apply bg-gradient-to-r from-cyber-400 via-quantum-400 to-primary-400 bg-clip-text text-transparent font-bold;
+  }
+  
+  .glitch-effect {
+    position: relative;
+  }
+  
+  .glitch-effect::before,
+  .glitch-effect::after {
+    content: attr(data-text);
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+  }
+  
+  .glitch-effect::before {
+    animation: glitch-1 0.5s infinite;
+    color: rgba(255, 0, 0, 0.7);
+    z-index: -1;
+  }
+  
+  .glitch-effect::after {
+    animation: glitch-2 0.5s infinite;
+    color: rgba(0, 255, 255, 0.7);
+    z-index: -2;
+  }
+  
+  /* Additional input styling to ensure visibility */
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="url"],
+  select,
+  textarea {
+    color: #111827 !important; /* gray-900 */
+    background-color: #ffffff !important;
+  }
+  
+  input[type="text"]::placeholder,
+  input[type="email"]::placeholder,
+  input[type="password"]::placeholder,
+  input[type="url"]::placeholder,
+  textarea::placeholder {
+    color: #9ca3af !important; /* gray-400 */
+  }
+  
+  /* Ensure autofill doesn't override our styles */
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus,
+  input:-webkit-autofill:active {
+    -webkit-box-shadow: 0 0 0 30px white inset !important;
+    -webkit-text-fill-color: #111827 !important;
+  }
+}
+
