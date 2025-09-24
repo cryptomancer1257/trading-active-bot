@@ -206,7 +206,11 @@ export default function ForgePage() {
       })
       
       toast.success('⚡ Neural Entity successfully forged! Deploying to quantum matrix...')
-      router.push('/creator/entities')
+      
+      // Small delay to ensure cache is refreshed before redirect
+      setTimeout(() => {
+        router.push('/creator/entities')
+      }, 1000)
       
     } catch (error: any) {
       console.error('Bot creation error:', error)
