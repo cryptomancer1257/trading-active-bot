@@ -1,0 +1,136 @@
+import { useQuery, useMutation, useQueryClient } from 'react-query'
+import api from '@/lib/api'
+
+export interface Bot {
+  id: number
+  name: string
+  description: string
+  bot_type: string
+  bot_mode: string
+  status: string
+  exchange_type: string
+  trading_pair: string
+  timeframe: string
+  version: string
+  created_at: string
+  updated_at: string
+  total_subscribers: number
+  average_rating: number
+  developer_id: number
+  category_id?: number
+  image_url?: string
+  // Advanced config
+  leverage?: number
+  risk_percentage?: number
+  stop_loss_percentage?: number
+  take_profit_percentage?: number
+}
+
+export interface CreateBotRequest {
+  name: string
+  description: string
+  bot_type: string
+  bot_mode: string
+  exchange_type: string
+  trading_pair: string
+  timeframe: string
+  timeframes: string[]
+  version: string
+  template: string
+  templateFile?: string // Template file name to copy
+  leverage?: number
+  risk_percentage?: number
+  stop_loss_percentage?: number
+  take_profit_percentage?: number
+  llm_provider?: string
+  enable_image_analysis?: boolean
+  enable_sentiment_analysis?: boolean
+}
+
+// Get user's bots
+export const useMyBots = () => {
+  return useQuery<Bot[]>('myBots', async () => {
+    const response = await api.get('/bots/me/bots')
+    return response.data || []  // This endpoint returns direct array
+  }, {
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    cacheTime: 10 * 60 * 1000, // 10 minutes
+    refetchOnWindowFocus: false, // Don't refetch on window focus
+    refetchOnMount: false, // Don't refetch on component mount if data exists
+  })
+}
+
+// Get all public bots
+export const usePublicBots = () => {
+  return useQuery<Bot[]>('publicBots', async () => {
+    const response = await api.get('/bots')
+    return response.data.bots || []  // Extract bots array from response
+  }, {
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
+// Get single bot by ID
+export const useGetBot = (botId: string | number) => {
+  return useQuery<Bot>(['bot', botId], async () => {
+    const response = await api.get(`/bots/${botId}`)
+    return response.data
+  }, {
+    enabled: !!botId,
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
+// Create new bot
+export const useCreateBot = () => {
+  const queryClient = useQueryClient()
+  
+  return useMutation<Bot, Error, CreateBotRequest>(
+    async (botData) => {
+      const response = await api.post('/bots/', botData)
+      return response.data
+    },
+    {
+      onSuccess: () => {
+        // Invalidate and refetch
+        queryClient.invalidateQueries('myBots')
+        queryClient.invalidateQueries('publicBots')
+      },
+    }
+  )
+}
+
+// Update bot
+export const useUpdateBot = () => {
+  const queryClient = useQueryClient()
+  
+  return useMutation<Bot, Error, { botId: number; data: Partial<CreateBotRequest> }>(
+    async ({ botId, data }) => {
+      const response = await api.put(`/bots/${botId}`, data)
+      return response.data
+    },
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries('myBots')
+        queryClient.invalidateQueries('publicBots')
+      },
+    }
+  )
+}
+
+// Delete bot
+export const useDeleteBot = () => {
+  const queryClient = useQueryClient()
+  
+  return useMutation<void, Error, number>(
+    async (botId) => {
+      await api.delete(`/bots/${botId}`)
+    },
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries('myBots')
+        queryClient.invalidateQueries('publicBots')
+      },
+    }
+  )
+}

@@ -272,6 +272,17 @@ class BotBase(BaseModel):
     image_url: Optional[str] = None
     code_path_rpa: Optional[str] = None
     version_rpa: Optional[str] = None
+    
+    # Template-related fields
+    template: Optional[str] = None
+    templateFile: Optional[str] = None
+    leverage: Optional[int] = None
+    risk_percentage: Optional[float] = None
+    stop_loss_percentage: Optional[float] = None
+    take_profit_percentage: Optional[float] = None
+    llm_provider: Optional[str] = None
+    enable_image_analysis: Optional[bool] = False
+    enable_sentiment_analysis: Optional[bool] = False
 
 class PayLoadAnalysis(BaseModel):
     bot_name: str = ""
@@ -302,8 +313,20 @@ class BotUpdate(BaseModel):
     default_config: Optional[Dict[str, Any]] = None
     model_metadata: Optional[Dict[str, Any]] = None
     timeframes: Optional[List[str]] = None
+    timeframe: Optional[str] = None
+    bot_mode: Optional[BotMode] = None
     trading_pair: Optional[str] = None
-    strategy_config: Optional[List[str]] = None
+    exchange_type: Optional[ExchangeType] = None
+    strategy_config: Optional[Any] = None
+    
+    # Advanced configuration fields
+    leverage: Optional[int] = None
+    risk_percentage: Optional[float] = None
+    stop_loss_percentage: Optional[float] = None
+    take_profit_percentage: Optional[float] = None
+    llm_provider: Optional[str] = None
+    enable_image_analysis: Optional[bool] = None
+    enable_sentiment_analysis: Optional[bool] = None
 
 class BotInDB(BotBase):
     id: int
