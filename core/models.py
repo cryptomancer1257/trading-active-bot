@@ -237,6 +237,17 @@ class Bot(Base):
     config_schema = Column(JSON)
     default_config = Column(JSON)
     
+    # Advanced trading configuration
+    leverage = Column(Integer, default=10)
+    risk_percentage = Column(Float, default=2.0)
+    stop_loss_percentage = Column(Float, default=5.0)
+    take_profit_percentage = Column(Float, default=10.0)
+    
+    # AI/LLM configuration
+    llm_provider = Column(String(50), nullable=True)  # openai, anthropic, gemini
+    enable_image_analysis = Column(Boolean, default=False)
+    enable_sentiment_analysis = Column(Boolean, default=False)
+    
     # Audit fields
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
