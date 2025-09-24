@@ -53,10 +53,10 @@ export const useMyBots = () => {
     const response = await api.get('/bots/me/bots')
     return response.data || []  // This endpoint returns direct array
   }, {
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    cacheTime: 10 * 60 * 1000, // 10 minutes
-    refetchOnWindowFocus: false, // Don't refetch on window focus
-    refetchOnMount: false, // Don't refetch on component mount if data exists
+    staleTime: 30 * 1000, // 30 seconds (shorter for fresh data)
+    cacheTime: 5 * 60 * 1000, // 5 minutes
+    refetchOnWindowFocus: true, // Refetch when user comes back to tab
+    refetchOnMount: true, // Always refetch on component mount
   })
 }
 
@@ -92,9 +92,12 @@ export const useCreateBot = () => {
     },
     {
       onSuccess: () => {
-        // Invalidate and refetch
+        // Force invalidate and refetch immediately
         queryClient.invalidateQueries('myBots')
         queryClient.invalidateQueries('publicBots')
+        // Force refetch myBots immediately
+        queryClient.refetchQueries('myBots')
+        console.log('✅ Bot created successfully - cache invalidated and refetched')
       },
     }
   )
