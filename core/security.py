@@ -158,3 +158,38 @@ async def get_marketplace_user(current_user: Annotated[models.User, Depends(get_
     Dependency for marketplace endpoints that require API key authentication.
     """
     return current_user
+
+# ========================
+# Encryption/Decryption for sensitive data
+# ========================
+
+import base64
+from cryptography.fernet import Fernet
+
+# Generate or get encryption key (in production, store this securely)
+ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY", Fernet.generate_key())
+if isinstance(ENCRYPTION_KEY, str):
+    ENCRYPTION_KEY = ENCRYPTION_KEY.encode()
+    
+fernet = Fernet(ENCRYPTION_KEY)
+
+def encrypt_sensitive_data(data: str) -> str:
+    """Encrypt sensitive data like API keys"""
+    if not data:
+        return data
+    
+    encrypted_data = fernet.encrypt(data.encode())
+    return base64.b64encode(encrypted_data).decode()
+
+def decrypt_sensitive_data(encrypted_data: str) -> str:
+    """Decrypt sensitive data like API keys"""
+    if not encrypted_data:
+        return encrypted_data
+    
+    try:
+        decoded_data = base64.b64decode(encrypted_data.encode())
+        decrypted_data = fernet.decrypt(decoded_data)
+        return decrypted_data.decode()
+    except Exception:
+        # If decryption fails, return original data (for backward compatibility)
+        return encrypted_data

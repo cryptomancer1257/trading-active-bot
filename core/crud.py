@@ -619,16 +619,16 @@ def get_subscription_by_id_and_bot(db: Session, sub_id: int, bot_id: int):
 def create_exchange_credentials(db: Session, credentials: schemas.ExchangeCredentialsCreate, user_id: int):
     """Create new exchange credentials for a user"""
     # Check if credentials already exist for this exchange + testnet combination
-    existing = db.query(models.ExchangeCredentials).filter(
-        models.ExchangeCredentials.user_id == user_id,
-        models.ExchangeCredentials.exchange == credentials.exchange,
-        models.ExchangeCredentials.is_testnet == credentials.is_testnet
+    existing = db.query(models.DeveloperExchangeCredentials).filter(
+        models.DeveloperExchangeCredentials.user_id == user_id,
+        models.DeveloperExchangeCredentials.exchange == credentials.exchange,
+        models.DeveloperExchangeCredentials.is_testnet == credentials.is_testnet
     ).first()
     
     if existing:
         raise ValueError(f"Credentials for {credentials.exchange.value} ({'testnet' if credentials.is_testnet else 'mainnet'}) already exist")
     
-    db_credentials = models.ExchangeCredentials(
+    db_credentials = models.DeveloperExchangeCredentials(
         user_id=user_id,
         exchange=credentials.exchange,
         api_key=credentials.api_key,
@@ -644,37 +644,37 @@ def create_exchange_credentials(db: Session, credentials: schemas.ExchangeCreden
 
 def get_user_exchange_credentials(db: Session, user_id: int, exchange: str = None, is_testnet: bool = None):
     """Get user's exchange credentials with optional filtering (legacy - use principal_id version)"""
-    query = db.query(models.ExchangeCredentials).filter(
-        models.ExchangeCredentials.user_id == user_id,
-        models.ExchangeCredentials.is_active == True
+    query = db.query(models.DeveloperExchangeCredentials).filter(
+        models.DeveloperExchangeCredentials.user_id == user_id,
+        models.DeveloperExchangeCredentials.is_active == True
     )
     
     if exchange:
-        query = query.filter(models.ExchangeCredentials.exchange == exchange)
+        query = query.filter(models.DeveloperExchangeCredentials.exchange == exchange)
     if is_testnet is not None:
-        query = query.filter(models.ExchangeCredentials.is_testnet == is_testnet)
+        query = query.filter(models.DeveloperExchangeCredentials.is_testnet == is_testnet)
     
     return query.all()
 
 def get_exchange_credentials_by_principal_id(db: Session, principal_id: str, exchange: str = None, is_testnet: bool = None):
     """Get exchange credentials by principal ID with optional filtering"""
-    query = db.query(models.ExchangeCredentials).filter(
-        models.ExchangeCredentials.principal_id == principal_id,
-        models.ExchangeCredentials.is_active == True
+    query = db.query(models.DeveloperExchangeCredentials).filter(
+        models.DeveloperExchangeCredentials.principal_id == principal_id,
+        models.DeveloperExchangeCredentials.is_active == True
     )
     
     if exchange:
-        query = query.filter(models.ExchangeCredentials.exchange == exchange)
+        query = query.filter(models.DeveloperExchangeCredentials.exchange == exchange)
     if is_testnet is not None:
-        query = query.filter(models.ExchangeCredentials.is_testnet == is_testnet)
+        query = query.filter(models.DeveloperExchangeCredentials.is_testnet == is_testnet)
     
     return query.all()
 
 def get_exchange_credentials_by_id(db: Session, credentials_id: int, user_id: int):
     """Get specific exchange credentials by ID (user must own them)"""
-    return db.query(models.ExchangeCredentials).filter(
-        models.ExchangeCredentials.id == credentials_id,
-        models.ExchangeCredentials.user_id == user_id
+    return db.query(models.DeveloperExchangeCredentials).filter(
+        models.DeveloperExchangeCredentials.id == credentials_id,
+        models.DeveloperExchangeCredentials.user_id == user_id
     ).first()
 
 def update_exchange_credentials(db: Session, credentials_id: int, user_id: int, credentials_update: schemas.ExchangeCredentialsUpdate):
@@ -710,8 +710,8 @@ def update_credentials_validation(db: Session, credentials_id: int, is_valid: bo
     """Update validation status of credentials"""
     from datetime import datetime
     
-    db_credentials = db.query(models.ExchangeCredentials).filter(
-        models.ExchangeCredentials.id == credentials_id
+    db_credentials = db.query(models.DeveloperExchangeCredentials).filter(
+        models.DeveloperExchangeCredentials.id == credentials_id
     ).first()
     
     if db_credentials:
@@ -1817,3 +1817,143 @@ def mark_webhook_processed(db: Session, webhook_id: str, payment_id: str = None)
         if payment_id:
             db_event.payment_id = payment_id
         db.commit()
+
+# ========================
+# Developer Exchange Credentials CRUD
+# ========================
+
+def create_developer_exchange_credentials(db: Session, credentials: schemas.DeveloperExchangeCredentialsCreate, user_id: int):
+    """Create new exchange credentials for a developer"""
+    
+    # If this is set as default, unset other defaults for same exchange/type/network
+    if credentials.is_default:
+        db.query(models.DeveloperExchangeCredentials).filter(
+            and_(
+                models.DeveloperExchangeCredentials.user_id == user_id,
+                models.DeveloperExchangeCredentials.exchange_type == credentials.exchange_type,
+                models.DeveloperExchangeCredentials.credential_type == credentials.credential_type,
+                models.DeveloperExchangeCredentials.network_type == credentials.network_type,
+                models.DeveloperExchangeCredentials.is_default == True
+            )
+        ).update({"is_default": False})
+    
+    # Encrypt sensitive data (basic encryption - in production use proper encryption)
+    encrypted_api_key = security.encrypt_sensitive_data(credentials.api_key)
+    encrypted_api_secret = security.encrypt_sensitive_data(credentials.api_secret)
+    encrypted_passphrase = security.encrypt_sensitive_data(credentials.passphrase) if credentials.passphrase else None
+    
+    db_credentials = models.DeveloperExchangeCredentials(
+        user_id=user_id,
+        exchange_type=credentials.exchange_type,
+        credential_type=credentials.credential_type,
+        network_type=credentials.network_type,
+        name=credentials.name,
+        api_key=encrypted_api_key,
+        api_secret=encrypted_api_secret,
+        passphrase=encrypted_passphrase,
+        is_default=credentials.is_default,
+        is_active=credentials.is_active
+    )
+    
+    db.add(db_credentials)
+    db.commit()
+    db.refresh(db_credentials)
+    return db_credentials
+
+def get_user_developer_credentials(db: Session, user_id: int, skip: int = 0, limit: int = 100):
+    """Get all credentials for a user"""
+    return db.query(models.DeveloperExchangeCredentials).filter(
+        and_(
+            models.DeveloperExchangeCredentials.user_id == user_id,
+            models.DeveloperExchangeCredentials.is_active == True
+        )
+    ).order_by(
+        desc(models.DeveloperExchangeCredentials.is_default),
+        models.DeveloperExchangeCredentials.exchange_type,
+        models.DeveloperExchangeCredentials.credential_type,
+        models.DeveloperExchangeCredentials.network_type
+    ).offset(skip).limit(limit).all()
+
+def get_developer_credentials_by_id(db: Session, credentials_id: int, user_id: int):
+    """Get specific credentials by ID (only for the owner)"""
+    return db.query(models.DeveloperExchangeCredentials).filter(
+        and_(
+            models.DeveloperExchangeCredentials.id == credentials_id,
+            models.DeveloperExchangeCredentials.user_id == user_id,
+            models.DeveloperExchangeCredentials.is_active == True
+        )
+    ).first()
+
+def get_default_developer_credentials(db: Session, user_id: int, exchange_type: models.ExchangeType, 
+                          credential_type: models.CredentialType, network_type: models.NetworkType):
+    """Get default credentials for specific exchange/type/network combination"""
+    return db.query(models.DeveloperExchangeCredentials).filter(
+        and_(
+            models.DeveloperExchangeCredentials.user_id == user_id,
+            models.DeveloperExchangeCredentials.exchange_type == exchange_type,
+            models.DeveloperExchangeCredentials.credential_type == credential_type,
+            models.DeveloperExchangeCredentials.network_type == network_type,
+            models.DeveloperExchangeCredentials.is_default == True,
+            models.DeveloperExchangeCredentials.is_active == True
+        )
+    ).first()
+
+def update_developer_exchange_credentials(db: Session, credentials_id: int, user_id: int, 
+                              credentials_update: schemas.DeveloperExchangeCredentialsUpdate):
+    """Update exchange credentials"""
+    db_credentials = get_developer_credentials_by_id(db, credentials_id, user_id)
+    if not db_credentials:
+        return None
+    
+    # If setting as default, unset other defaults
+    if credentials_update.is_default:
+        db.query(models.DeveloperExchangeCredentials).filter(
+            and_(
+                models.DeveloperExchangeCredentials.user_id == user_id,
+                models.DeveloperExchangeCredentials.exchange_type == db_credentials.exchange_type,
+                models.DeveloperExchangeCredentials.credential_type == db_credentials.credential_type,
+                models.DeveloperExchangeCredentials.network_type == db_credentials.network_type,
+                models.DeveloperExchangeCredentials.is_default == True,
+                models.DeveloperExchangeCredentials.id != credentials_id
+            )
+        ).update({"is_default": False})
+    
+    # Update fields
+    for field, value in credentials_update.dict(exclude_unset=True).items():
+        if field in ['api_key', 'api_secret', 'passphrase'] and value:
+            # Encrypt sensitive data
+            setattr(db_credentials, field, security.encrypt_sensitive_data(value))
+        else:
+            setattr(db_credentials, field, value)
+    
+    db.commit()
+    db.refresh(db_credentials)
+    return db_credentials
+
+def delete_developer_exchange_credentials(db: Session, credentials_id: int, user_id: int):
+    """Soft delete exchange credentials"""
+    db_credentials = get_developer_credentials_by_id(db, credentials_id, user_id)
+    if not db_credentials:
+        return None
+    
+    db_credentials.is_active = False
+    db.commit()
+    return db_credentials
+
+def update_developer_credentials_last_used(db: Session, credentials_id: int, user_id: int):
+    """Update last_used_at timestamp for credentials"""
+    db_credentials = get_developer_credentials_by_id(db, credentials_id, user_id)
+    if not db_credentials:
+        return None
+    
+    db_credentials.last_used_at = func.now()
+    db.commit()
+    db.refresh(db_credentials)
+    return db_credentials
+
+def update_credentials_last_used(db: Session, credentials_id: int):
+    """Update last_used_at timestamp"""
+    db.query(models.DeveloperExchangeCredentials).filter(
+        models.DeveloperExchangeCredentials.id == credentials_id
+    ).update({"last_used_at": datetime.utcnow()})
+    db.commit()

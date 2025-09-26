@@ -38,6 +38,13 @@ class ExchangeType(enum.Enum):
     BINANCE = "BINANCE"
     COINBASE = "COINBASE"
     KRAKEN = "KRAKEN"
+    BYBIT = "BYBIT"
+    HUOBI = "HUOBI"
+
+class CredentialType(enum.Enum):
+    SPOT = "SPOT"
+    FUTURES = "FUTURES"
+    MARGIN = "MARGIN"
 
 class BotRegistrationStatus(enum.Enum):
     PENDING = "PENDING"
@@ -685,3 +692,35 @@ class PayPalWebhookEvent(Base):
     
     # Relationships
     payment = relationship("PayPalPayment")
+
+class DeveloperExchangeCredentials(Base):
+    """Exchange API credentials for developers"""
+    __tablename__ = "developer_exchange_credentials"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    exchange_type = Column(Enum(ExchangeType), nullable=False)
+    credential_type = Column(Enum(CredentialType), nullable=False)  # SPOT, FUTURES, MARGIN
+    network_type = Column(Enum(NetworkType), nullable=False)  # TESTNET, MAINNET
+    
+    name = Column(String(100), nullable=False)  # User-friendly name like "Binance Futures Testnet"
+    api_key = Column(Text, nullable=False)  # Encrypted
+    api_secret = Column(Text, nullable=False)  # Encrypted
+    passphrase = Column(String(255), nullable=True)  # For exchanges like OKX that need passphrase
+    
+    is_default = Column(Boolean, default=False)  # Default credential for this exchange+type+network combo
+    is_active = Column(Boolean, default=True)
+    
+    # Metadata
+    last_used_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    
+    # Relationships
+    user = relationship("User")
+    
+    # Indexes for faster queries
+    __table_args__ = (
+        Index('idx_user_exchange_type_network', 'user_id', 'exchange_type', 'credential_type', 'network_type'),
+        Index('idx_user_default_credentials', 'user_id', 'is_default'),
+    )
