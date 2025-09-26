@@ -49,10 +49,12 @@ export interface CreateBotRequest {
 
 // Get user's bots
 export const useMyBots = () => {
-  return useQuery<Bot[]>('myBots', async () => {
-    const response = await api.get('/bots/me/bots')
-    return response.data || []  // This endpoint returns direct array
-  }, {
+  return useQuery<Bot[]>({
+    queryKey: ['myBots'],
+    queryFn: async () => {
+      const response = await api.get('/bots/me/bots')
+      return response.data || []  // This endpoint returns direct array
+    },
     staleTime: 30 * 1000, // 30 seconds (shorter for fresh data)
     gcTime: 5 * 60 * 1000, // 5 minutes (renamed from cacheTime in v4)
     refetchOnWindowFocus: true, // Refetch when user comes back to tab
@@ -62,20 +64,24 @@ export const useMyBots = () => {
 
 // Get all public bots
 export const usePublicBots = () => {
-  return useQuery<Bot[]>('publicBots', async () => {
-    const response = await api.get('/bots')
-    return response.data.bots || []  // Extract bots array from response
-  }, {
+  return useQuery<Bot[]>({
+    queryKey: ['publicBots'],
+    queryFn: async () => {
+      const response = await api.get('/bots')
+      return response.data.bots || []  // Extract bots array from response
+    },
     staleTime: 5 * 60 * 1000,
   })
 }
 
 // Get single bot by ID
 export const useGetBot = (botId: string | number) => {
-  return useQuery<Bot>(['bot', botId], async () => {
-    const response = await api.get(`/bots/${botId}`)
-    return response.data
-  }, {
+  return useQuery<Bot>({
+    queryKey: ['bot', botId],
+    queryFn: async () => {
+      const response = await api.get(`/bots/${botId}`)
+      return response.data
+    },
     enabled: !!botId,
     staleTime: 5 * 60 * 1000,
   })
