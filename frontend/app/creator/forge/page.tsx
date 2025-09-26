@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAuthGuard } from '@/hooks/useAuthGuard'
 import { UserRole } from '@/lib/types'
 import { 
@@ -11,7 +11,8 @@ import {
   CloudArrowUpIcon,
   Cog6ToothIcon,
   SparklesIcon,
-  DocumentTextIcon
+  DocumentTextIcon,
+  LinkIcon
 } from '@heroicons/react/24/outline'
 import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
@@ -19,6 +20,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import toast from 'react-hot-toast'
 import { useCreateBot } from '@/hooks/useBots'
+import { useDefaultCredentials, useCredentials } from '@/hooks/useCredentials'
 
 // Bot creation schema
 const botSchema = z.object({
@@ -51,6 +53,7 @@ const botTemplates = [
     name: '🚀 Futures Quantum Entity',
     description: 'Advanced futures trading with LLM AI analysis, leverage, and quantum risk management',
     type: 'FUTURES',
+    exchange: 'BINANCE',
     features: ['LLM Integration', 'Leverage Trading', 'Stop Loss/Take Profit', 'Real-time Analysis'],
     gradient: 'from-quantum-500 to-purple-600',
     complexity: 'Advanced',
@@ -61,6 +64,7 @@ const botTemplates = [
     name: '👁️ Visual Analysis Entity',
     description: 'RPA-powered chart capture with AI image analysis for visual trading decisions',
     type: 'FUTURES_RPA',
+    exchange: 'BINANCE',
     features: ['Chart Analysis', 'Image Recognition', 'RPA Automation', 'Visual AI'],
     gradient: 'from-cyber-500 to-blue-600',
     complexity: 'Expert',
@@ -71,6 +75,7 @@ const botTemplates = [
     name: '💎 Spot Trading Entity',
     description: 'Professional spot trading with risk management for BTC, ETH, and major altcoins',
     type: 'SPOT',
+    exchange: 'BINANCE',
     features: ['Spot Trading', 'Risk Management', 'Multi-Pair Support', 'Portfolio Balance'],
     gradient: 'from-green-500 to-emerald-600',
     complexity: 'Intermediate',
@@ -81,16 +86,51 @@ const botTemplates = [
     name: '📡 Signal Intelligence Entity',
     description: 'Pure signal generation with LLM analysis - no trading, only intelligent signals',
     type: 'LLM',
+    exchange: 'BINANCE',
     features: ['Signal Generation', 'Market Analysis', 'No API Keys', 'Pure Intelligence'],
     gradient: 'from-neural-500 to-green-600',
     complexity: 'Intermediate',
     templateFile: 'binance_signals_bot.py'
   },
   {
+    id: 'coinbase_pro_bot',
+    name: '🏛️ Coinbase Pro Entity',
+    description: 'Professional trading on Coinbase Pro with advanced order management',
+    type: 'SPOT',
+    exchange: 'COINBASE',
+    features: ['Pro Trading', 'Advanced Orders', 'USD Pairs', 'Institutional Grade'],
+    gradient: 'from-blue-500 to-indigo-600',
+    complexity: 'Intermediate',
+    templateFile: 'coinbase_pro_bot.py'
+  },
+  {
+    id: 'kraken_futures_bot',
+    name: '🐙 Kraken Futures Entity',
+    description: 'Derivatives trading on Kraken with risk management and leverage control',
+    type: 'FUTURES',
+    exchange: 'KRAKEN',
+    features: ['Derivatives', 'Risk Control', 'EUR/USD Pairs', 'Regulated Exchange'],
+    gradient: 'from-purple-500 to-pink-600',
+    complexity: 'Advanced',
+    templateFile: 'kraken_futures_bot.py'
+  },
+  {
+    id: 'bybit_perpetual_bot',
+    name: '⚡ Bybit Perpetual Entity',
+    description: 'High-leverage perpetual contracts with advanced risk management',
+    type: 'FUTURES',
+    exchange: 'BYBIT',
+    features: ['Perpetual Contracts', 'High Leverage', 'Fast Execution', 'Crypto-Native'],
+    gradient: 'from-orange-500 to-red-600',
+    complexity: 'Expert',
+    templateFile: 'bybit_perpetual_bot.py'
+  },
+  {
     id: 'custom',
     name: '⚡ Custom Neural Entity',
     description: 'Build your own AI entity from scratch with custom neural architecture',
     type: 'TECHNICAL',
+    exchange: 'BINANCE',
     features: ['Custom Logic', 'Full Control', 'Advanced Config', 'Neural Framework'],
     gradient: 'from-yellow-500 to-orange-600',
     complexity: 'Expert',
@@ -120,6 +160,22 @@ export default function ForgePage() {
   const [selectedTemplate, setSelectedTemplate] = useState('')
   const createBotMutation = useCreateBot()
   const [isSubmitting, setIsSubmitting] = useState(false)
+  
+  // Bot creation flow state
+  const [createdBotId, setCreatedBotId] = useState<number | null>(null)
+  const [exchangeApiKey, setExchangeApiKey] = useState('')
+  const [exchangeSecret, setExchangeSecret] = useState('')
+  const [useTestnet, setUseTestnet] = useState(true)
+  const [balanceData, setBalanceData] = useState<any>(null)
+  const [isTestingExchange, setIsTestingExchange] = useState(false)
+  const [testOrderId, setTestOrderId] = useState<string | number | null>(null)
+  const [isTestingOrder, setIsTestingOrder] = useState(false)
+  const [isCancellingOrder, setIsCancellingOrder] = useState(false)
+  const [isClosingPosition, setIsClosingPosition] = useState(false)
+  
+  // Credentials management
+  const [selectedCredentialsId, setSelectedCredentialsId] = useState<number | null>(null)
+  const [showCredentialsModal, setShowCredentialsModal] = useState(false)
 
   const {
     register,
@@ -147,6 +203,59 @@ export default function ForgePage() {
 
   const watchedTemplate = watch('template')
   const watchedBotType = watch('bot_type')
+  
+  // Get credentials for auto-selection
+  const currentTemplate = botTemplates.find(t => t.id === watchedTemplate)
+  const exchangeType = watch('exchange_type')
+  const credentialType = currentTemplate?.type === 'FUTURES' || currentTemplate?.type === 'FUTURES_RPA' ? 'FUTURES' : 'SPOT'
+  const networkType = useTestnet ? 'TESTNET' : 'MAINNET'
+  
+  const { data: allCredentials } = useCredentials()
+  const { data: defaultCredentials } = useDefaultCredentials(
+    exchangeType,
+    credentialType, 
+    networkType,
+    !!exchangeType && !!credentialType && !!networkType
+  )
+
+  // Auto-populate credentials when default is found or network changes
+  useEffect(() => {
+    console.log('🔄 Credentials useEffect triggered:', { 
+      step, 
+      defaultCredentials: defaultCredentials ? defaultCredentials.name : 'NONE',
+      exchangeType, 
+      credentialType, 
+      networkType,
+      hasDefault: !!defaultCredentials
+    })
+    
+    if (defaultCredentials && step === 4) {
+      console.log('🔐 Auto-selecting default credentials:', defaultCredentials.name)
+      console.log('🔑 Setting API key:', defaultCredentials.api_key ? `${defaultCredentials.api_key.substring(0, 8)}...` : 'EMPTY')
+      console.log('🔒 Setting API secret:', defaultCredentials.api_secret ? `${defaultCredentials.api_secret.substring(0, 8)}...` : 'EMPTY')
+      
+      setExchangeApiKey(defaultCredentials.api_key)
+      setExchangeSecret(defaultCredentials.api_secret)
+      setSelectedCredentialsId(defaultCredentials.id)
+      
+      toast.success(`✅ Auto-loaded: ${defaultCredentials.name}`)
+    } else if (step === 4 && !defaultCredentials) {
+      // Clear credentials if no default found for current network
+      console.log('🔍 No default credentials found for:', { exchangeType, credentialType, networkType })
+      console.log('🧹 Clearing existing credentials')
+      setExchangeApiKey('')
+      setExchangeSecret('')
+      setSelectedCredentialsId(null)
+      setBalanceData(null)
+    }
+  }, [defaultCredentials, step, exchangeType, credentialType, networkType])
+
+  // Clear balance data when network changes (but keep credentials loading)
+  useEffect(() => {
+    if (step === 4) {
+      setBalanceData(null)
+    }
+  }, [useTestnet, step])
 
   if (loading) {
     return (
@@ -163,54 +272,63 @@ export default function ForgePage() {
     setSelectedTemplate(template.id)
     setValue('template', template.id as any)
     setValue('bot_type', template.type as any)
+    setValue('exchange_type', template.exchange as any) // Auto-set exchange based on template
     setValue('name', template.name)
     setValue('description', template.description)
+    console.log('🎯 Template selected:', template.name, 'Exchange:', template.exchange)
     setStep(2)
   }
 
   const onSubmit = async (data: BotFormData) => {
-    setIsSubmitting(true)
-    try {
-      console.log('Creating bot with data:', data)
-      
-      toast.success('🧠 Neural Entity creation initiated! Processing quantum architecture...')
-      
-      // Get selected template info
-      const selectedTemplateInfo = botTemplates.find(t => t.id === data.template)
-      
-      // Auto-set bot_type and bot_mode based on template
-      const templateType = selectedTemplateInfo?.type || 'TECHNICAL'
-      const activeBotTypes = ['FUTURES', 'FUTURES_RPA', 'SPOT']
-      const autoBotMode = activeBotTypes.includes(templateType) ? 'ACTIVE' : 'PASSIVE'
-      
-      // Call the actual API
-      await createBotMutation.mutateAsync({
-        name: data.name,
-        description: data.description,
-        bot_type: templateType, // Use template type
-        bot_mode: autoBotMode, // Auto-set based on template type
-        exchange_type: data.exchange_type,
-        trading_pair: data.trading_pair,
-        timeframe: data.timeframe,
-        timeframes: data.timeframes,
-        version: data.version,
-        template: data.template,
-        templateFile: selectedTemplateInfo?.templateFile, // Add template file
-        leverage: data.leverage,
-        risk_percentage: data.risk_percentage,
-        stop_loss_percentage: data.stop_loss_percentage,
-        take_profit_percentage: data.take_profit_percentage,
-        llm_provider: data.llm_provider,
-        enable_image_analysis: data.enable_image_analysis,
-        enable_sentiment_analysis: data.enable_sentiment_analysis,
-      })
-      
-      toast.success('⚡ Neural Entity successfully forged! Deploying to quantum matrix...')
-      
-      // Small delay to ensure cache is refreshed before redirect
-      setTimeout(() => {
-        router.push('/creator/entities')
-      }, 1000)
+    if (step === 3) {
+      // Step 3: Create bot and move to Binance testing
+      setIsSubmitting(true)
+      try {
+        console.log('Creating bot with data:', data)
+        
+        toast.success('🧠 Neural Entity creation initiated! Processing quantum architecture...')
+        
+        // Get selected template info
+        const selectedTemplateInfo = botTemplates.find(t => t.id === data.template)
+        
+        // Auto-set bot_type and bot_mode based on template
+        const templateType = selectedTemplateInfo?.type || 'TECHNICAL'
+        const activeBotTypes = ['FUTURES', 'FUTURES_RPA', 'SPOT']
+        const autoBotMode = activeBotTypes.includes(templateType) ? 'ACTIVE' : 'PASSIVE'
+        
+        // Call the actual API
+        const createdBot = await createBotMutation.mutateAsync({
+          name: data.name,
+          description: data.description,
+          bot_type: templateType, // Use template type
+          bot_mode: autoBotMode, // Auto-set based on template type
+          exchange_type: data.exchange_type,
+          trading_pair: data.trading_pair,
+          timeframe: data.timeframe,
+          timeframes: data.timeframes,
+          version: data.version,
+          template: data.template,
+          templateFile: selectedTemplateInfo?.templateFile || undefined, // Add template file
+          leverage: data.leverage,
+          risk_percentage: data.risk_percentage,
+          stop_loss_percentage: data.stop_loss_percentage,
+          take_profit_percentage: data.take_profit_percentage,
+          llm_provider: data.llm_provider,
+          enable_image_analysis: data.enable_image_analysis,
+          enable_sentiment_analysis: data.enable_sentiment_analysis,
+        })
+        
+        // Save bot ID and move to appropriate step
+        setCreatedBotId(createdBot.id)
+        
+        // Skip Step 4 for PASSIVE bots (they don't need exchange integration)
+        if (autoBotMode === 'PASSIVE') {
+          toast.success('⚡ Neural Entity successfully forged! Ready for marketplace publishing...')
+          setStep(5) // Skip to Step 5 (Publish)
+        } else {
+          toast.success('⚡ Neural Entity successfully forged! Ready for exchange integration testing...')
+          setStep(4) // Go to Step 4 (Exchange Testing)
+        }
       
     } catch (error: any) {
       console.error('Bot creation error:', error)
@@ -230,6 +348,297 @@ export default function ForgePage() {
     } finally {
       setIsSubmitting(false)
     }
+    } else if (step === 5) {
+      // Step 5: Publish to marketplace
+      handlePublishBot()
+    }
+  }
+
+  // Exchange API testing functions
+  const testExchangeConnection = async () => {
+    console.log('🔍 Testing connection with:', { 
+      exchangeApiKey: exchangeApiKey ? `${exchangeApiKey.substring(0, 8)}...` : 'EMPTY',
+      exchangeSecret: exchangeSecret ? `${exchangeSecret.substring(0, 8)}...` : 'EMPTY',
+      selectedCredentialsId,
+      networkType,
+      credentialType 
+    })
+    
+    if (!exchangeApiKey || !exchangeSecret) {
+      console.error('❌ Missing credentials:', { exchangeApiKey: !!exchangeApiKey, exchangeSecret: !!exchangeSecret })
+      toast.error('Please enter both API Key and Secret')
+      return
+    }
+
+    const exchangeType = watch('exchange_type')
+    const selectedTemplate = botTemplates.find(t => t.id === watch('template'))
+    const botType = selectedTemplate?.type || 'SPOT' // Get bot type from template
+    
+    setIsTestingExchange(true)
+    
+    try {
+      console.log(`🔗 Testing ${exchangeType} connection...`, { botType, template: selectedTemplate?.name })
+      
+      // Route to appropriate exchange API endpoint
+      const apiEndpoint = `/api/${exchangeType.toLowerCase()}/balance`
+      
+      const response = await fetch(apiEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          apiKey: exchangeApiKey,
+          secret: exchangeSecret,
+          testnet: useTestnet,
+          exchange: exchangeType,
+          botType: botType // Use template type for API routing
+        })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        
+        // Handle API key permission errors with detailed instructions
+        if (errorData.code === '-2015' && errorData.instructions) {
+          console.error(`❌ ${exchangeType} API Key Permission Error:`)
+          errorData.instructions.forEach((instruction: string, index: number) => {
+            console.error(`${index + 1}. ${instruction}`)
+          })
+          
+          toast.error(`❌ API Key Permission Error - Check Console for Instructions`, {
+            duration: 8000
+          })
+          
+          // Show detailed error in UI (you can enhance this further)
+          alert(`API Key Permission Error:\n\n${errorData.instructions.join('\n')}`)
+          return
+        }
+        
+        throw new Error(errorData.error || `Failed to connect to ${exchangeType}`)
+      }
+
+      const data = await response.json()
+      setBalanceData(data)
+      
+      if (data.demoMode) {
+        toast.success(`🔗 ${exchangeType} connection successful! (Demo Mode)`)
+        console.log(`✅ ${exchangeType} API connection successful (Demo Mode):`, data)
+      } else if (data.needsRealApiKey) {
+        toast.error(`⚠️ Using demo data - Please fix API key permissions for real data`)
+        console.log(`⚠️ ${exchangeType} API connection using demo data:`, data)
+      } else {
+        toast.success(`🔗 ${exchangeType} connection successful! (Real Data)`)
+        console.log(`✅ ${exchangeType} API connection successful (Real Data):`, data)
+      }
+      
+    } catch (error: any) {
+      console.error(`❌ ${exchangeType} connection failed:`, error)
+      toast.error(`❌ ${exchangeType} connection failed: ${error.message}`)
+    } finally {
+      setIsTestingExchange(false)
+    }
+  }
+
+  // Test Order function
+  const testOrder = async () => {
+    if (!exchangeApiKey || !exchangeSecret) {
+      toast.error('Please enter both API Key and Secret')
+      return
+    }
+
+    const exchangeType = watch('exchange_type')
+    const selectedTemplate = botTemplates.find(t => t.id === watch('template'))
+    const botType = selectedTemplate?.type || 'SPOT' // Get bot type from template
+    
+    setIsTestingOrder(true)
+    
+    try {
+      console.log(`📊 Creating test order on ${exchangeType}...`, { botType, template: selectedTemplate?.name })
+      
+      // First, get current market price
+      console.log('💰 Getting current market price...')
+      const priceResponse = await fetch(`/api/${exchangeType.toLowerCase()}/price`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          symbol: 'BTCUSDT',
+          testnet: useTestnet,
+          botType: botType
+        })
+      })
+      
+      if (!priceResponse.ok) {
+        throw new Error('Failed to get current price')
+      }
+      
+      const priceData = await priceResponse.json()
+      const currentPrice = parseFloat(priceData.price)
+      const orderPrice = Math.round(currentPrice * 1.01) // 1% above market for quick fill
+      
+      console.log(`💰 Current price: $${currentPrice}, Order price: $${orderPrice}`)
+      
+      const response = await fetch(`/api/${exchangeType.toLowerCase()}/order`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          apiKey: exchangeApiKey,
+          secret: exchangeSecret,
+          testnet: useTestnet,
+          exchange: exchangeType,
+          botType: botType, // Use template type for API routing
+          action: 'CREATE',
+          symbol: 'BTCUSDT',
+          side: 'BUY',
+          type: 'LIMIT',
+          quantity: '0.003',  // 0.003 * current price = well above $100 minimum
+          price: orderPrice.toString()    // Dynamic market price + 1%
+        })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || `Failed to create test order on ${exchangeType}`)
+      }
+
+      const data = await response.json()
+      setTestOrderId(data.orderId || data.clientOrderId)
+      
+      toast.success(`📊 Test order created successfully on ${exchangeType}!`)
+      console.log(`✅ ${exchangeType} test order created:`, data)
+      
+    } catch (error: any) {
+      console.error(`❌ ${exchangeType} test order failed:`, error)
+      toast.error(`❌ Test order failed: ${error.message}`)
+    } finally {
+      setIsTestingOrder(false)
+    }
+  }
+
+  // Cancel Order function
+  const cancelOrder = async () => {
+    if (!exchangeApiKey || !exchangeSecret || !testOrderId) {
+      toast.error('No active test order to cancel')
+      return
+    }
+
+    const exchangeType = watch('exchange_type')
+    const selectedTemplate = botTemplates.find(t => t.id === watch('template'))
+    const botType = selectedTemplate?.type || 'SPOT' // Get bot type from template
+    
+    setIsCancellingOrder(true)
+    
+    try {
+      console.log(`❌ Cancelling order ${testOrderId} on ${exchangeType}...`, { botType })
+      
+      const response = await fetch(`/api/${exchangeType.toLowerCase()}/order`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          apiKey: exchangeApiKey,
+          secret: exchangeSecret,
+          testnet: useTestnet,
+          exchange: exchangeType,
+          botType: botType, // Use template type for API routing
+          action: 'CANCEL',
+          symbol: 'BTCUSDT',
+          orderId: testOrderId
+        })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || `Failed to cancel order on ${exchangeType}`)
+      }
+
+      const data = await response.json()
+      setTestOrderId(null)
+      
+      toast.success(`❌ Order cancelled successfully on ${exchangeType}!`)
+      console.log(`✅ ${exchangeType} order cancelled:`, data)
+      
+    } catch (error: any) {
+      console.error(`❌ ${exchangeType} cancel order failed:`, error)
+      toast.error(`❌ Cancel order failed: ${error.message}`)
+    } finally {
+      setIsCancellingOrder(false)
+    }
+  }
+
+  // Close Position function
+  const closePosition = async () => {
+    if (!exchangeApiKey || !exchangeSecret) {
+      toast.error('Please enter both API Key and Secret')
+      return
+    }
+
+    const exchangeType = watch('exchange_type')
+    const selectedTemplate = botTemplates.find(t => t.id === watch('template'))
+    const botType = selectedTemplate?.type || 'SPOT' // Get bot type from template
+    
+    setIsClosingPosition(true)
+    
+    try {
+      console.log(`🔒 Closing position on ${exchangeType}...`, { botType })
+      
+      const response = await fetch(`/api/${exchangeType.toLowerCase()}/position`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          apiKey: exchangeApiKey,
+          secret: exchangeSecret,
+          testnet: useTestnet,
+          exchange: exchangeType,
+          botType: botType, // Use template type for API routing
+          action: 'CLOSE',
+          symbol: 'BTCUSDT'
+        })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || `Failed to close position on ${exchangeType}`)
+      }
+
+      const data = await response.json()
+      
+      toast.success(`🔒 Position closed successfully on ${exchangeType}!`)
+      console.log(`✅ ${exchangeType} position closed:`, data)
+      
+    } catch (error: any) {
+      console.error(`❌ ${exchangeType} close position failed:`, error)
+      toast.error(`❌ Close position failed: ${error.message}`)
+    } finally {
+      setIsClosingPosition(false)
+    }
+  }
+
+  const handlePublishBot = async () => {
+    if (!createdBotId) return
+
+    setIsSubmitting(true)
+    try {
+      const token = localStorage.getItem('access_token')
+      const response = await fetch(`http://localhost:8000/marketplace/publish-token?bot_id=${createdBotId}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (!response.ok) throw new Error('Failed to publish bot')
+
+      toast.success('🚀 Bot successfully published to marketplace!')
+      
+      // Redirect to entities page after successful publish
+      setTimeout(() => {
+        router.push('/creator/entities')
+      }, 1500)
+
+    } catch (error: any) {
+      toast.error(`❌ Publish failed: ${error.message}`)
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -246,33 +655,89 @@ export default function ForgePage() {
         
         {/* Progress Indicator */}
         <div className="flex justify-center mt-8">
-          <div className="flex items-center space-x-4">
-            <div className={`flex items-center justify-center w-10 h-10 rounded-full border-2 ${
+          <div className="flex items-center space-x-2">
+            <div className={`flex items-center justify-center w-8 h-8 rounded-full border-2 text-xs ${
               step >= 1 ? 'bg-quantum-500 border-quantum-500 text-white' : 'border-gray-600 text-gray-400'
             }`}>
               1
             </div>
-            <div className={`w-16 h-1 ${step >= 2 ? 'bg-quantum-500' : 'bg-gray-600'}`}></div>
-            <div className={`flex items-center justify-center w-10 h-10 rounded-full border-2 ${
+            <div className={`w-12 h-1 ${step >= 2 ? 'bg-quantum-500' : 'bg-gray-600'}`}></div>
+            <div className={`flex items-center justify-center w-8 h-8 rounded-full border-2 text-xs ${
               step >= 2 ? 'bg-quantum-500 border-quantum-500 text-white' : 'border-gray-600 text-gray-400'
             }`}>
               2
             </div>
-            <div className={`w-16 h-1 ${step >= 3 ? 'bg-quantum-500' : 'bg-gray-600'}`}></div>
-            <div className={`flex items-center justify-center w-10 h-10 rounded-full border-2 ${
+            <div className={`w-12 h-1 ${step >= 3 ? 'bg-quantum-500' : 'bg-gray-600'}`}></div>
+            <div className={`flex items-center justify-center w-8 h-8 rounded-full border-2 text-xs ${
               step >= 3 ? 'bg-quantum-500 border-quantum-500 text-white' : 'border-gray-600 text-gray-400'
             }`}>
               3
             </div>
+            
+            {/* Show Step 4 & 5 only for ACTIVE bots */}
+            {(() => {
+              const selectedTemplate = botTemplates.find(t => t.id === watch('template'))
+              const templateType = selectedTemplate?.type || 'TECHNICAL'
+              const activeBotTypes = ['FUTURES', 'FUTURES_RPA', 'SPOT']
+              const isActiveBotMode = activeBotTypes.includes(templateType)
+              
+              return isActiveBotMode ? (
+                <>
+                  <div className={`w-12 h-1 ${step >= 4 ? 'bg-quantum-500' : 'bg-gray-600'}`}></div>
+                  <div className={`flex items-center justify-center w-8 h-8 rounded-full border-2 text-xs ${
+                    step >= 4 ? 'bg-quantum-500 border-quantum-500 text-white' : 'border-gray-600 text-gray-400'
+                  }`}>
+                    4
+                  </div>
+                  <div className={`w-12 h-1 ${step >= 5 ? 'bg-quantum-500' : 'bg-gray-600'}`}></div>
+                  <div className={`flex items-center justify-center w-8 h-8 rounded-full border-2 text-xs ${
+                    step >= 5 ? 'bg-quantum-500 border-quantum-500 text-white' : 'border-gray-600 text-gray-400'
+                  }`}>
+                    5
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className={`w-12 h-1 ${step >= 5 ? 'bg-quantum-500' : 'bg-gray-600'}`}></div>
+                  <div className={`flex items-center justify-center w-8 h-8 rounded-full border-2 text-xs ${
+                    step >= 5 ? 'bg-quantum-500 border-quantum-500 text-white' : 'border-gray-600 text-gray-400'
+                  }`}>
+                    4
+                  </div>
+                </>
+              )
+            })()}
           </div>
         </div>
         
-        <div className="flex justify-center mt-4 text-sm text-gray-400">
-          <span className={step === 1 ? 'text-quantum-400 font-medium' : ''}>Template Selection</span>
-          <span className="mx-4">→</span>
-          <span className={step === 2 ? 'text-quantum-400 font-medium' : ''}>Configuration</span>
-          <span className="mx-4">→</span>
-          <span className={step === 3 ? 'text-quantum-400 font-medium' : ''}>Neural Architecture</span>
+        <div className="flex justify-center mt-4 text-xs text-gray-400 max-w-4xl mx-auto">
+          <span className={step === 1 ? 'text-quantum-400 font-medium' : ''}>Template</span>
+          <span className="mx-2">→</span>
+          <span className={step === 2 ? 'text-quantum-400 font-medium' : ''}>Config</span>
+          <span className="mx-2">→</span>
+          <span className={step === 3 ? 'text-quantum-400 font-medium' : ''}>Neural</span>
+          
+          {/* Show Step 4 only for ACTIVE bots */}
+          {(() => {
+            const selectedTemplate = botTemplates.find(t => t.id === watch('template'))
+            const templateType = selectedTemplate?.type || 'TECHNICAL'
+            const activeBotTypes = ['FUTURES', 'FUTURES_RPA', 'SPOT']
+            const isActiveBotMode = activeBotTypes.includes(templateType)
+            
+            return isActiveBotMode ? (
+              <>
+                <span className="mx-2">→</span>
+                <span className={step === 4 ? 'text-quantum-400 font-medium' : ''}>{watch('exchange_type')} Test</span>
+                <span className="mx-2">→</span>
+                <span className={step === 5 ? 'text-quantum-400 font-medium' : ''}>Publish</span>
+              </>
+            ) : (
+              <>
+                <span className="mx-2">→</span>
+                <span className={step === 5 ? 'text-quantum-400 font-medium' : ''}>Publish</span>
+              </>
+            )
+          })()}
         </div>
       </div>
 
@@ -593,6 +1058,358 @@ export default function ForgePage() {
               <p className="text-xs text-gray-500 mt-4">
                 ⚡ Quantum processing • 🧬 Neural architecture • 🔐 Encrypted deployment
               </p>
+            </div>
+          </div>
+        )}
+
+        {/* Step 4: Exchange Integration Testing */}
+        {step === 4 && (
+          <div className="space-y-8">
+            <div className="card-quantum p-8">
+              <h2 className="text-2xl font-bold cyber-text mb-6">
+                🔗 {watch('exchange_type')} Integration Testing
+              </h2>
+              <p className="text-gray-400 mb-6">
+                Test your bot's connection to {watch('exchange_type')} exchange. Configure your API credentials and perform test operations.
+                <br />
+                <span className="text-neural-400 text-sm">
+                  💡 Testing is optional - you can skip directly to publishing if you prefer to configure API keys later.
+                </span>
+              </p>
+
+              <div className="grid md:grid-cols-2 gap-8">
+                {/* API Configuration */}
+                <div className="space-y-6">
+                  <h3 className="text-lg font-semibold text-quantum-400">API Configuration</h3>
+                  
+                  {/* Network Selection */}
+                  <div className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={useTestnet}
+                      onChange={(e) => setUseTestnet(e.target.checked)}
+                      className="mr-3"
+                    />
+                    <label className="text-gray-300">Use Testnet (Recommended)</label>
+                  </div>
+
+                  {/* Credentials Selection */}
+                  <div>
+                    <label className="form-label">
+                      🔑 Saved Credentials 
+                      <span className="text-sm text-gray-400 ml-2">
+                        ({exchangeType} {credentialType} {networkType})
+                      </span>
+                    </label>
+                    
+                    {allCredentials && allCredentials.length > 0 ? (
+                      <div className="space-y-3">
+                        <select
+                          value={selectedCredentialsId || ''}
+                          onChange={(e) => {
+                            const credId = e.target.value ? parseInt(e.target.value) : null
+                            setSelectedCredentialsId(credId)
+                            
+                            if (credId) {
+                              const cred = allCredentials.find(c => c.id === credId)
+                              if (cred) {
+                                setExchangeApiKey(cred.api_key)
+                                setExchangeSecret(cred.api_secret)
+                                toast.success(`✅ Selected: ${cred.name}`)
+                              }
+                            } else {
+                              setExchangeApiKey('')
+                              setExchangeSecret('')
+                            }
+                          }}
+                          className="form-input"
+                        >
+                          <option value="">🔧 Manual Entry</option>
+                          {allCredentials
+                            .filter(cred => 
+                              cred.exchange_type === exchangeType && 
+                              cred.credential_type === credentialType &&
+                              cred.network_type === networkType
+                            )
+                            .map((cred) => (
+                              <option key={cred.id} value={cred.id}>
+                                🔑 {cred.name} {cred.is_default ? '(Default)' : ''}
+                              </option>
+                            ))}
+                        </select>
+                        
+                        {selectedCredentialsId && (
+                          <div className="text-sm text-green-400 flex items-center">
+                            ✅ Using saved credentials: {allCredentials.find(c => c.id === selectedCredentialsId)?.name}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="text-sm text-yellow-400 bg-yellow-500/10 p-3 rounded border border-yellow-500/20">
+                        ⚠️ No saved credentials found for {exchangeType} {credentialType} {networkType}
+                        <br />
+                        <a 
+                          href="/creator/credentials" 
+                          target="_blank"
+                          className="text-quantum-400 hover:text-quantum-300 underline"
+                        >
+                          → Manage Credentials
+                        </a>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Manual API Key Entry */}
+                  <div>
+                    <label className="form-label">{watch('exchange_type')} API Key</label>
+                    <input
+                      type="text"
+                      value={exchangeApiKey}
+                      onChange={(e) => {
+                        setExchangeApiKey(e.target.value)
+                        if (e.target.value && selectedCredentialsId) {
+                          setSelectedCredentialsId(null) // Clear selection if manually editing
+                        }
+                      }}
+                      className="form-input"
+                      placeholder={exchangeApiKey ? "API Key loaded from credentials" : `Enter your ${watch('exchange_type')} API Key`}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="form-label">{watch('exchange_type')} Secret</label>
+                    <input
+                      type="password"
+                      value={exchangeSecret}
+                      onChange={(e) => {
+                        setExchangeSecret(e.target.value)
+                        if (e.target.value && selectedCredentialsId) {
+                          setSelectedCredentialsId(null) // Clear selection if manually editing
+                        }
+                      }}
+                      className="form-input"
+                      placeholder={exchangeSecret ? "Secret loaded from credentials" : "Enter your API Secret"}
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={testExchangeConnection}
+                    disabled={isTestingExchange}
+                    className="btn btn-primary w-full"
+                  >
+                    {isTestingExchange ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        Testing {watch('exchange_type')} Connection...
+                      </>
+                    ) : (
+                      <>
+                        <LinkIcon className="h-4 w-4 mr-2" />
+                        🔗 Test {watch('exchange_type')} Connection
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {/* Balance & Actions */}
+                <div className="space-y-6">
+                  <h3 className="text-lg font-semibold text-quantum-400">Account Information</h3>
+                  
+                  {balanceData ? (
+                    <div className="card-cyber p-4">
+                      <h4 className="font-semibold text-neural-400 mb-3">Account Balance</h4>
+                      <div className="space-y-2 text-sm">
+                        {balanceData.balances?.slice(0, 5).map((balance: any, index: number) => (
+                          <div key={index} className="flex justify-between">
+                            <span>{balance.asset}</span>
+                            <span>{parseFloat(balance.free).toFixed(6)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="card-cyber p-4 text-center text-gray-400">
+                      <div className="mb-2">Connect to {watch('exchange_type')} to view account information</div>
+                      <div className="text-xs text-neural-400">
+                        Or skip testing and configure API keys later in production
+                      </div>
+                    </div>
+                  )}
+
+                  {balanceData && (
+                    <div className="space-y-3">
+                      <button 
+                        onClick={testOrder}
+                        disabled={isTestingOrder}
+                        className="btn btn-secondary w-full flex items-center justify-center"
+                      >
+                        {isTestingOrder ? (
+                          <>
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                            Creating Test Order...
+                          </>
+                        ) : (
+                          '📊 Test Order (BUY 0.003 BTC @ Market Price)'
+                        )}
+                      </button>
+                      
+                      <button 
+                        onClick={cancelOrder}
+                        disabled={isCancellingOrder || !testOrderId}
+                        className="btn btn-danger w-full flex items-center justify-center disabled:opacity-50"
+                      >
+                        {isCancellingOrder ? (
+                          <>
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                            Cancelling Order...
+                          </>
+                        ) : (
+                          `❌ Cancel Order ${testOrderId ? `(${String(testOrderId).substring(0, 8)}...)` : '(No Active Order)'}`
+                        )}
+                      </button>
+                      
+                      <button 
+                        onClick={closePosition}
+                        disabled={isClosingPosition}
+                        className="btn btn-secondary w-full flex items-center justify-center"
+                      >
+                        {isClosingPosition ? (
+                          <>
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                            Closing Position...
+                          </>
+                        ) : (
+                          '🔒 Close Position (BTCUSDT)'
+                        )}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex justify-between mt-8">
+                <button
+                  type="button"
+                  onClick={() => setStep(3)}
+                  className="btn btn-secondary"
+                >
+                  ← Back to Neural Architecture
+                </button>
+                
+                <button
+                  type="button"
+                  onClick={() => setStep(5)}
+                  className="btn btn-cyber"
+                >
+                  Continue to Publish →
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Step 5: Publish to Marketplace */}
+        {step === 5 && (
+          <div className="space-y-8">
+            <div className="card-quantum p-8 text-center">
+              <h2 className="text-2xl font-bold cyber-text mb-6">🚀 Publish to Marketplace</h2>
+              <p className="text-gray-400 mb-8">
+                Your neural entity is ready for deployment! Publish it to the quantum marketplace 
+                where other traders can discover and utilize your AI creation.
+              </p>
+
+              <div className="card-cyber p-6 mb-8">
+                <h3 className="text-lg font-semibold text-neural-400 mb-4">Entity Summary</h3>
+                <div className="text-left space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Entity ID:</span>
+                    <span className="text-quantum-400">#{createdBotId}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Template:</span>
+                    <span>{selectedTemplate}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">
+                      {(() => {
+                        const selectedTemplate = botTemplates.find(t => t.id === watch('template'))
+                        const templateType = selectedTemplate?.type || 'TECHNICAL'
+                        const activeBotTypes = ['FUTURES', 'FUTURES_RPA', 'SPOT']
+                        const isActiveBotMode = activeBotTypes.includes(templateType)
+                        
+                        return isActiveBotMode ? 'Exchange Integration:' : 'Bot Mode:'
+                      })()}
+                    </span>
+                    <span className="text-neural-400">
+                      {(() => {
+                        const selectedTemplate = botTemplates.find(t => t.id === watch('template'))
+                        const templateType = selectedTemplate?.type || 'TECHNICAL'
+                        const activeBotTypes = ['FUTURES', 'FUTURES_RPA', 'SPOT']
+                        const isActiveBotMode = activeBotTypes.includes(templateType)
+                        
+                        return isActiveBotMode ? '✅ Tested' : '🧠 PASSIVE (Signal Only)'
+                      })()}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Status:</span>
+                    <span className="text-cyber-400">Ready for Deployment</span>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="btn btn-cyber px-12 py-4 text-lg font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isSubmitting ? (
+                  <>
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-3"></div>
+                    Publishing to Marketplace...
+                  </>
+                ) : (
+                  <>
+                    🚀 Publish Neural Entity
+                  </>
+                )}
+              </button>
+
+              <p className="text-xs text-gray-500 mt-4">
+                🌐 Global marketplace • 💎 Quantum verified • 🔐 Secure deployment
+              </p>
+
+              <div className="flex justify-center mt-6">
+                <button
+                  type="button"
+                  onClick={() => {
+                    // Go back to appropriate step based on bot mode
+                    const selectedTemplate = botTemplates.find(t => t.id === watch('template'))
+                    const templateType = selectedTemplate?.type || 'TECHNICAL'
+                    const activeBotTypes = ['FUTURES', 'FUTURES_RPA', 'SPOT']
+                    const isActiveBotMode = activeBotTypes.includes(templateType)
+                    
+                    if (isActiveBotMode) {
+                      setStep(4) // Go back to Exchange Testing for ACTIVE bots
+                    } else {
+                      setStep(3) // Go back to Neural Architecture for PASSIVE bots
+                    }
+                  }}
+                  className="btn btn-secondary"
+                >
+                  {(() => {
+                    const selectedTemplate = botTemplates.find(t => t.id === watch('template'))
+                    const templateType = selectedTemplate?.type || 'TECHNICAL'
+                    const activeBotTypes = ['FUTURES', 'FUTURES_RPA', 'SPOT']
+                    const isActiveBotMode = activeBotTypes.includes(templateType)
+                    
+                    return isActiveBotMode 
+                      ? `← Back to ${watch('exchange_type')} Testing`
+                      : '← Back to Neural Architecture'
+                  })()}
+                </button>
+              </div>
             </div>
           </div>
         )}

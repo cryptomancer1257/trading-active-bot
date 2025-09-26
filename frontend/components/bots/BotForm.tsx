@@ -5,7 +5,7 @@ import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Bot, BotCreate, BotUpdate, BotType, ExchangeType } from '@/lib/types'
-import { useBotCategories, useCreateBot, useUpdateBot, useUploadBotFile } from '@/hooks/useBots'
+import { useCreateBot, useUpdateBot } from '@/hooks/useBots'
 import { DocumentArrowUpIcon, XMarkIcon } from '@heroicons/react/24/outline'
 import toast from 'react-hot-toast'
 
@@ -50,10 +50,10 @@ export default function BotForm({ bot, onSuccess, onCancel }: BotFormProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [isUploading, setIsUploading] = useState(false)
   
-  const { data: categories } = useBotCategories()
+  const categories: any[] = [] // Removed useBotCategories
   const createBot = useCreateBot()
   const updateBot = useUpdateBot()
-  const uploadFile = useUploadBotFile()
+  // const uploadFile = useUploadBotFile() // Removed
 
   const {
     register,
@@ -129,34 +129,34 @@ export default function BotForm({ bot, onSuccess, onCancel }: BotFormProps) {
 
   const onSubmit = async (data: BotFormData) => {
     try {
-      let savedBot: Bot
+      let savedBot: any
 
       if (bot) {
         // Update existing bot
         savedBot = await updateBot.mutateAsync({
           botId: bot.id,
-          botData: data as BotUpdate
+          data: data as BotUpdate
         })
       } else {
         // Create new bot
-        savedBot = await createBot.mutateAsync(data as BotCreate)
+        savedBot = await createBot.mutateAsync(data as any)
       }
 
-      // Upload file if selected
-      if (selectedFile) {
-        setIsUploading(true)
-        try {
-          await uploadFile.mutateAsync({
-            botId: savedBot.id,
-            file: selectedFile,
-            fileType: 'CODE'
-          })
-        } catch (error) {
-          console.error('File upload failed:', error)
-        } finally {
-          setIsUploading(false)
-        }
-      }
+      // Upload file if selected (disabled)
+      // if (selectedFile) {
+      //   setIsUploading(true)
+      //   try {
+      //     await uploadFile.mutateAsync({
+      //       botId: savedBot.id,
+      //       file: selectedFile,
+      //       fileType: 'CODE'
+      //     })
+      //   } catch (error) {
+      //     console.error('File upload failed:', error)
+      //   } finally {
+      //     setIsUploading(false)
+      //   }
+      // }
 
       onSuccess?.()
     } catch (error) {

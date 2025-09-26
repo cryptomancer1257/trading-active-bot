@@ -18,6 +18,7 @@ const navigation = [
 const creatorNavigation = [
   { name: 'My AI Entities', href: '/creator/entities', current: false },
   { name: 'Forge New Bot', href: '/creator/forge', current: false },
+  { name: 'API Credentials', href: '/creator/credentials', current: false },
   { name: 'Neural Analytics', href: '/creator/analytics', current: false },
   { name: 'Market Intelligence', href: '/creator/intelligence', current: false },
 ]
