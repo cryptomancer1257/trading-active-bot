@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { usePublicBots, useBotCategories } from '@/hooks/useBots'
+import { usePublicBots } from '@/hooks/useBots'
 import { Bot, BotStatus, BotType } from '@/lib/types'
 import { MagnifyingGlassIcon, FunnelIcon, StarIcon } from '@heroicons/react/24/outline'
 import { ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/20/solid'
@@ -23,8 +23,8 @@ export default function BotList({ showFilters = true, showPagination = true }: B
     limit: 12,
   })
 
-  const { data: botsData, isLoading, error } = usePublicBots(filters)
-  const { data: categories } = useBotCategories()
+  const { data: botsData, isLoading, error } = usePublicBots()
+  const categories: any[] = [] // Removed useBotCategories
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
@@ -139,7 +139,7 @@ export default function BotList({ showFilters = true, showPagination = true }: B
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {botsData?.bots.map((bot) => (
+          {botsData?.map((bot) => (
             <Link key={bot.id} href={`/marketplace/${bot.id}`}>
               <div className="bg-white rounded-lg shadow-sm border hover:shadow-md transition-shadow cursor-pointer">
                 {/* Bot Image */}
@@ -162,9 +162,9 @@ export default function BotList({ showFilters = true, showPagination = true }: B
                   <div className="mb-2">
                     <span className={clsx(
                       'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium',
-                      getBotTypeColor(bot.bot_type)
+                      getBotTypeColor(bot.bot_type as BotType)
                     )}>
-                      {getBotTypeName(bot.bot_type)}
+                      {getBotTypeName(bot.bot_type as BotType)}
                     </span>
                   </div>
 
@@ -182,21 +182,21 @@ export default function BotList({ showFilters = true, showPagination = true }: B
                   <div className="flex items-center justify-between text-sm text-gray-500">
                     <div className="flex items-center">
                       <StarIcon className="h-4 w-4 text-yellow-400 mr-1" />
-                      <span>{bot.average_rating.toFixed(1)}</span>
-                      <span className="ml-1">({bot.total_reviews})</span>
+                      <span>{(bot as any).average_rating?.toFixed(1) || '0.0'}</span>
+                      <span className="ml-1">({(bot as any).total_reviews || 0})</span>
                     </div>
                     <div>
-                      {bot.total_subscribers} người dùng
+                      {(bot as any).total_subscribers || 0} người dùng
                     </div>
                   </div>
 
                   {/* Price */}
                   <div className="mt-3 pt-3 border-t">
-                    {bot.is_free ? (
+                    {(bot as any).is_free ? (
                       <span className="text-lg font-bold text-success-600">Miễn phí</span>
                     ) : (
                       <span className="text-lg font-bold text-gray-900">
-                        ${bot.price_per_month}/tháng
+                        ${(bot as any).price_per_month || 0}/tháng
                       </span>
                     )}
                   </div>
@@ -208,7 +208,7 @@ export default function BotList({ showFilters = true, showPagination = true }: B
       )}
 
       {/* Empty State */}
-      {!isLoading && botsData?.bots.length === 0 && (
+      {!isLoading && botsData?.length === 0 && (
         <div className="text-center py-12">
           <div className="text-gray-500 text-lg">Không tìm thấy bot nào</div>
           <p className="text-gray-400 mt-2">Thử thay đổi bộ lọc hoặc từ khóa tìm kiếm</p>
@@ -216,7 +216,7 @@ export default function BotList({ showFilters = true, showPagination = true }: B
       )}
 
       {/* Pagination */}
-      {showPagination && botsData && botsData.total > filters.limit && (
+      {showPagination && botsData && botsData.length >= filters.limit && (
         <div className="flex items-center justify-between border-t border-gray-200 bg-white px-4 py-3 sm:px-6 rounded-lg">
           <div className="flex flex-1 justify-between sm:hidden">
             <button
@@ -228,7 +228,7 @@ export default function BotList({ showFilters = true, showPagination = true }: B
             </button>
             <button
               onClick={() => handlePageChange(filters.skip + filters.limit)}
-              disabled={filters.skip + filters.limit >= botsData.total}
+              disabled={botsData.length < filters.limit}
               className="relative ml-3 inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
             >
               Sau
@@ -240,9 +240,9 @@ export default function BotList({ showFilters = true, showPagination = true }: B
                 Hiển thị{' '}
                 <span className="font-medium">{filters.skip + 1}</span> đến{' '}
                 <span className="font-medium">
-                  {Math.min(filters.skip + filters.limit, botsData.total)}
+                  {Math.min(filters.skip + filters.limit, botsData.length)}
                 </span>{' '}
-                trong tổng số <span className="font-medium">{botsData.total}</span> kết quả
+                trong tổng số <span className="font-medium">{botsData.length}+</span> kết quả
               </p>
             </div>
             <div>
@@ -256,7 +256,7 @@ export default function BotList({ showFilters = true, showPagination = true }: B
                 </button>
                 <button
                   onClick={() => handlePageChange(filters.skip + filters.limit)}
-                  disabled={filters.skip + filters.limit >= botsData.total}
+                  disabled={botsData.length < filters.limit}
                   className="relative inline-flex items-center rounded-r-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50"
                 >
                   <ChevronRightIcon className="h-5 w-5" aria-hidden="true" />

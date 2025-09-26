@@ -84,28 +84,28 @@ export default function EditBotPage() {
       console.log('🔄 Populating form with bot data:', bot)
       console.log('🔄 Bot exchange_type:', bot.exchange_type)
       console.log('🔄 Bot timeframe:', bot.timeframe)
-      console.log('🔄 Bot llm_provider:', bot.llm_provider)
+      console.log('🔄 Bot llm_provider:', (bot as any).llm_provider)
       
       setValue('name', bot.name)
       setValue('description', bot.description)
-      setValue('exchange_type', bot.exchange_type || 'BINANCE')
+      setValue('exchange_type', (bot.exchange_type as any) || 'BINANCE')
       setValue('trading_pair', bot.trading_pair || 'BTC/USDT')
       setValue('timeframe', bot.timeframe || '1h')
       
       // Ensure timeframes is always an array
-      const timeframesArray = Array.isArray(bot.timeframes) ? bot.timeframes : [bot.timeframe || '1h']
+      const timeframesArray = Array.isArray((bot as any).timeframes) ? (bot as any).timeframes : [bot.timeframe || '1h']
       setValue('timeframes', timeframesArray)
       console.log('🔄 Setting timeframes to:', timeframesArray)
       
-      setValue('leverage', bot.leverage || 10)
-      setValue('risk_percentage', bot.risk_percentage || 2)
-      setValue('stop_loss_percentage', bot.stop_loss_percentage || 5)
-      setValue('take_profit_percentage', bot.take_profit_percentage || 10)
-      setValue('llm_provider', bot.llm_provider || '')
-      console.log('🔄 Setting llm_provider to:', bot.llm_provider)
+      setValue('leverage', (bot as any).leverage || 10)
+      setValue('risk_percentage', (bot as any).risk_percentage || 2)
+      setValue('stop_loss_percentage', (bot as any).stop_loss_percentage || 5)
+      setValue('take_profit_percentage', (bot as any).take_profit_percentage || 10)
+      setValue('llm_provider', (bot as any).llm_provider || '')
+      console.log('🔄 Setting llm_provider to:', (bot as any).llm_provider)
       console.log('🔄 Current watch llm_provider:', watch('llm_provider'))
-      setValue('enable_image_analysis', bot.enable_image_analysis || false)
-      setValue('enable_sentiment_analysis', bot.enable_sentiment_analysis || false)
+      setValue('enable_image_analysis', (bot as any).enable_image_analysis || false)
+      setValue('enable_sentiment_analysis', (bot as any).enable_sentiment_analysis || false)
       
       console.log('✅ Form populated successfully')
     }

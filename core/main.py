@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException, Depends
 from fastapi.security import OAuth2PasswordBearer
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 import uvicorn
 import logging
 import os
@@ -28,10 +29,10 @@ development_mode = os.getenv('DEVELOPMENT_MODE', 'false').lower() == 'true'
 
 # Only import API endpoints that don't require external services in development mode
 if not development_mode:
-    from api.endpoints import auth, bots, subscriptions, admin, exchanges, exchange_credentials
+    from api.endpoints import auth, bots, subscriptions, admin, exchanges, exchange_credentials, credentials
     from api.endpoints import marketplace, futures_bot, user_principals, paypal_payments
 else:
-    from api.endpoints import auth, bots, admin, exchange_credentials, futures_bot, user_principals
+    from api.endpoints import auth, bots, admin, exchange_credentials, credentials, futures_bot, user_principals
     # Import simplified subscriptions for testing without S3
     try:
         from api.endpoints import subscriptions_simple
@@ -85,6 +86,7 @@ app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
 app.include_router(bots.router, prefix="/bots", tags=["Bots"])
 app.include_router(admin.router, prefix="/admin", tags=["Admin"])
 app.include_router(exchange_credentials.router, prefix="/exchange-credentials", tags=["Exchange Credentials"])
+app.include_router(credentials.router, prefix="/developer/credentials", tags=["Developer API Credentials"])
 app.include_router(user_principals.router, prefix="/user-principals", tags=["User Principals"])
 app.include_router(futures_bot.router, prefix="/api", tags=["Futures Bot"])  # Available in both modes
 
@@ -140,7 +142,7 @@ async def health_check():
     try:
         # Test database connection
         db = SessionLocal()
-        db.execute("SELECT 1")
+        db.execute(text("SELECT 1"))
         db.close()
         
         return {

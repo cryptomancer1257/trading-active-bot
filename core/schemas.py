@@ -64,6 +64,11 @@ class TradeMode(str, Enum):
     MARGIN = "Margin"
     FUTURES = "Futures"
 
+class CredentialType(str, Enum):
+    SPOT = "SPOT"
+    FUTURES = "FUTURES"
+    MARGIN = "MARGIN"
+
 class UserPrincipalStatus(str, Enum):
     ACTIVE = "ACTIVE"
     INACTIVE = "INACTIVE"
@@ -136,7 +141,7 @@ class UserPrincipalInDB(UserPrincipalBase):
 class UserPrincipalResponse(UserPrincipalInDB):
     pass
 
-# --- Exchange Credentials Schemas ---
+# --- Exchange Credentials Schemas (End Users) ---
 class ExchangeCredentialsBase(BaseModel):
     exchange: ExchangeType
     api_key: str
@@ -1202,3 +1207,45 @@ class PayPalWebhookEvent(BaseModel):
     payment_id: Optional[str] = None
     processed: bool
     created_at: datetime
+
+# --- Developer Exchange Credentials Schemas ---
+class DeveloperExchangeCredentialsBase(BaseModel):
+    """Base schema for developer exchange credentials"""
+    exchange_type: ExchangeType
+    credential_type: CredentialType
+    network_type: NetworkType
+    name: str = Field(..., min_length=1, max_length=100)
+    is_default: bool = False
+    is_active: bool = True
+
+class DeveloperExchangeCredentialsCreate(DeveloperExchangeCredentialsBase):
+    """Schema for creating exchange credentials"""
+    api_key: str = Field(..., min_length=10)
+    api_secret: str = Field(..., min_length=10)
+    passphrase: Optional[str] = None
+
+class DeveloperExchangeCredentialsUpdate(BaseModel):
+    """Schema for updating developer exchange credentials"""
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    api_key: Optional[str] = Field(None, min_length=10)
+    api_secret: Optional[str] = Field(None, min_length=10)
+    passphrase: Optional[str] = None
+    is_default: Optional[bool] = None
+    is_active: Optional[bool] = None
+
+class DeveloperExchangeCredentialsPublic(DeveloperExchangeCredentialsBase):
+    """Public view of exchange credentials (without secrets)"""
+    id: int
+    user_id: int
+    last_used_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+class DeveloperExchangeCredentialsInDB(DeveloperExchangeCredentialsPublic):
+    """Full exchange credentials from database (with secrets)"""
+    api_key: str  # This will be encrypted in the database
+    api_secret: str  # This will be encrypted in the database
+    passphrase: Optional[str] = None

@@ -256,11 +256,11 @@ export default function MyBotsList() {
                           </h3>
                           <span className={clsx(
                             'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium',
-                            getBotTypeColor(bot.bot_type)
+                            getBotTypeColor(bot.bot_type as BotType)
                           )}>
-                            {getBotTypeName(bot.bot_type)}
+                            {getBotTypeName(bot.bot_type as BotType)}
                           </span>
-                          {getStatusBadge(bot.status)}
+                          {getStatusBadge(bot.status as BotStatus)}
                         </div>
 
                         <p className="text-sm text-gray-600 mb-2 line-clamp-2">
@@ -269,19 +269,19 @@ export default function MyBotsList() {
 
                         <div className="flex items-center text-xs text-gray-500 space-x-4">
                           <span>v{bot.version}</span>
-                          <span>{bot.total_subscribers} người dùng</span>
+                          <span>{(bot as any).total_subscribers || 0} người dùng</span>
                           <span className="flex items-center">
                             <StarIcon className="h-3 w-3 text-yellow-400 mr-1" />
-                            {bot.average_rating.toFixed(1)} ({bot.total_reviews} đánh giá)
+                            {(bot as any).average_rating?.toFixed(1) || '0.0'} ({(bot as any).total_reviews || 0} đánh giá)
                           </span>
                           <span>
                             Tạo {format(new Date(bot.created_at), 'dd/MM/yyyy')}
                           </span>
-                          {bot.is_free ? (
+                          {(bot as any).is_free ? (
                             <span className="text-green-600 font-medium">Miễn phí</span>
                           ) : (
                             <span className="text-gray-900 font-medium">
-                              ${bot.price_per_month}/tháng
+                              ${(bot as any).price_per_month || 0}/tháng
                             </span>
                           )}
                         </div>
@@ -306,7 +306,7 @@ export default function MyBotsList() {
 
                       <button
                         onClick={() => {
-                          setSelectedBot(bot)
+                          setSelectedBot(bot as any)
                           setShowDeleteModal(true)
                         }}
                         className="p-2 text-red-400 hover:text-red-600 rounded-md hover:bg-red-50"

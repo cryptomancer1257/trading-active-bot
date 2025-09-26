@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from 'react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '@/lib/api'
 
 export interface Bot {
@@ -54,7 +54,7 @@ export const useMyBots = () => {
     return response.data || []  // This endpoint returns direct array
   }, {
     staleTime: 30 * 1000, // 30 seconds (shorter for fresh data)
-    cacheTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 5 * 60 * 1000, // 5 minutes (renamed from cacheTime in v4)
     refetchOnWindowFocus: true, // Refetch when user comes back to tab
     refetchOnMount: true, // Always refetch on component mount
   })
@@ -85,55 +85,49 @@ export const useGetBot = (botId: string | number) => {
 export const useCreateBot = () => {
   const queryClient = useQueryClient()
   
-  return useMutation<Bot, Error, CreateBotRequest>(
-    async (botData) => {
+  return useMutation({
+    mutationFn: async (botData: CreateBotRequest) => {
       const response = await api.post('/bots/', botData)
       return response.data
     },
-    {
-      onSuccess: () => {
-        // Force invalidate and refetch immediately
-        queryClient.invalidateQueries('myBots')
-        queryClient.invalidateQueries('publicBots')
-        // Force refetch myBots immediately
-        queryClient.refetchQueries('myBots')
-        console.log('✅ Bot created successfully - cache invalidated and refetched')
-      },
-    }
-  )
+    onSuccess: () => {
+      // Force invalidate and refetch immediately
+      queryClient.invalidateQueries({ queryKey: ['myBots'] })
+      queryClient.invalidateQueries({ queryKey: ['publicBots'] })
+      // Force refetch myBots immediately
+      queryClient.refetchQueries({ queryKey: ['myBots'] })
+      console.log('✅ Bot created successfully - cache invalidated and refetched')
+    },
+  })
 }
 
 // Update bot
 export const useUpdateBot = () => {
   const queryClient = useQueryClient()
   
-  return useMutation<Bot, Error, { botId: number; data: Partial<CreateBotRequest> }>(
-    async ({ botId, data }) => {
+  return useMutation({
+    mutationFn: async ({ botId, data }: { botId: number; data: Partial<CreateBotRequest> }) => {
       const response = await api.put(`/bots/${botId}`, data)
       return response.data
     },
-    {
-      onSuccess: () => {
-        queryClient.invalidateQueries('myBots')
-        queryClient.invalidateQueries('publicBots')
-      },
-    }
-  )
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['myBots'] })
+      queryClient.invalidateQueries({ queryKey: ['publicBots'] })
+    },
+  })
 }
 
 // Delete bot
 export const useDeleteBot = () => {
   const queryClient = useQueryClient()
   
-  return useMutation<void, Error, number>(
-    async (botId) => {
+  return useMutation({
+    mutationFn: async (botId: number) => {
       await api.delete(`/bots/${botId}`)
     },
-    {
-      onSuccess: () => {
-        queryClient.invalidateQueries('myBots')
-        queryClient.invalidateQueries('publicBots')
-      },
-    }
-  )
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['myBots'] })
+      queryClient.invalidateQueries({ queryKey: ['publicBots'] })
+    },
+  })
 }
