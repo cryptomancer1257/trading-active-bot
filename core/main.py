@@ -33,6 +33,8 @@ if not development_mode:
     from api.endpoints import marketplace, futures_bot, user_principals, paypal_payments
 else:
     from api.endpoints import auth, bots, admin, exchange_credentials, credentials, futures_bot, user_principals
+    # Import marketplace for publish-token functionality in development
+    from api.endpoints import marketplace
     # Import simplified subscriptions for testing without S3
     try:
         from api.endpoints import subscriptions_simple
@@ -93,17 +95,19 @@ app.include_router(futures_bot.router, prefix="/api", tags=["Futures Bot"])  # A
 # Only include these routers in production mode (they require external services)
 if not development_mode:
     app.include_router(subscriptions.router, prefix="/subscriptions", tags=["Subscriptions"])
-    app.include_router(marketplace.router, prefix="/subscriptions", tags=["Marketplace"])
+    app.include_router(marketplace.router, prefix="/marketplace", tags=["Marketplace"])
     app.include_router(exchanges.router, prefix="/exchanges", tags=["Exchanges"])
     app.include_router(paypal_payments.router, prefix="/payments", tags=["PayPal Payments"])
 else:
+    # Include marketplace for publish-token functionality in development
+    app.include_router(marketplace.router, prefix="/marketplace", tags=["Marketplace (Dev)"])
     # Include simplified subscriptions for testing without S3
     try:
         app.include_router(subscriptions_simple.router, prefix="/subscriptions-simple", tags=["Subscriptions (Simplified)"])
         logger.info("Simplified subscriptions endpoint included for testing")
     except NameError:
         logger.warning("Simplified subscriptions endpoint not available")
-    logger.info("Development mode: Full subscriptions and exchanges endpoints disabled")
+    logger.info("Development mode: Marketplace enabled, full subscriptions and exchanges endpoints disabled")
 
 # Dependency to get DB session
 def get_db():

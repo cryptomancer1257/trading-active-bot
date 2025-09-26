@@ -627,11 +627,20 @@ export default function ForgePage() {
 
       if (!response.ok) throw new Error('Failed to publish bot')
 
-      toast.success('🚀 Bot successfully published to marketplace!')
+      const data = await response.json()
+      console.log('📡 Publish response:', data)
+
+      toast.success('🚀 Bot successfully published! Redirecting to marketplace...')
       
-      // Redirect to entities page after successful publish
+      // Redirect to marketplace publish URL
       setTimeout(() => {
-        router.push('/creator/entities')
+        if (data.publish_url) {
+          window.open(data.publish_url, '_blank')
+          // Also redirect back to entities page
+          router.push('/creator/entities')
+        } else {
+          router.push('/creator/entities')
+        }
       }, 1500)
 
     } catch (error: any) {
