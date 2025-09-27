@@ -2,7 +2,7 @@
 
 import { useAuthGuard } from '@/hooks/useAuthGuard'
 import { UserRole } from '@/lib/types'
-import { CpuChipIcon, PlusIcon, ChartBarIcon, TrashIcon, PencilIcon } from '@heroicons/react/24/outline'
+import { CpuChipIcon, PlusIcon, ChartBarIcon, TrashIcon, PencilIcon, EyeIcon } from '@heroicons/react/24/outline'
 import Link from 'next/link'
 import { useMyBots, useDeleteBot } from '@/hooks/useBots'
 import { useState } from 'react'
@@ -31,240 +31,211 @@ export default function MyEntitiesPage() {
     setDeletingBotId(botId)
     try {
       await deleteBotMutation.mutateAsync(botId)
-      toast.success('🗑️ Neural Entity successfully deleted from quantum matrix')
-    } catch (error: any) {
-      const message = error.response?.data?.detail || error.message || 'Failed to delete entity'
-      toast.error(`Deletion failed: ${message}`)
+      toast.success(`Bot "${botName}" deleted successfully`)
+    } catch (error) {
+      toast.error('Failed to delete bot. Please try again.')
     } finally {
       setDeletingBotId(null)
     }
   }
 
-  const getBotTypeColor = (type: string) => {
-    switch (type) {
-      case 'FUTURES': return 'from-quantum-500 to-purple-600'
-      case 'FUTURES_RPA': return 'from-cyber-500 to-blue-600'
-      case 'LLM': return 'from-neural-500 to-green-600'
-      case 'SPOT': return 'from-yellow-500 to-orange-600'
-      default: return 'from-gray-500 to-gray-600'
-    }
-  }
-
-  const getStatusColor = (status: string) => {
+  const getStatusBadge = (status: string) => {
     switch (status) {
-      case 'APPROVED': return 'text-neural-400 bg-neural-500/10'
-      case 'PENDING': return 'text-yellow-400 bg-yellow-500/10'
-      case 'REJECTED': return 'text-danger-400 bg-danger-500/10'
-      default: return 'text-gray-400 bg-gray-500/10'
+      case 'APPROVED':
+        return (
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+            Approved
+          </span>
+        )
+      case 'PENDING':
+        return (
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+            Pending
+          </span>
+        )
+      case 'REJECTED':
+        return (
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+            Rejected
+          </span>
+        )
+      default:
+        return null
     }
   }
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center neural-grid">
-        <div className="card-quantum p-8 text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-quantum-500 mx-auto mb-4"></div>
-          <p className="text-gray-300">Accessing Neural Database...</p>
-        </div>
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-500"></div>
       </div>
     )
   }
 
   if (error) {
     return (
-      <div className="min-h-screen flex items-center justify-center neural-grid">
-        <div className="card-quantum p-8 text-center">
-          <div className="text-danger-400 mb-4">⚠️ Neural Network Error</div>
-          <p className="text-gray-300">Failed to access neural database. Please try again.</p>
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <h2 className="text-xl font-semibold text-white mb-2">Error loading bots</h2>
+          <p className="text-gray-400 mb-4">{error.message}</p>
+          <button 
+            onClick={() => window.location.reload()} 
+            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg"
+          >
+            Retry
+          </button>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
-      {/* Header */}
-      <div className="flex justify-between items-center mb-8">
-        <div>
-          <h1 className="text-3xl font-extrabold cyber-text">
-            ⚡ My AI Entities
-          </h1>
-          <p className="text-gray-400 mt-2">
-            Command your autonomous trading army
-          </p>
+    <div className="min-h-screen bg-gray-900 text-white p-6">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-3xl font-extrabold text-white">My AI Entities</h1>
+            <p className="text-gray-300 mt-2">Command your autonomous trading army</p>
+          </div>
+          <Link href="/creator/forge" className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500">
+            <PlusIcon className="-ml-1 mr-2 h-5 w-5" />
+            Forge New Entity
+          </Link>
         </div>
-        <Link
-          href="/creator/forge"
-          className="btn btn-primary px-6 py-3 flex items-center space-x-2"
-        >
-          <PlusIcon className="h-5 w-5" />
-          <span>🧠 Forge New Entity</span>
-        </Link>
-      </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <div className="card-cyber p-6 text-center animate-fade-in">
-          <div className="text-3xl font-bold cyber-text animate-neural-pulse">
-            {botsArray.length}
-          </div>
-          <div className="text-sm text-gray-400 mt-1">Total Entities</div>
-        </div>
-        <div className="card-cyber p-6 text-center animate-fade-in" style={{ animationDelay: '0.1s' }}>
-          <div className="text-3xl font-bold text-neural-400 animate-neural-pulse">
-            {botsArray.filter(bot => bot.status === 'APPROVED').length}
-          </div>
-          <div className="text-sm text-gray-400 mt-1">Active Entities</div>
-        </div>
-        <div className="card-cyber p-6 text-center animate-fade-in" style={{ animationDelay: '0.2s' }}>
-          <div className="text-3xl font-bold text-yellow-400 animate-neural-pulse">
-            {botsArray.reduce((sum, bot) => sum + (bot.total_subscribers || 0), 0)}
-          </div>
-          <div className="text-sm text-gray-400 mt-1">Total Subscribers</div>
-        </div>
-        <div className="card-cyber p-6 text-center animate-fade-in" style={{ animationDelay: '0.3s' }}>
-          <div className="text-3xl font-bold text-green-400 animate-neural-pulse">
-            {botsArray.reduce((sum, bot) => {
-              const price = bot.is_free ? 0 : (bot.price_per_month || 0)
-              return sum + Number(price)
-            }, 0).toFixed(1)} ICP
-          </div>
-          <div className="text-sm text-gray-400 mt-1">Total Revenue Potential</div>
-        </div>
-      </div>
-
-      {/* Bots List or Empty State */}
-        {botsArray.length === 0 ? (
-        <div className="card-quantum p-12 text-center">
-          <div className="relative mx-auto h-24 w-24 mb-6">
-            <CpuChipIcon className="h-24 w-24 text-gray-600 animate-neural-pulse" />
-            <div className="absolute inset-0 bg-gradient-to-r from-quantum-500/20 to-cyber-500/20 rounded-full blur-xl"></div>
-          </div>
-          
-          <h3 className="text-2xl font-bold cyber-text mb-4">
-            Neural Database Empty
-          </h3>
-          <p className="text-gray-400 mb-8 max-w-md mx-auto">
-            Your AI entity arsenal is currently empty. Begin your journey into autonomous trading by forging your first neural entity.
-          </p>
-          
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link
-              href="/creator/forge"
-              className="btn btn-primary px-8 py-3"
-            >
-              🧠 Forge First Entity
-            </Link>
-            <Link
-              href="/arsenal"
-              className="btn btn-secondary px-8 py-3"
-            >
-              🔍 Study Existing Entities
-            </Link>
-          </div>
-          
-          <div className="mt-8 text-sm text-gray-500">
-            <p>💡 Pro Tip: Start with analyzing successful entities in the arsenal</p>
-          </div>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-          {botsArray.map((bot, index) => (
-            <div
-              key={bot.id}
-              className="card-quantum p-6 hover:shadow-2xl hover:shadow-quantum-500/20 transition-all duration-300 transform hover:-translate-y-1 animate-fade-in"
-              style={{ animationDelay: `${index * 0.1}s` }}
-            >
-              {/* Header */}
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex items-center space-x-3">
-                  <div className={`p-3 rounded-lg bg-gradient-to-r ${getBotTypeColor(bot.bot_type)} shadow-lg`}>
-                    <CpuChipIcon className="h-6 w-6 text-white" />
-                  </div>
-                  <div>
-                    <div className="flex items-center space-x-2">
-                      <h3 className="text-lg font-bold text-gray-200">{bot.name}</h3>
-                      {bot.is_free ? (
-                        <span className="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-medium rounded-full border border-green-500/30">
-                          FREE
-                        </span>
-                      ) : (
-                        <span className="px-2 py-1 bg-yellow-500/20 text-yellow-400 text-xs font-medium rounded-full border border-yellow-500/30">
-                          {bot.price_per_month || 0} ICP
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-sm text-gray-400">{bot.bot_type}</p>
-                  </div>
-                </div>
-                <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(bot.status)}`}>
-                  {bot.status}
-                </span>
-              </div>
-
-              {/* Description */}
-              <p className="text-gray-400 mb-4 leading-relaxed text-sm line-clamp-3">
-                {bot.description}
-              </p>
-
-              {/* Stats */}
-              <div className="grid grid-cols-3 gap-3 mb-4 text-center">
-                <div>
-                  <div className="text-lg font-bold text-quantum-400">{bot.total_subscribers}</div>
-                  <div className="text-xs text-gray-500">Subscribers</div>
-                </div>
-                <div>
-                  <div className="text-lg font-bold text-cyber-400">{bot.average_rating.toFixed(1)}</div>
-                  <div className="text-xs text-gray-500">Rating</div>
-                </div>
-                <div>
-                  <div className="text-lg font-bold text-green-400">
-                    {bot.is_free ? 'FREE' : `${bot.price_per_month || 0} ICP`}
-                  </div>
-                  <div className="text-xs text-gray-500">Price/Month</div>
-                </div>
-              </div>
-
-              {/* Config Info */}
-              <div className="text-xs text-gray-500 mb-4 space-y-1">
-                <div>Exchange: {bot.exchange_type}</div>
-                <div>Pair: {bot.trading_pair} | {bot.timeframe}</div>
-                <div>Mode: {bot.bot_mode} | v{bot.version}</div>
-              </div>
-
-              {/* Actions */}
-              <div className="flex space-x-2">
-                <Link 
-                  href={`/creator/entities/${bot.id}/edit`}
-                  className="btn btn-secondary flex-1 py-2 text-sm flex items-center justify-center"
-                >
-                  <PencilIcon className="h-4 w-4 mr-1" />
-                  Edit
-                </Link>
-                <button
-                  onClick={() => handleDeleteBot(bot.id, bot.name)}
-                  disabled={deletingBotId === bot.id}
-                  className="btn btn-danger px-3 py-2 text-sm flex items-center justify-center disabled:opacity-50"
-                >
-                  {deletingBotId === bot.id ? (
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                  ) : (
-                    <TrashIcon className="h-4 w-4" />
-                  )}
-                </button>
-              </div>
-              
-              <div className="text-xs text-gray-500 mt-2">
-                Created: {new Date(bot.created_at).toLocaleDateString()}
+        {/* Stats */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+          <div className="bg-gray-800 p-6 rounded-lg shadow-md border border-gray-700">
+            <div className="flex items-center">
+              <CpuChipIcon className="h-8 w-8 text-purple-400" />
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-400">Total Entities</p>
+                <p className="text-2xl font-bold text-white">{botsArray.length}</p>
               </div>
             </div>
-          ))}
+          </div>
+          <div className="bg-gray-800 p-6 rounded-lg shadow-md border border-gray-700">
+            <div className="flex items-center">
+              <ChartBarIcon className="h-8 w-8 text-green-400" />
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-400">Active Entities</p>
+                <p className="text-2xl font-bold text-white">{botsArray.filter(b => b.status === 'APPROVED').length}</p>
+              </div>
+            </div>
+          </div>
+          <div className="bg-gray-800 p-6 rounded-lg shadow-md border border-gray-700">
+            <div className="flex items-center">
+              <CpuChipIcon className="h-8 w-8 text-blue-400" />
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-400">Total Subscribers</p>
+                <p className="text-2xl font-bold text-white">{botsArray.reduce((sum, bot) => sum + (bot.total_subscribers || 0), 0)}</p>
+              </div>
+            </div>
+          </div>
+          <div className="bg-gray-800 p-6 rounded-lg shadow-md border border-gray-700">
+            <div className="flex items-center">
+              <CpuChipIcon className="h-8 w-8 text-yellow-400" />
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-400">ICP Total Revenue Potential</p>
+                <p className="text-2xl font-bold text-white">{botsArray.reduce((sum, bot) => sum + parseFloat(bot.price_per_month || '0'), 0).toFixed(1)}</p>
+              </div>
+            </div>
+          </div>
         </div>
-      )}
 
-      {/* Floating Elements */}
-      <div className="fixed top-24 right-16 w-1 h-1 bg-quantum-500 rounded-full animate-neural-pulse opacity-40"></div>
-      <div className="fixed bottom-24 left-16 w-1.5 h-1.5 bg-cyber-400 rounded-full animate-neural-pulse opacity-50" style={{ animationDelay: '1s' }}></div>
+        {/* Bot Grid */}
+        {botsArray.length === 0 ? (
+          <div className="text-center py-12">
+            <CpuChipIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-300 mb-2">No entities found</h3>
+            <p className="text-gray-400 mb-6">Get started by creating your first AI trading entity.</p>
+            <Link href="/creator/forge" className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500">
+              <PlusIcon className="-ml-1 mr-2 h-5 w-5" />
+              Create Your First Entity
+            </Link>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {botsArray.map((bot) => (
+              <div key={bot.id} className="bg-gray-800 rounded-lg shadow-md border border-gray-700 p-6 hover:shadow-lg transition-shadow">
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex items-center">
+                    <div className="w-12 h-12 bg-purple-600 rounded-lg flex items-center justify-center">
+                      <CpuChipIcon className="h-6 w-6 text-white" />
+                    </div>
+                    <div className="ml-3">
+                      <h3 className="text-lg font-semibold text-white">{bot.name}</h3>
+                      {getStatusBadge(bot.status)}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-sm text-gray-400">Price/Month</div>
+                    <div className="text-lg font-bold text-purple-400">{bot.price_per_month} ICP</div>
+                  </div>
+                </div>
+
+                <p className="text-gray-300 text-sm mb-4 line-clamp-2">{bot.description}</p>
+
+                <div className="space-y-2 mb-4">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-400">Subscribers:</span>
+                    <span className="text-white">{bot.total_subscribers || 0}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-400">Rating:</span>
+                    <span className="text-white">{(bot.average_rating || 0).toFixed(1)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-400">Exchange:</span>
+                    <span className="text-white">{bot.exchange_type}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-400">Pair:</span>
+                    <span className="text-white">{bot.trading_pair} | {bot.timeframe}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-400">Mode:</span>
+                    <span className="text-white">ACTIVE | v{bot.version}</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-4 border-t border-gray-700">
+                  <div className="text-xs text-gray-500">Created: {new Date(bot.created_at).toLocaleDateString()}</div>
+                  
+                  {/* Actions */}
+                  <div className="flex items-center space-x-2">
+                    <Link href={`/creator/entities/${bot.id}`}>
+                      <button className="p-2 text-blue-400 hover:text-blue-600 rounded-md hover:bg-blue-50" title="View Details">
+                        <EyeIcon className="h-5 w-5" />
+                      </button>
+                    </Link>
+                    
+                    <Link href={`/creator/entities/${bot.id}/edit`}>
+                      <button className="p-2 text-blue-400 hover:text-blue-600 rounded-md hover:bg-blue-50" title="Edit Bot">
+                        <PencilIcon className="h-5 w-5" />
+                      </button>
+                    </Link>
+
+                    <button
+                      onClick={() => handleDeleteBot(bot.id, bot.name)}
+                      disabled={deletingBotId === bot.id}
+                      className="p-2 text-red-400 hover:text-red-600 rounded-md hover:bg-red-50 disabled:opacity-50"
+                      title="Delete Bot"
+                    >
+                      {deletingBotId === bot.id ? (
+                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-red-400"></div>
+                      ) : (
+                        <TrashIcon className="h-5 w-5" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

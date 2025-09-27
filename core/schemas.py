@@ -1258,7 +1258,7 @@ class PromptTemplateBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     description: Optional[str] = None
     content: str = Field(..., min_length=1)
-    category: str = Field(default="TRADING", regex="^(TRADING|ANALYSIS|RISK_MANAGEMENT)$")
+    category: str = Field(default="TRADING", pattern="^(TRADING|ANALYSIS|RISK_MANAGEMENT)$")
     is_active: bool = True
     is_default: bool = False
 
@@ -1271,7 +1271,7 @@ class PromptTemplateUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     description: Optional[str] = None
     content: Optional[str] = Field(None, min_length=1)
-    category: Optional[str] = Field(None, regex="^(TRADING|ANALYSIS|RISK_MANAGEMENT)$")
+    category: Optional[str] = Field(None, pattern="^(TRADING|ANALYSIS|RISK_MANAGEMENT)$")
     is_active: Optional[bool] = None
     is_default: Optional[bool] = None
 

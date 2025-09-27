@@ -271,7 +271,7 @@ class Bot(Base):
     category = relationship("BotCategory", back_populates="bots")
     subscriptions = relationship("Subscription", back_populates="bot")
     reviews = relationship("BotReview", back_populates="bot")
-    prompt_template = relationship("PromptTemplate", back_populates="bots")
+    bot_prompts = relationship("BotPrompt", back_populates="bot", cascade="all, delete-orphan")
     performance_metrics = relationship("BotPerformance", back_populates="bot")
     bot_files = relationship("BotFile", back_populates="bot")
     pricing_plans = relationship("BotPricingPlan", back_populates="bot", cascade="all, delete-orphan")
@@ -539,7 +539,25 @@ class PromptTemplate(Base):
     
     # Relationships
     creator = relationship("User", back_populates="prompt_templates")
-    bots = relationship("Bot", back_populates="prompt_template")
+    bot_prompts = relationship("BotPrompt", back_populates="prompt_template")
+
+class BotPrompt(Base):
+    """Relationship between bots and prompt templates"""
+    __tablename__ = "bot_prompts"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    bot_id = Column(Integer, ForeignKey("bots.id"), nullable=False)
+    prompt_id = Column(Integer, ForeignKey("prompt_templates.id"), nullable=False)
+    is_active = Column(Boolean, default=True)
+    priority = Column(Integer, default=0)  # Higher number = higher priority
+    custom_override = Column(Text)  # Bot-specific prompt customization
+    attached_at = Column(DateTime, server_default=func.now())
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    
+    # Relationships
+    bot = relationship("Bot", back_populates="bot_prompts")
+    prompt_template = relationship("PromptTemplate", back_populates="bot_prompts")
 
 class BotPromotion(Base):
     """Promotional offers and discounts for bots"""

@@ -11,11 +11,11 @@ from core.database import get_db
 
 router = APIRouter()
 
-@router.get("/", response_model=List[schemas.PromptTemplatePublic])
+@router.get("/", response_model=List[schemas.PromptTemplateInDB])
 def get_prompt_templates(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
-    category: Optional[str] = Query(None, regex="^(TRADING|ANALYSIS|RISK_MANAGEMENT)$"),
+    category: Optional[str] = Query(None, pattern="^(TRADING|ANALYSIS|RISK_MANAGEMENT)$"),
     is_active: Optional[bool] = Query(None),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(security.get_current_active_user)
