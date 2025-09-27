@@ -34,6 +34,11 @@ const botSchema = z.object({
   timeframes: z.array(z.string()).default(['1h']),
   version: z.string().default('1.0.0'),
   template: z.enum(['binance_futures_bot', 'binance_futures_rpa_bot', 'binance_signals_bot', 'custom']),
+  // Pricing
+  price_per_month: z.number().min(0, 'Price must be 0 or higher').default(0),
+  is_free: z.boolean().default(false),
+  // Image upload
+  image_url: z.string().url().optional().or(z.literal('')),
   // Advanced configuration
   leverage: z.number().min(1).max(125).default(10),
   risk_percentage: z.number().min(0.1).max(10).default(2),
@@ -177,6 +182,11 @@ export default function ForgePage() {
   const [selectedCredentialsId, setSelectedCredentialsId] = useState<number | null>(null)
   const [showCredentialsModal, setShowCredentialsModal] = useState(false)
 
+  // Image upload state
+  const [selectedImage, setSelectedImage] = useState<File | null>(null)
+  const [imagePreview, setImagePreview] = useState<string>('')
+  const [isUploadingImage, setIsUploadingImage] = useState(false)
+
   const {
     register,
     handleSubmit,
@@ -192,6 +202,9 @@ export default function ForgePage() {
       timeframe: '1h',
       timeframes: ['1h'],
       version: '1.0.0',
+      price_per_month: 0,
+      is_free: false,
+      image_url: '',
       leverage: 10,
       risk_percentage: 2,
       stop_loss_percentage: 5,
@@ -250,6 +263,49 @@ export default function ForgePage() {
     }
   }, [defaultCredentials, step, exchangeType, credentialType, networkType])
 
+  // Handle image file selection
+  const handleImageSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) { // 5MB limit
+        toast.error('Image must be smaller than 5MB')
+        return
+      }
+      
+      if (!file.type.startsWith('image/')) {
+        toast.error('Please select an image file')
+        return
+      }
+      
+      setSelectedImage(file)
+      
+      // Create preview
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        setImagePreview(e.target?.result as string)
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
+  // Upload image to server
+  const uploadImage = async (file: File): Promise<string> => {
+    const formData = new FormData()
+    formData.append('image', file)
+    
+    const response = await fetch('/api/upload/image', {
+      method: 'POST',
+      body: formData,
+    })
+    
+    if (!response.ok) {
+      throw new Error('Failed to upload image')
+    }
+    
+    const data = await response.json()
+    return data.url
+  }
+
   // Clear balance data when network changes (but keep credentials loading)
   useEffect(() => {
     if (step === 4) {
@@ -296,6 +352,21 @@ export default function ForgePage() {
         const activeBotTypes = ['FUTURES', 'FUTURES_RPA', 'SPOT']
         const autoBotMode = activeBotTypes.includes(templateType) ? 'ACTIVE' : 'PASSIVE'
         
+        // Handle image upload if selected
+        let imageUrl = data.image_url || ''
+        if (selectedImage) {
+          setIsUploadingImage(true)
+          try {
+            imageUrl = await uploadImage(selectedImage)
+            toast.success('🖼️ Bot avatar uploaded successfully!')
+          } catch (error) {
+            toast.error('Failed to upload image. Bot will be created without avatar.')
+            console.error('Image upload error:', error)
+          } finally {
+            setIsUploadingImage(false)
+          }
+        }
+        
         // Call the actual API
         const createdBot = await createBotMutation.mutateAsync({
           name: data.name,
@@ -309,6 +380,12 @@ export default function ForgePage() {
           version: data.version,
           template: data.template,
           templateFile: selectedTemplateInfo?.templateFile || undefined, // Add template file
+          // Pricing
+          price_per_month: data.price_per_month,
+          is_free: data.is_free,
+          // Image
+          image_url: imageUrl,
+          // Advanced config
           leverage: data.leverage,
           risk_percentage: data.risk_percentage,
           stop_loss_percentage: data.stop_loss_percentage,
@@ -858,46 +935,179 @@ export default function ForgePage() {
                     />
                     {errors.description && <p className="form-error">{errors.description.message}</p>}
                   </div>
+
+                  {/* Bot Avatar Upload */}
+                  <div>
+                    <label className="form-label">Entity Avatar (Optional)</label>
+                    <div className="space-y-3">
+                      {/* Image Preview */}
+                      {(imagePreview || watch('image_url')) && (
+                        <div className="flex items-center space-x-3">
+                          <img
+                            src={imagePreview || watch('image_url')}
+                            alt="Bot avatar preview"
+                            className="w-16 h-16 rounded-lg object-cover border-2 border-quantum-500/30"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setImagePreview('')
+                              setSelectedImage(null)
+                              setValue('image_url', '')
+                            }}
+                            className="text-danger-400 hover:text-danger-300 text-sm"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      )}
+                      
+                      {/* File Input */}
+                      <div className="relative">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleImageSelect}
+                          className="hidden"
+                          id="avatar-upload"
+                        />
+                        <label
+                          htmlFor="avatar-upload"
+                          className="flex items-center justify-center w-full px-4 py-3 border-2 border-dashed border-quantum-500/30 rounded-lg cursor-pointer hover:border-quantum-400/50 transition-colors"
+                        >
+                          <CloudArrowUpIcon className="h-5 w-5 mr-2 text-quantum-400" />
+                          <span className="text-sm text-gray-300">
+                            {selectedImage ? selectedImage.name : 'Upload avatar image (Max 5MB)'}
+                          </span>
+                        </label>
+                      </div>
+                      
+                      {/* Or URL Input */}
+                      <div className="text-center text-sm text-gray-500">or</div>
+                      <input
+                        {...register('image_url')}
+                        className="form-input"
+                        placeholder="Or paste image URL..."
+                        onChange={(e) => {
+                          if (e.target.value) {
+                            setImagePreview('')
+                            setSelectedImage(null)
+                          }
+                        }}
+                      />
+                    </div>
+                  </div>
                   
                   {/* Entity Mode is auto-set based on template type */}
                 </div>
               </div>
 
-              {/* Exchange Configuration */}
-              <div className="card-cyber p-6">
-                <h3 className="text-lg font-bold cyber-text mb-4 flex items-center">
-                  <Cog6ToothIcon className="h-5 w-5 mr-2" />
-                  Exchange Settings
-                </h3>
-                
-                <div className="space-y-4">
-                  <div>
-                    <label className="form-label">Exchange Platform</label>
-                    <select {...register('exchange_type')} className="form-input">
-                      {exchangeTypes.map((exchange) => (
-                        <option key={exchange.value} value={exchange.value}>
-                          {exchange.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+              {/* Exchange Configuration & Pricing */}
+              <div className="space-y-6">
+                {/* Exchange Settings */}
+                <div className="card-cyber p-6">
+                  <h3 className="text-lg font-bold cyber-text mb-4 flex items-center">
+                    <Cog6ToothIcon className="h-5 w-5 mr-2" />
+                    Exchange Settings
+                  </h3>
                   
-                  <div>
-                    <label className="form-label">Trading Pair</label>
-                    <input
-                      {...register('trading_pair')}
-                      className="form-input"
-                      placeholder="BTC/USDT"
-                    />
+                  <div className="space-y-4">
+                    <div>
+                      <label className="form-label">Exchange Platform</label>
+                      <select {...register('exchange_type')} className="form-input">
+                        {exchangeTypes.map((exchange) => (
+                          <option key={exchange.value} value={exchange.value}>
+                            {exchange.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    
+                    <div>
+                      <label className="form-label">Trading Pair</label>
+                      <input
+                        {...register('trading_pair')}
+                        className="form-input"
+                        placeholder="BTC/USDT"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="form-label">Primary Timeframe</label>
+                      <select {...register('timeframe')} className="form-input">
+                        {timeframeOptions.map((tf) => (
+                          <option key={tf} value={tf}>{tf}</option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
+                </div>
+
+                {/* Pricing Configuration */}
+                <div className="card-neural p-6">
+                  <h3 className="text-lg font-bold cyber-text mb-4 flex items-center">
+                    <SparklesIcon className="h-5 w-5 mr-2" />
+                    Marketplace Pricing
+                  </h3>
                   
-                  <div>
-                    <label className="form-label">Primary Timeframe</label>
-                    <select {...register('timeframe')} className="form-input">
-                      {timeframeOptions.map((tf) => (
-                        <option key={tf} value={tf}>{tf}</option>
-                      ))}
-                    </select>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-3">
+                        <input
+                          {...register('is_free')}
+                          type="checkbox"
+                          className="w-4 h-4 text-quantum-500 bg-dark-700 border-quantum-500/30 rounded focus:ring-quantum-500 focus:ring-2"
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setValue('price_per_month', 0)
+                            }
+                          }}
+                        />
+                        <label className="form-label !mb-0">Free to use</label>
+                      </div>
+                      {watch('is_free') ? (
+                        <span className="text-xs text-gray-500">
+                          💡 Uncheck to set price
+                        </span>
+                      ) : (
+                        <span className="text-xs text-gray-400">
+                          💰 Check to make free
+                        </span>
+                      )}
+                    </div>
+                    
+                    {!watch('is_free') && (
+                      <div className="animate-fade-in">
+                        <label className="form-label">Price per Month (ICP)</label>
+                        <div className="relative">
+                          <input
+                            {...register('price_per_month', { valueAsNumber: true })}
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            className="form-input pl-12"
+                            placeholder="0.00"
+                          />
+                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <span className="text-quantum-400 text-sm font-medium">ICP</span>
+                          </div>
+                        </div>
+                        {errors.price_per_month && <p className="form-error">{errors.price_per_month.message}</p>}
+                        <p className="text-xs text-gray-500 mt-1">
+                          💡 Users will pay in Internet Computer Protocol (ICP) tokens
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Pricing Preview */}
+                    <div className="bg-dark-800/50 rounded-lg p-3 border border-quantum-500/20">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-400">Marketplace Price:</span>
+                        <span className="text-quantum-400 font-medium">
+                          {watch('is_free') ? 'FREE' : `${watch('price_per_month') || 0} ICP/month`}
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1122,8 +1332,8 @@ export default function ForgePage() {
                             if (credId) {
                               const cred = allCredentials.find(c => c.id === credId)
                               if (cred) {
-                                setExchangeApiKey(cred.api_key)
-                                setExchangeSecret(cred.api_secret)
+                                setExchangeApiKey((cred as any).api_key)
+                                setExchangeSecret((cred as any).api_secret)
                                 toast.success(`✅ Selected: ${cred.name}`)
                               }
                             } else {

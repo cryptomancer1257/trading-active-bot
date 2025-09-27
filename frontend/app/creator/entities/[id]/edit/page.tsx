@@ -13,7 +13,10 @@ import {
   CpuChipIcon, 
   ArrowLeftIcon,
   Cog6ToothIcon,
-  SparklesIcon
+  SparklesIcon,
+  CloudArrowUpIcon,
+  DocumentTextIcon,
+  LinkIcon
 } from '@heroicons/react/24/outline'
 import Link from 'next/link'
 
@@ -25,6 +28,11 @@ const botEditSchema = z.object({
   trading_pair: z.string().default('BTC/USDT'),
   timeframe: z.string().default('1h'),
   timeframes: z.array(z.string()).default(['1h']).optional(),
+  // Pricing
+  price_per_month: z.number().min(0, 'Price must be 0 or higher').default(0),
+  is_free: z.boolean().default(false),
+  // Image upload
+  image_url: z.string().url().optional().or(z.literal('')),
   // Advanced configuration
   leverage: z.number().min(1).max(125).default(10),
   risk_percentage: z.number().min(0.1).max(10).default(2),
@@ -63,6 +71,13 @@ export default function EditBotPage() {
   const { data: bot, isLoading: botLoading, error } = useGetBot(botId)
   const updateBotMutation = useUpdateBot()
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isRepublishing, setIsRepublishing] = useState(false)
+  const [justUpdated, setJustUpdated] = useState(false)
+
+  // Image upload state
+  const [selectedImage, setSelectedImage] = useState<File | null>(null)
+  const [imagePreview, setImagePreview] = useState<string>('')
+  const [isUploadingImage, setIsUploadingImage] = useState(false)
 
   const {
     register,
@@ -97,6 +112,18 @@ export default function EditBotPage() {
       setValue('timeframes', timeframesArray)
       console.log('🔄 Setting timeframes to:', timeframesArray)
       
+      // Pricing fields
+      console.log('🔄 Setting price_per_month from bot:', (bot as any).price_per_month)
+      console.log('🔄 Setting is_free from bot:', (bot as any).is_free)
+      setValue('price_per_month', (bot as any).price_per_month || 0)
+      setValue('is_free', (bot as any).is_free || false)
+      setValue('image_url', (bot as any).image_url || '')
+      
+      // Set image preview if exists
+      if ((bot as any).image_url) {
+        setImagePreview((bot as any).image_url)
+      }
+      
       setValue('leverage', (bot as any).leverage || 10)
       setValue('risk_percentage', (bot as any).risk_percentage || 2)
       setValue('stop_loss_percentage', (bot as any).stop_loss_percentage || 5)
@@ -119,8 +146,98 @@ export default function EditBotPage() {
     }
   }, [error, router])
 
+  // Image upload functions
+  const handleImageSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) { // 5MB limit
+        toast.error('Image must be smaller than 5MB')
+        return
+      }
+      
+      if (!file.type.startsWith('image/')) {
+        toast.error('Please select an image file')
+        return
+      }
+      
+      setSelectedImage(file)
+      
+      // Create preview
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        setImagePreview(e.target?.result as string)
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
+  const uploadImage = async (): Promise<string | null> => {
+    if (!selectedImage) return null
+
+    setIsUploadingImage(true)
+    try {
+      const formData = new FormData()
+      formData.append('image', selectedImage)
+
+      const response = await fetch('/api/upload/image', {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (!response.ok) throw new Error('Upload failed')
+
+      const data = await response.json()
+      toast.success('✅ Avatar uploaded successfully!')
+      return data.url
+    } catch (error: any) {
+      toast.error(`❌ Upload failed: ${error.message}`)
+      return null
+    } finally {
+      setIsUploadingImage(false)
+    }
+  }
+
+  // Re-publish bot function
+  const handleRepublishBot = async () => {
+    if (!botId) return
+
+    setIsRepublishing(true)
+    try {
+      const token = localStorage.getItem('access_token')
+      const response = await fetch(`http://localhost:8000/marketplace/publish-token?bot_id=${botId}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (!response.ok) throw new Error('Failed to re-publish bot')
+
+      const data = await response.json()
+      console.log('📡 Re-publish response:', data)
+
+      toast.success('🚀 Bot successfully re-published! Opening marketplace...')
+      setJustUpdated(false) // Reset the updated state
+      
+      // Redirect to marketplace publish URL
+      setTimeout(() => {
+        if (data.publish_url) {
+          window.open(data.publish_url, '_blank')
+        }
+      }, 1500)
+
+    } catch (error: any) {
+      toast.error(`❌ Re-publish failed: ${error.message}`)
+    } finally {
+      setIsRepublishing(false)
+    }
+  }
+
   const onSubmit = async (data: BotEditFormData) => {
     console.log('🔄 Form submitted with data:', data)
+    console.log('🔄 PRICING DEBUG - price_per_month:', data.price_per_month)
+    console.log('🔄 PRICING DEBUG - is_free:', data.is_free)
     console.log('🔄 Bot ID:', botId)
     console.log('🔄 Is submitting:', isSubmitting)
     
@@ -135,16 +252,43 @@ export default function EditBotPage() {
     try {
       toast.success('🔄 Updating Neural Entity...')
       
-      console.log('🔄 Calling updateBotMutation with:', { botId: parseInt(botId), data: cleanedData })
+      // Upload image if selected
+      let imageUrl = data.image_url
+      if (selectedImage) {
+        const uploadedUrl = await uploadImage()
+        if (uploadedUrl) {
+          imageUrl = uploadedUrl
+        }
+      }
+
+      // Include image URL in update data
+      const finalData = {
+        ...cleanedData,
+        image_url: imageUrl
+      }
+      
+      console.log('🔄 FINAL DATA - price_per_month:', finalData.price_per_month, typeof finalData.price_per_month)
+      console.log('🔄 FINAL DATA - is_free:', finalData.is_free, typeof finalData.is_free)
+      
+      // Ensure price_per_month is a number
+      if (finalData.price_per_month !== undefined) {
+        finalData.price_per_month = Number(finalData.price_per_month)
+        console.log('🔄 CONVERTED price_per_month:', finalData.price_per_month, typeof finalData.price_per_month)
+      }
+      
+      console.log('🔄 Calling updateBotMutation with:', { botId: parseInt(botId), data: finalData })
       
       const result = await updateBotMutation.mutateAsync({
         botId: parseInt(botId),
-        data: cleanedData
+        data: finalData
       })
       
       console.log('✅ Update successful:', result)
-      toast.success('⚡ Neural Entity successfully updated!')
-      router.push('/creator/entities')
+      toast.success('⚡ Neural Entity successfully updated! You can now re-publish to marketplace.')
+      setJustUpdated(true)
+      
+      // Don't redirect - stay on edit page to allow re-publishing
+      // router.push('/creator/entities')
       
     } catch (error: any) {
       console.error('🚨 Bot update error:', error)
@@ -215,6 +359,33 @@ export default function EditBotPage() {
           </div>
         </div>
 
+        {/* Update Success Banner */}
+        {justUpdated && (
+          <div className="bg-gradient-to-r from-green-500/10 to-emerald-500/10 border border-green-500/30 rounded-lg p-4 mb-6">
+            <div className="flex items-center space-x-3">
+              <div className="flex-shrink-0">
+                <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
+                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
+                  </svg>
+                </div>
+              </div>
+              <div className="flex-1">
+                <h3 className="text-green-400 font-medium">Entity Updated Successfully!</h3>
+                <p className="text-green-300 text-sm">Your changes have been saved. You can now re-publish to update the marketplace listing.</p>
+              </div>
+              <button
+                onClick={() => setJustUpdated(false)}
+                className="text-green-400 hover:text-green-300 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+              </button>
+            </div>
+          </div>
+        )}
+
         <form onSubmit={handleSubmit(onSubmit, (errors) => {
           console.log('🚨 Form validation errors:', errors)
           toast.error('Please fix form validation errors')
@@ -257,6 +428,130 @@ export default function EditBotPage() {
                 placeholder="Describe your AI entity's capabilities..."
               />
               {errors.description && <p className="form-error">❌ {errors.description.message}</p>}
+            </div>
+          </div>
+
+          {/* Entity Avatar & Pricing */}
+          <div className="card-cyber p-6">
+            <h3 className="text-lg font-bold cyber-text mb-4 flex items-center">
+              <CloudArrowUpIcon className="h-5 w-5 mr-2" />
+              Avatar & Marketplace Pricing
+            </h3>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Entity Avatar */}
+              <div>
+                <label className="form-label">Entity Avatar</label>
+                <div className="space-y-4">
+                  {/* Current/Preview Image */}
+                  {imagePreview && (
+                    <div className="relative w-24 h-24 rounded-lg overflow-hidden border-2 border-quantum-500/30">
+                      <img 
+                        src={imagePreview} 
+                        alt="Avatar preview" 
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                  )}
+                  
+                  {/* Upload Button */}
+                  <div className="flex items-center space-x-3">
+                    <label className="btn-secondary cursor-pointer">
+                      {isUploadingImage ? (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-quantum-400"></div>
+                          Uploading...
+                        </>
+                      ) : (
+                        <>
+                          <CloudArrowUpIcon className="h-4 w-4 mr-2" />
+                          {imagePreview ? 'Change Avatar' : 'Upload Avatar'}
+                        </>
+                      )}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleImageSelect}
+                        className="hidden"
+                        disabled={isUploadingImage}
+                      />
+                    </label>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    🎨 Upload PNG, JPG or GIF (max 5MB)
+                  </p>
+                </div>
+              </div>
+
+              {/* Marketplace Pricing */}
+              <div>
+                <label className="form-label">Marketplace Pricing</label>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <input
+                        {...register('is_free')}
+                        type="checkbox"
+                        className="w-4 h-4 text-quantum-500 bg-dark-700 border-quantum-500/30 rounded focus:ring-quantum-500 focus:ring-2"
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setValue('price_per_month', 0)
+                          }
+                        }}
+                      />
+                      <label className="form-label !mb-0">Free to use</label>
+                    </div>
+                    {watch('is_free') ? (
+                      <span className="text-xs text-gray-500">
+                        💡 Uncheck to set price
+                      </span>
+                    ) : (
+                      <span className="text-xs text-gray-400">
+                        💰 Check to make free
+                      </span>
+                    )}
+                  </div>
+                  
+                  {!watch('is_free') && (
+                    <div className="animate-fade-in">
+                      <label className="form-label">Price per Month (ICP)</label>
+                      <div className="relative">
+                        <input
+                          {...register('price_per_month', { 
+                            valueAsNumber: true,
+                            onChange: (e) => {
+                              console.log('💰 Price input changed:', e.target.value, typeof e.target.value)
+                              console.log('💰 Current watch value:', watch('price_per_month'))
+                            }
+                          })}
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          className="form-input pl-12"
+                          placeholder="0.00"
+                        />
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <span className="text-quantum-400 text-sm font-medium">ICP</span>
+                        </div>
+                      </div>
+                      {errors.price_per_month && <p className="form-error">{errors.price_per_month.message}</p>}
+                      <p className="text-xs text-gray-500 mt-1">
+                        💡 Users will pay in Internet Computer Protocol (ICP) tokens
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Pricing Preview */}
+                  <div className="bg-dark-800/50 rounded-lg p-3 border border-quantum-500/20">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-gray-400">Marketplace Price:</span>
+                      <span className="text-quantum-400 font-medium">
+                        {watch('is_free') ? 'FREE' : `${watch('price_per_month') || 0} ICP/month`}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -415,26 +710,28 @@ export default function EditBotPage() {
               Cancel
             </Link>
             
-            {/* Debug button */}
+            {/* Re-publish Button */}
             <button
               type="button"
-              onClick={async () => {
-                console.log('🧪 Direct API test')
-                try {
-                  const result = await updateBotMutation.mutateAsync({
-                    botId: parseInt(botId),
-                    data: { name: "Direct Test Update", description: "Testing direct API call" }
-                  })
-                  console.log('✅ Direct test successful:', result)
-                  toast.success('Direct test successful!')
-                } catch (error) {
-                  console.error('❌ Direct test failed:', error)
-                  toast.error('Direct test failed!')
-                }
-              }}
-              className="btn btn-secondary px-4 py-3"
+              onClick={handleRepublishBot}
+              disabled={isRepublishing}
+              className={`btn px-6 py-3 disabled:opacity-50 transition-all duration-300 ${
+                justUpdated 
+                  ? 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white animate-pulse shadow-lg shadow-green-500/25' 
+                  : 'bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white'
+              }`}
             >
-              🧪 Test API
+              {isRepublishing ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Publishing...
+                </>
+              ) : (
+                <>
+                  <LinkIcon className="h-4 w-4 mr-2" />
+                  {justUpdated ? '✨ Ready to Re-publish!' : '🚀 Re-publish to Marketplace'}
+                </>
+              )}
             </button>
             
             <button

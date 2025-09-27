@@ -38,6 +38,12 @@ export interface CreateBotRequest {
   version: string
   template: string
   templateFile?: string // Template file name to copy
+  // Pricing
+  price_per_month?: number
+  is_free?: boolean
+  // Image
+  image_url?: string
+  // Advanced config
   leverage?: number
   risk_percentage?: number
   stop_loss_percentage?: number

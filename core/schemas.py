@@ -323,6 +323,7 @@ class BotUpdate(BaseModel):
     trading_pair: Optional[str] = None
     exchange_type: Optional[ExchangeType] = None
     strategy_config: Optional[Any] = None
+    image_url: Optional[str] = None
     
     # Advanced configuration fields
     leverage: Optional[int] = None
