@@ -103,7 +103,7 @@ export default function MyEntitiesPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <div className="card-cyber p-6 text-center animate-fade-in">
           <div className="text-3xl font-bold cyber-text animate-neural-pulse">
             {botsArray.length}
@@ -121,6 +121,15 @@ export default function MyEntitiesPage() {
             {botsArray.reduce((sum, bot) => sum + (bot.total_subscribers || 0), 0)}
           </div>
           <div className="text-sm text-gray-400 mt-1">Total Subscribers</div>
+        </div>
+        <div className="card-cyber p-6 text-center animate-fade-in" style={{ animationDelay: '0.3s' }}>
+          <div className="text-3xl font-bold text-green-400 animate-neural-pulse">
+            {botsArray.reduce((sum, bot) => {
+              const price = bot.is_free ? 0 : (bot.price_per_month || 0)
+              return sum + Number(price)
+            }, 0).toFixed(1)} ICP
+          </div>
+          <div className="text-sm text-gray-400 mt-1">Total Revenue Potential</div>
         </div>
       </div>
 
@@ -173,7 +182,18 @@ export default function MyEntitiesPage() {
                     <CpuChipIcon className="h-6 w-6 text-white" />
                   </div>
                   <div>
-                    <h3 className="text-lg font-bold text-gray-200">{bot.name}</h3>
+                    <div className="flex items-center space-x-2">
+                      <h3 className="text-lg font-bold text-gray-200">{bot.name}</h3>
+                      {bot.is_free ? (
+                        <span className="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-medium rounded-full border border-green-500/30">
+                          FREE
+                        </span>
+                      ) : (
+                        <span className="px-2 py-1 bg-yellow-500/20 text-yellow-400 text-xs font-medium rounded-full border border-yellow-500/30">
+                          {bot.price_per_month || 0} ICP
+                        </span>
+                      )}
+                    </div>
                     <p className="text-sm text-gray-400">{bot.bot_type}</p>
                   </div>
                 </div>
@@ -188,7 +208,7 @@ export default function MyEntitiesPage() {
               </p>
 
               {/* Stats */}
-              <div className="grid grid-cols-2 gap-4 mb-4 text-center">
+              <div className="grid grid-cols-3 gap-3 mb-4 text-center">
                 <div>
                   <div className="text-lg font-bold text-quantum-400">{bot.total_subscribers}</div>
                   <div className="text-xs text-gray-500">Subscribers</div>
@@ -196,6 +216,12 @@ export default function MyEntitiesPage() {
                 <div>
                   <div className="text-lg font-bold text-cyber-400">{bot.average_rating.toFixed(1)}</div>
                   <div className="text-xs text-gray-500">Rating</div>
+                </div>
+                <div>
+                  <div className="text-lg font-bold text-green-400">
+                    {bot.is_free ? 'FREE' : `${bot.price_per_month || 0} ICP`}
+                  </div>
+                  <div className="text-xs text-gray-500">Price/Month</div>
                 </div>
               </div>
 

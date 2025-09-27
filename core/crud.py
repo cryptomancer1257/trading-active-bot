@@ -1537,6 +1537,109 @@ def update_bot_registration(
     
     return subscription, updated_fields
 
+# ========================
+# Prompt Template CRUD
+# ========================
+
+def create_prompt_template(db: Session, prompt: schemas.PromptTemplateCreate, created_by: int):
+    """Create a new prompt template"""
+    # If this is set as default, unset other defaults in the same category
+    if prompt.is_default:
+        db.query(models.PromptTemplate).filter(
+            models.PromptTemplate.category == prompt.category,
+            models.PromptTemplate.is_default == True
+        ).update({"is_default": False})
+    
+    db_prompt = models.PromptTemplate(
+        **prompt.dict(),
+        created_by=created_by
+    )
+    db.add(db_prompt)
+    db.commit()
+    db.refresh(db_prompt)
+    return db_prompt
+
+def get_prompt_template_by_id(db: Session, prompt_id: int):
+    """Get prompt template by ID"""
+    return db.query(models.PromptTemplate).filter(models.PromptTemplate.id == prompt_id).first()
+
+def get_prompt_templates(
+    db: Session, 
+    skip: int = 0, 
+    limit: int = 100, 
+    category: str = None,
+    is_active: bool = None,
+    created_by: int = None
+):
+    """Get prompt templates with optional filters"""
+    query = db.query(models.PromptTemplate)
+    
+    if category:
+        query = query.filter(models.PromptTemplate.category == category)
+    if is_active is not None:
+        query = query.filter(models.PromptTemplate.is_active == is_active)
+    if created_by:
+        query = query.filter(models.PromptTemplate.created_by == created_by)
+    
+    return query.order_by(models.PromptTemplate.created_at.desc()).offset(skip).limit(limit).all()
+
+def get_default_prompt_template(db: Session, category: str = "TRADING"):
+    """Get the default prompt template for a category"""
+    return db.query(models.PromptTemplate).filter(
+        models.PromptTemplate.category == category,
+        models.PromptTemplate.is_default == True,
+        models.PromptTemplate.is_active == True
+    ).first()
+
+def update_prompt_template(db: Session, prompt_id: int, prompt_update: schemas.PromptTemplateUpdate):
+    """Update a prompt template"""
+    db_prompt = get_prompt_template_by_id(db, prompt_id)
+    if not db_prompt:
+        return None
+    
+    update_data = prompt_update.dict(exclude_unset=True)
+    
+    # If setting as default, unset other defaults in the same category
+    if update_data.get('is_default') and db_prompt.category:
+        db.query(models.PromptTemplate).filter(
+            models.PromptTemplate.category == db_prompt.category,
+            models.PromptTemplate.is_default == True,
+            models.PromptTemplate.id != prompt_id
+        ).update({"is_default": False})
+    
+    for key, value in update_data.items():
+        setattr(db_prompt, key, value)
+    
+    db.commit()
+    db.refresh(db_prompt)
+    return db_prompt
+
+def delete_prompt_template(db: Session, prompt_id: int):
+    """Delete a prompt template (soft delete by setting is_active=False)"""
+    db_prompt = get_prompt_template_by_id(db, prompt_id)
+    if not db_prompt:
+        return None
+    
+    # Check if any bots are using this template
+    bots_using_template = db.query(models.Bot).filter(models.Bot.prompt_template_id == prompt_id).count()
+    if bots_using_template > 0:
+        # Soft delete - just deactivate
+        db_prompt.is_active = False
+        db.commit()
+        db.refresh(db_prompt)
+        return db_prompt
+    else:
+        # Hard delete if no bots are using it
+        db.delete(db_prompt)
+        db.commit()
+        return db_prompt
+
+def get_prompt_templates_by_user(db: Session, user_id: int, skip: int = 0, limit: int = 100):
+    """Get prompt templates created by a specific user"""
+    return db.query(models.PromptTemplate).filter(
+        models.PromptTemplate.created_by == user_id
+    ).order_by(models.PromptTemplate.created_at.desc()).offset(skip).limit(limit).all()
+
 def get_bot_registration_by_principal_id(
     db: Session,
     user_principal_id: str,

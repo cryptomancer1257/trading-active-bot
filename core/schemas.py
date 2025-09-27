@@ -333,6 +333,7 @@ class BotUpdate(BaseModel):
     llm_provider: Optional[str] = None
     enable_image_analysis: Optional[bool] = None
     enable_sentiment_analysis: Optional[bool] = None
+    prompt_template_id: Optional[int] = None
 
 class BotInDB(BotBase):
     id: int
@@ -1250,3 +1251,50 @@ class DeveloperExchangeCredentialsInDB(DeveloperExchangeCredentialsPublic):
     api_key: str  # This will be encrypted in the database
     api_secret: str  # This will be encrypted in the database
     passphrase: Optional[str] = None
+
+# --- Prompt Template Schemas ---
+class PromptTemplateBase(BaseModel):
+    """Base schema for prompt templates"""
+    name: str = Field(..., min_length=1, max_length=255)
+    description: Optional[str] = None
+    content: str = Field(..., min_length=1)
+    category: str = Field(default="TRADING", regex="^(TRADING|ANALYSIS|RISK_MANAGEMENT)$")
+    is_active: bool = True
+    is_default: bool = False
+
+class PromptTemplateCreate(PromptTemplateBase):
+    """Schema for creating a new prompt template"""
+    pass
+
+class PromptTemplateUpdate(BaseModel):
+    """Schema for updating a prompt template"""
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    description: Optional[str] = None
+    content: Optional[str] = Field(None, min_length=1)
+    category: Optional[str] = Field(None, regex="^(TRADING|ANALYSIS|RISK_MANAGEMENT)$")
+    is_active: Optional[bool] = None
+    is_default: Optional[bool] = None
+
+class PromptTemplatePublic(BaseModel):
+    """Public schema for prompt templates (without sensitive data)"""
+    id: int
+    name: str
+    description: Optional[str]
+    category: str
+    is_active: bool
+    is_default: bool
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+class PromptTemplateInDB(PromptTemplateBase):
+    """Schema for prompt templates in database"""
+    id: int
+    created_by: int
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True

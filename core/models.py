@@ -96,6 +96,7 @@ class User(Base):
     subscriptions = relationship("Subscription", back_populates="user")
     reviews = relationship("BotReview", back_populates="user")
     exchange_credentials = relationship("ExchangeCredentials", back_populates="user", cascade="all, delete-orphan")
+    prompt_templates = relationship("PromptTemplate", back_populates="creator")
     principals = relationship("UserPrincipal", back_populates="user", cascade="all, delete-orphan")
 
 class UserPrincipal(Base):
@@ -255,6 +256,9 @@ class Bot(Base):
     enable_image_analysis = Column(Boolean, default=False)
     enable_sentiment_analysis = Column(Boolean, default=False)
     
+    # Prompt template
+    prompt_template_id = Column(Integer, ForeignKey("prompt_templates.id"), nullable=True)
+    
     # Audit fields
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
@@ -267,6 +271,7 @@ class Bot(Base):
     category = relationship("BotCategory", back_populates="bots")
     subscriptions = relationship("Subscription", back_populates="bot")
     reviews = relationship("BotReview", back_populates="bot")
+    prompt_template = relationship("PromptTemplate", back_populates="bots")
     performance_metrics = relationship("BotPerformance", back_populates="bot")
     bot_files = relationship("BotFile", back_populates="bot")
     pricing_plans = relationship("BotPricingPlan", back_populates="bot", cascade="all, delete-orphan")
@@ -514,6 +519,27 @@ class BotPricingPlan(Base):
     # Relationships
     bot = relationship("Bot", back_populates="pricing_plans")
     subscriptions = relationship("Subscription", back_populates="pricing_plan")
+
+class PromptTemplate(Base):
+    """LLM Prompt templates for trading analysis"""
+    __tablename__ = "prompt_templates"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False)
+    description = Column(Text)
+    content = Column(Text, nullable=False)  # Rich text prompt content
+    category = Column(String(100), default="TRADING")  # TRADING, ANALYSIS, RISK_MANAGEMENT
+    is_active = Column(Boolean, default=True)
+    is_default = Column(Boolean, default=False)
+    
+    # Metadata
+    created_by = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    
+    # Relationships
+    creator = relationship("User", back_populates="prompt_templates")
+    bots = relationship("Bot", back_populates="prompt_template")
 
 class BotPromotion(Base):
     """Promotional offers and discounts for bots"""

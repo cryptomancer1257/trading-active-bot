@@ -19,6 +19,9 @@ export interface Bot {
   developer_id: number
   category_id?: number
   image_url?: string
+  // Pricing
+  price_per_month?: number
+  is_free?: boolean
   // Advanced config
   leverage?: number
   risk_percentage?: number
