@@ -7,6 +7,8 @@ import os
 import json
 import logging
 import asyncio
+import time
+import hashlib
 from typing import Dict, Any, List, Optional, Union
 from datetime import datetime, timedelta
 import pandas as pd
@@ -57,9 +59,18 @@ class LLMIntegrationService:
         self.gemini_api_key = self.config.get('gemini_api_key', os.getenv('GEMINI_API_KEY'))
         
         # Model configurations - Updated model names for 2025
-        self.openai_model = self.config.get('openai_model', 'gpt-4o')  # Balanced performance/cost
+        self.openai_model = self.config.get('openai_model', 'gpt-4o-mini')  # More cost-effective with good performance
         self.claude_model = self.config.get('claude_model', 'claude-3-5-sonnet-20241022')  # Latest stable
         self.gemini_model = self.config.get('gemini_model', 'gemini-1.5-pro')
+        
+        # Performance and reliability settings
+        self.max_retries = self.config.get('max_retries', 3)
+        self.retry_delay = self.config.get('retry_delay', 1.0)  # seconds
+        self.timeout = self.config.get('timeout', 30)  # seconds
+        self.enable_caching = self.config.get('enable_caching', True)
+        
+        # Cache for analysis results (simple in-memory cache)
+        self._analysis_cache = {} if self.enable_caching else None
         
         # Initialize clients
         self._initialize_clients()
@@ -68,6 +79,75 @@ class LLMIntegrationService:
         # in each analyze_with_* method
         
         logger.info("LLM Integration Service initialized")
+    
+    def _generate_cache_key(self, symbol: str, timeframes_data: Dict[str, List[Dict]], model: str) -> str:
+        """Generate cache key for analysis results"""
+        if not self.enable_caching:
+            return None
+        
+        # Create a hash of the input data
+        data_str = json.dumps({
+            'symbol': symbol,
+            'timeframes': timeframes_data,
+            'model': model
+        }, sort_keys=True)
+        
+        return hashlib.md5(data_str.encode()).hexdigest()
+    
+    def _get_cached_analysis(self, cache_key: str) -> Optional[Dict[str, Any]]:
+        """Get cached analysis result"""
+        if not self.enable_caching or not cache_key or not self._analysis_cache:
+            return None
+        
+        cached_result = self._analysis_cache.get(cache_key)
+        if cached_result:
+            # Check if cache is still valid (5 minutes)
+            cache_time = cached_result.get('cache_timestamp', 0)
+            if time.time() - cache_time < 300:  # 5 minutes
+                logger.info("Using cached analysis result")
+                return cached_result.get('analysis')
+            else:
+                # Remove expired cache
+                del self._analysis_cache[cache_key]
+        
+        return None
+    
+    def _cache_analysis(self, cache_key: str, analysis: Dict[str, Any]) -> None:
+        """Cache analysis result"""
+        if not self.enable_caching or not cache_key:
+            return
+        
+        if not self._analysis_cache:
+            self._analysis_cache = {}
+        
+        self._analysis_cache[cache_key] = {
+            'analysis': analysis,
+            'cache_timestamp': time.time()
+        }
+        
+        # Limit cache size (keep only last 50 entries)
+        if len(self._analysis_cache) > 50:
+            oldest_key = min(self._analysis_cache.keys(), 
+                           key=lambda k: self._analysis_cache[k]['cache_timestamp'])
+            del self._analysis_cache[oldest_key]
+    
+    async def _retry_with_backoff(self, func, *args, **kwargs):
+        """Retry function with exponential backoff"""
+        last_exception = None
+        
+        for attempt in range(self.max_retries):
+            try:
+                return await func(*args, **kwargs)
+            except Exception as e:
+                last_exception = e
+                if attempt < self.max_retries - 1:
+                    delay = self.retry_delay * (2 ** attempt)
+                    logger.warning(f"Attempt {attempt + 1} failed: {e}. Retrying in {delay}s...")
+                    await asyncio.sleep(delay)
+                else:
+                    logger.error(f"All {self.max_retries} attempts failed. Last error: {e}")
+        
+        raise last_exception
     
     def _initialize_clients(self):
         """Initialize LLM clients"""
@@ -481,19 +561,25 @@ Please respond in JSON format:
             Complete trading analysis with Fibonacci
         """
         try:
+            # Check cache first
+            cache_key = self._generate_cache_key(symbol, timeframes_data, model)
+            cached_analysis = self._get_cached_analysis(cache_key)
+            if cached_analysis:
+                return cached_analysis
+            
             # Prepare market data
             market_data = self.prepare_market_data(symbol, timeframes_data)
             
             if not market_data:
                 return {"error": "Failed to prepare market data"}
             
-            # Analyze with specified model
+            # Analyze with specified model using retry mechanism
             if model.lower() == "openai":
-                analysis = await self.analyze_with_openai(market_data)
+                analysis = await self._retry_with_backoff(self.analyze_with_openai, market_data)
             elif model.lower() == "claude":
-                analysis = await self.analyze_with_claude(market_data)
+                analysis = await self._retry_with_backoff(self.analyze_with_claude, market_data)
             elif model.lower() == "gemini":
-                analysis = await self.analyze_with_gemini(market_data)
+                analysis = await self._retry_with_backoff(self.analyze_with_gemini, market_data)
             else:
                 return {"error": f"Unsupported model: {model}"}
             
@@ -503,14 +589,248 @@ Please respond in JSON format:
                 "model": model,
                 "timestamp": datetime.now().isoformat(),
                 "timeframes_analyzed": list(timeframes_data.keys()),
-                "service": "LLMIntegrationService"
+                "service": "LLMIntegrationService",
+                "cached": False
             }
+            
+            # Cache the result
+            if cache_key:
+                self._cache_analysis(cache_key, analysis)
             
             return analysis
             
         except Exception as e:
             logger.error(f"Market analysis error: {e}")
             return {"error": f"Analysis failed: {str(e)}"}
+    
+    async def analyze_sentiment(self, news_data: List[Dict[str, Any]], 
+                               model: str = "openai") -> Dict[str, Any]:
+        """
+        Analyze market sentiment from news data
+        
+        Args:
+            news_data: List of news articles with title, content, timestamp
+            model: LLM to use for sentiment analysis
+            
+        Returns:
+            Sentiment analysis with confidence score
+        """
+        try:
+            if not news_data:
+                return {"error": "No news data provided"}
+            
+            # Prepare sentiment analysis prompt
+            sentiment_prompt = """You are a financial sentiment analyst. Analyze the provided news articles and determine the overall market sentiment for cryptocurrency trading.
+
+News Articles:
+{news_data}
+
+Please provide sentiment analysis in JSON format:
+{{
+  "overall_sentiment": "BULLISH/NEUTRAL/BEARISH",
+  "confidence": "0-100",
+  "key_themes": ["theme1", "theme2", "theme3"],
+  "market_impact": "HIGH/MEDIUM/LOW",
+  "trading_implications": "brief explanation",
+  "risk_factors": ["risk1", "risk2"],
+  "opportunities": ["opportunity1", "opportunity2"]
+}}"""
+            
+            # Format news data
+            formatted_news = []
+            for article in news_data[:10]:  # Limit to 10 most recent articles
+                formatted_news.append({
+                    "title": article.get("title", ""),
+                    "content": article.get("content", "")[:500],  # Limit content length
+                    "timestamp": article.get("timestamp", ""),
+                    "source": article.get("source", "")
+                })
+            
+            prompt = sentiment_prompt.format(news_data=json.dumps(formatted_news, indent=2))
+            
+            # Get LLM analysis
+            if model.lower() == "openai":
+                response = await self._retry_with_backoff(
+                    self._get_sentiment_analysis_openai, prompt
+                )
+            elif model.lower() == "claude":
+                response = await self._retry_with_backoff(
+                    self._get_sentiment_analysis_claude, prompt
+                )
+            elif model.lower() == "gemini":
+                response = await self._retry_with_backoff(
+                    self._get_sentiment_analysis_gemini, prompt
+                )
+            else:
+                return {"error": f"Unsupported model: {model}"}
+            
+            # Add metadata
+            response["metadata"] = {
+                "model": model,
+                "timestamp": datetime.now().isoformat(),
+                "articles_analyzed": len(formatted_news),
+                "service": "LLMIntegrationService",
+                "analysis_type": "sentiment"
+            }
+            
+            return response
+            
+        except Exception as e:
+            logger.error(f"Sentiment analysis error: {e}")
+            return {"error": f"Sentiment analysis failed: {str(e)}"}
+    
+    async def _get_sentiment_analysis_openai(self, prompt: str) -> Dict[str, Any]:
+        """Get sentiment analysis from OpenAI"""
+        if not self.openai_client:
+            return {"error": "OpenAI client not available"}
+        
+        response = await asyncio.to_thread(
+            self.openai_client.chat.completions.create,
+            model=self.openai_model,
+            messages=[
+                {"role": "system", "content": "You are a financial sentiment analyst. Return only valid JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3,
+            max_tokens=1000
+        )
+        
+        content = response.choices[0].message.content
+        return self._parse_llm_response(content)
+    
+    async def _get_sentiment_analysis_claude(self, prompt: str) -> Dict[str, Any]:
+        """Get sentiment analysis from Claude"""
+        if not self.claude_client:
+            return {"error": "Claude client not available"}
+        
+        response = await asyncio.to_thread(
+            self.claude_client.messages.create,
+            model=self.claude_model,
+            max_tokens=1000,
+            temperature=0.3,
+            messages=[
+                {"role": "user", "content": prompt}
+            ]
+        )
+        
+        content = response.content[0].text
+        return self._parse_llm_response(content)
+    
+    async def _get_sentiment_analysis_gemini(self, prompt: str) -> Dict[str, Any]:
+        """Get sentiment analysis from Gemini"""
+        if not self.gemini_client:
+            return {"error": "Gemini client not available"}
+        
+        response = await asyncio.to_thread(
+            self.gemini_client.generate_content,
+            prompt
+        )
+        
+        content = response.text
+        return self._parse_llm_response(content)
+    
+    async def comprehensive_analysis(self, symbol: str, timeframes_data: Dict[str, List[Dict]], 
+                                   news_data: List[Dict[str, Any]] = None,
+                                   model: str = "openai") -> Dict[str, Any]:
+        """
+        Comprehensive market analysis combining technical analysis and sentiment
+        
+        Args:
+            symbol: Trading symbol
+            timeframes_data: OHLCV data for different timeframes
+            news_data: Optional news data for sentiment analysis
+            model: LLM to use
+            
+        Returns:
+            Combined technical and sentiment analysis
+        """
+        try:
+            # Get technical analysis
+            technical_analysis = await self.analyze_market(symbol, timeframes_data, model)
+            
+            # Get sentiment analysis if news data provided
+            sentiment_analysis = None
+            if news_data:
+                sentiment_analysis = await self.analyze_sentiment(news_data, model)
+            
+            # Combine analyses
+            comprehensive_result = {
+                "technical_analysis": technical_analysis,
+                "sentiment_analysis": sentiment_analysis,
+                "combined_recommendation": self._combine_analyses(technical_analysis, sentiment_analysis),
+                "metadata": {
+                    "symbol": symbol,
+                    "model": model,
+                    "timestamp": datetime.now().isoformat(),
+                    "analysis_type": "comprehensive",
+                    "has_sentiment": sentiment_analysis is not None
+                }
+            }
+            
+            return comprehensive_result
+            
+        except Exception as e:
+            logger.error(f"Comprehensive analysis error: {e}")
+            return {"error": f"Comprehensive analysis failed: {str(e)}"}
+    
+    def _combine_analyses(self, technical_analysis: Dict[str, Any], 
+                         sentiment_analysis: Dict[str, Any] = None) -> Dict[str, Any]:
+        """Combine technical and sentiment analyses into final recommendation"""
+        try:
+            # Start with technical analysis
+            combined = {
+                "action": "HOLD",
+                "confidence": 0,
+                "reasoning": "Insufficient data for analysis"
+            }
+            
+            # Extract technical recommendation
+            if technical_analysis and not technical_analysis.get("error"):
+                tech_rec = technical_analysis.get("recommendation", {})
+                combined["technical_action"] = tech_rec.get("action", "HOLD")
+                combined["technical_confidence"] = int(tech_rec.get("confidence", 0))
+                combined["technical_reasoning"] = tech_rec.get("reasoning", "")
+                
+                # Use technical as base
+                combined["action"] = combined["technical_action"]
+                combined["confidence"] = combined["technical_confidence"]
+                combined["reasoning"] = combined["technical_reasoning"]
+            
+            # Incorporate sentiment if available
+            if sentiment_analysis and not sentiment_analysis.get("error"):
+                sent_data = sentiment_analysis
+                combined["sentiment"] = sent_data.get("overall_sentiment", "NEUTRAL")
+                combined["sentiment_confidence"] = int(sent_data.get("confidence", 50))
+                combined["market_impact"] = sent_data.get("market_impact", "MEDIUM")
+                
+                # Adjust recommendation based on sentiment
+                if combined["sentiment"] == "BULLISH" and combined["technical_action"] == "BUY":
+                    combined["confidence"] = min(100, combined["confidence"] + 10)
+                    combined["reasoning"] += " + Bullish sentiment confirmation"
+                elif combined["sentiment"] == "BEARISH" and combined["technical_action"] == "SELL":
+                    combined["confidence"] = min(100, combined["confidence"] + 10)
+                    combined["reasoning"] += " + Bearish sentiment confirmation"
+                elif combined["sentiment"] == "BEARISH" and combined["technical_action"] == "BUY":
+                    combined["confidence"] = max(0, combined["confidence"] - 15)
+                    combined["reasoning"] += " - Bearish sentiment conflict"
+                elif combined["sentiment"] == "BULLISH" and combined["technical_action"] == "SELL":
+                    combined["confidence"] = max(0, combined["confidence"] - 15)
+                    combined["reasoning"] += " - Bullish sentiment conflict"
+            
+            # Final validation
+            if combined["confidence"] < 55:
+                combined["action"] = "HOLD"
+                combined["reasoning"] = "Low confidence - holding position"
+            
+            return combined
+            
+        except Exception as e:
+            logger.error(f"Error combining analyses: {e}")
+            return {
+                "action": "HOLD",
+                "confidence": 0,
+                "reasoning": f"Analysis combination error: {str(e)}"
+            }
     
     async def get_capital_management_advice(self, capital_context: Dict[str, Any], 
                                           base_position_size: float, max_position_size: float,
@@ -713,7 +1033,7 @@ def create_llm_service(config: Dict[str, Any] = None) -> LLMIntegrationService:
 
 # Test function
 def test_llm_integration():
-    """Test LLM integration service"""
+    """Test LLM integration service with enhanced features"""
     
     # Sample market data with realistic patterns
     sample_data = {
@@ -733,15 +1053,91 @@ def test_llm_integration():
         ]
     }
     
-    # Initialize service
-    service = create_llm_service()
+    # Sample news data for sentiment analysis
+    sample_news = [
+        {
+            "title": "Bitcoin Reaches New All-Time High",
+            "content": "Bitcoin has reached a new all-time high of $52,000, driven by institutional adoption and positive market sentiment.",
+            "timestamp": "2024-01-15T10:00:00Z",
+            "source": "CryptoNews"
+        },
+        {
+            "title": "Major Bank Announces Bitcoin Investment",
+            "content": "A major investment bank has announced a $1 billion Bitcoin investment, signaling growing institutional confidence.",
+            "timestamp": "2024-01-15T09:30:00Z",
+            "source": "Financial Times"
+        }
+    ]
     
-    print("✅ LLM Integration Service initialized!")
+    # Initialize service with enhanced configuration
+    config = {
+        'enable_caching': True,
+        'max_retries': 3,
+        'retry_delay': 1.0,
+        'timeout': 30
+    }
+    
+    service = create_llm_service(config)
+    
+    print("✅ Enhanced LLM Integration Service initialized!")
     print(f"   OpenAI: {'✅' if service.openai_client else '❌'}")
     print(f"   Claude: {'✅' if service.claude_client else '❌'}")
     print(f"   Gemini: {'✅' if service.gemini_client else '❌'}")
+    print(f"   Caching: {'✅' if service.enable_caching else '❌'}")
+    print(f"   Max Retries: {service.max_retries}")
+    print(f"   Timeout: {service.timeout}s")
     
     return service
+
+async def test_enhanced_features():
+    """Test enhanced LLM integration features"""
+    service = test_llm_integration()
+    
+    # Test data
+    sample_data = {
+        "1h": [
+            {"timestamp": 1640995200000, "open": 47000, "high": 48000, "low": 46500, "close": 47500, "volume": 1000},
+            {"timestamp": 1640998800000, "open": 47500, "high": 49000, "low": 47000, "close": 48500, "volume": 1200}
+        ]
+    }
+    
+    sample_news = [
+        {
+            "title": "Bitcoin Bull Run Continues",
+            "content": "Bitcoin shows strong momentum with institutional adoption increasing.",
+            "timestamp": "2024-01-15T10:00:00Z",
+            "source": "CryptoNews"
+        }
+    ]
+    
+    print("\n🧪 Testing Enhanced Features:")
+    
+    # Test 1: Basic market analysis
+    print("\n1. Testing Market Analysis...")
+    try:
+        result = await service.analyze_market("BTC/USDT", sample_data, "gemini")
+        print(f"   ✅ Market Analysis: {result.get('recommendation', {}).get('action', 'N/A')}")
+    except Exception as e:
+        print(f"   ❌ Market Analysis failed: {e}")
+    
+    # Test 2: Sentiment Analysis
+    print("\n2. Testing Sentiment Analysis...")
+    try:
+        result = await service.analyze_sentiment(sample_news, "gemini")
+        print(f"   ✅ Sentiment: {result.get('overall_sentiment', 'N/A')}")
+    except Exception as e:
+        print(f"   ❌ Sentiment Analysis failed: {e}")
+    
+    # Test 3: Comprehensive Analysis
+    print("\n3. Testing Comprehensive Analysis...")
+    try:
+        result = await service.comprehensive_analysis("BTC/USDT", sample_data, sample_news, "gemini")
+        combined = result.get('combined_recommendation', {})
+        print(f"   ✅ Combined Analysis: {combined.get('action', 'N/A')} (Confidence: {combined.get('confidence', 0)}%)")
+    except Exception as e:
+        print(f"   ❌ Comprehensive Analysis failed: {e}")
+    
+    print("\n🎉 Enhanced LLM Integration testing completed!")
 
 if __name__ == "__main__":
     test_llm_integration()

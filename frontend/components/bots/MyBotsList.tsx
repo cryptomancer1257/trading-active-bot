@@ -290,16 +290,14 @@ export default function MyBotsList() {
 
                     {/* Actions */}
                     <div className="flex items-center space-x-2 ml-4">
-                      {bot.status === BotStatus.APPROVED && (
-                        <Link href={`/marketplace/${bot.id}`}>
-                          <button className="p-2 text-gray-400 hover:text-gray-600 rounded-md hover:bg-gray-100">
-                            <EyeIcon className="h-5 w-5" />
-                          </button>
-                        </Link>
-                      )}
+                      <Link href={`/creator/entities/${bot.id}`}>
+                        <button className="p-2 text-gray-400 hover:text-gray-600 rounded-md hover:bg-gray-100" title="View Details">
+                          <EyeIcon className="h-5 w-5" />
+                        </button>
+                      </Link>
                       
-                      <Link href={`/developer/bots/${bot.id}/edit`}>
-                        <button className="p-2 text-blue-400 hover:text-blue-600 rounded-md hover:bg-blue-50">
+                      <Link href={`/creator/entities/${bot.id}/edit`}>
+                        <button className="p-2 text-blue-400 hover:text-blue-600 rounded-md hover:bg-blue-50" title="Edit Bot">
                           <PencilIcon className="h-5 w-5" />
                         </button>
                       </Link>
