@@ -2060,3 +2060,112 @@ def update_credentials_last_used(db: Session, credentials_id: int):
         models.DeveloperExchangeCredentials.id == credentials_id
     ).update({"last_used_at": datetime.utcnow()})
     db.commit()
+
+# --- Bot-Prompt CRUD ---
+
+def get_bot_prompts(db: Session, bot_id: int) -> List[models.BotPrompt]:
+    """Get all prompts attached to a bot"""
+    return db.query(models.BotPrompt).filter(
+        models.BotPrompt.bot_id == bot_id
+    ).options(
+        joinedload(models.BotPrompt.prompt_template),
+        joinedload(models.BotPrompt.bot)
+    ).order_by(desc(models.BotPrompt.priority), desc(models.BotPrompt.attached_at)).all()
+
+def get_prompt_bots(db: Session, prompt_id: int) -> List[models.BotPrompt]:
+    """Get all bots using a specific prompt"""
+    return db.query(models.BotPrompt).filter(
+        models.BotPrompt.prompt_id == prompt_id
+    ).options(
+        joinedload(models.BotPrompt.bot),
+        joinedload(models.BotPrompt.prompt_template)
+    ).order_by(desc(models.BotPrompt.priority), desc(models.BotPrompt.attached_at)).all()
+
+def attach_prompt_to_bot(db: Session, bot_id: int, prompt_id: int, priority: int = 0, custom_override: str = None) -> models.BotPrompt:
+    """Attach a prompt to a bot"""
+    bot_prompt = models.BotPrompt(
+        bot_id=bot_id,
+        prompt_id=prompt_id,
+        priority=priority,
+        custom_override=custom_override,
+        is_active=True
+    )
+    db.add(bot_prompt)
+    db.commit()
+    db.refresh(bot_prompt)
+    return bot_prompt
+
+def detach_prompt_from_bot(db: Session, bot_prompt_id: int):
+    """Detach a prompt from a bot"""
+    bot_prompt = db.query(models.BotPrompt).filter(models.BotPrompt.id == bot_prompt_id).first()
+    if bot_prompt:
+        db.delete(bot_prompt)
+        db.commit()
+    return bot_prompt
+
+def update_bot_prompt(db: Session, bot_prompt_id: int, update_data: dict) -> models.BotPrompt:
+    """Update bot-prompt relationship settings"""
+    bot_prompt = db.query(models.BotPrompt).filter(models.BotPrompt.id == bot_prompt_id).first()
+    if not bot_prompt:
+        return None
+    
+    for field, value in update_data.dict(exclude_unset=True).items():
+        setattr(bot_prompt, field, value)
+    
+    db.commit()
+    db.refresh(bot_prompt)
+    return bot_prompt
+
+def get_suggested_prompts(db: Session, bot_id: int, limit: int = 10) -> List[models.PromptTemplate]:
+    """Get suggested prompts for a bot based on bot type and category"""
+    bot = db.query(models.Bot).filter(models.Bot.id == bot_id).first()
+    if not bot:
+        return []
+    
+    # Get already attached prompt IDs
+    attached_prompt_ids = db.query(models.BotPrompt.prompt_id).filter(
+        models.BotPrompt.bot_id == bot_id
+    ).subquery()
+    
+    # Build query based on bot characteristics
+    query = db.query(models.PromptTemplate).filter(
+        models.PromptTemplate.is_active == True,
+        ~models.PromptTemplate.id.in_(attached_prompt_ids)
+    )
+    
+    # Smart suggestions based on bot type
+    if bot.bot_type == "LLM":
+        query = query.filter(models.PromptTemplate.category == "TRADING")
+    elif bot.bot_type == "TECHNICAL":
+        query = query.filter(models.PromptTemplate.category.in_(["TRADING", "ANALYSIS"]))
+    elif bot.bot_type == "ML":
+        query = query.filter(models.PromptTemplate.category.in_(["ANALYSIS", "RISK_MANAGEMENT"]))
+    
+    return query.order_by(desc(models.PromptTemplate.is_default), desc(models.PromptTemplate.created_at)).limit(limit).all()
+
+def get_suggested_bots(db: Session, prompt_id: int, limit: int = 10) -> List[models.Bot]:
+    """Get suggested bots for a prompt"""
+    prompt = db.query(models.PromptTemplate).filter(models.PromptTemplate.id == prompt_id).first()
+    if not prompt:
+        return []
+    
+    # Get bots already using this prompt
+    attached_bot_ids = db.query(models.BotPrompt.bot_id).filter(
+        models.BotPrompt.prompt_id == prompt_id
+    ).subquery()
+    
+    # Build query based on prompt category
+    query = db.query(models.Bot).filter(
+        models.Bot.status == models.BotStatus.APPROVED,
+        ~models.Bot.id.in_(attached_bot_ids)
+    )
+    
+    # Smart suggestions based on prompt category
+    if prompt.category == "TRADING":
+        query = query.filter(models.Bot.bot_type.in_(["TECHNICAL", "LLM"]))
+    elif prompt.category == "ANALYSIS":
+        query = query.filter(models.Bot.bot_type.in_(["ML", "TECHNICAL"]))
+    elif prompt.category == "RISK_MANAGEMENT":
+        query = query.filter(models.Bot.bot_type.in_(["ML", "TECHNICAL"]))
+    
+    return query.order_by(desc(models.Bot.total_subscribers), desc(models.Bot.average_rating)).limit(limit).all()
