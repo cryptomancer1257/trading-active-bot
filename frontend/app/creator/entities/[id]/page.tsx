@@ -15,6 +15,9 @@ import { CheckCircleIcon, ClockIcon, XCircleIcon, ArchiveBoxIcon } from '@heroic
 import Link from 'next/link'
 import BotPromptsTab from '@/components/BotPromptsTab'
 import RiskManagementTab from '@/components/RiskManagementTab'
+import toast from 'react-hot-toast'
+import config from '@/lib/config'
+import { useAuth } from '@/contexts/AuthContext'
 
 type TabType = 'overview' | 'prompts' | 'risk-management' | 'settings' | 'analytics'
 
@@ -22,8 +25,10 @@ export default function BotDetailPage() {
   const router = useRouter()
   const params = useParams()
   const botId = params?.id as string
+  const { user } = useAuth()
 
   const [activeTab, setActiveTab] = useState<TabType>('overview')
+  const [isStartingTrial, setIsStartingTrial] = useState(false)
 
   // Mock bot data for testing
   const bot = {
@@ -38,6 +43,59 @@ export default function BotDetailPage() {
     timeframe: '1h',
     leverage: 10,
     created_at: '2025-09-27T08:39:45'
+  }
+
+  const handleStartFreeTrial = async () => {
+    if (isStartingTrial) return
+    
+    setIsStartingTrial(true)
+    
+    try {
+      // Calculate start and end dates for 24h free trial
+      const startDate = new Date()
+      const endDate = new Date(startDate.getTime() + 24 * 60 * 60 * 1000) // 24 hours later
+      
+      // Get current user ID from auth context
+      const currentUserId = user?.id || 1 // Fallback to admin user if not authenticated
+      
+      const subscriptionData = {
+        user_principal_id: `trial_user_${Date.now()}`, // Generate unique principal ID for trial
+        user_id: currentUserId, // Add developer user_id
+        bot_id: bot.id,
+        subscription_start: startDate.toISOString(),
+        subscription_end: endDate.toISOString()
+      }
+      
+      // Call marketplace subscription API
+      const response = await fetch(`${config.studioBaseUrl}${config.endpoints.marketplaceSubscription}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': config.marketplaceApiKey
+        },
+        body: JSON.stringify(subscriptionData)
+      })
+      
+      if (response.ok) {
+        const result = await response.json()
+        toast.success('🎉 24h Free Trial Started! Your bot is now active.')
+        
+        // Show success modal with trial details
+        setTimeout(() => {
+          alert(`🚀 Free Trial Activated!\n\nBot: ${bot.name}\nSubscription ID: ${result.subscription_id}\nDuration: 24 hours\nExpires: ${endDate.toLocaleString()}\nStatus: ${result.status}\n\nNeed help? Contact us on Telegram or Discord!`)
+        }, 1000)
+        
+      } else {
+        const error = await response.json()
+        toast.error(`Failed to start trial: ${error.detail || 'Unknown error'}`)
+      }
+      
+    } catch (error) {
+      console.error('Error starting free trial:', error)
+      toast.error('Failed to start free trial. Please try again.')
+    } finally {
+      setIsStartingTrial(false)
+    }
   }
 
   const renderContent = () => {
@@ -63,6 +121,90 @@ export default function BotDetailPage() {
                 <p className="text-gray-300"><strong>Pair:</strong> {bot.trading_pair}</p>
                 <p className="text-gray-300"><strong>Timeframe:</strong> {bot.timeframe}</p>
                 <p className="text-gray-300"><strong>Leverage:</strong> {bot.leverage}x</p>
+              </div>
+            </div>
+
+            {/* Backtest Section */}
+            <div className="bg-gradient-to-r from-purple-900/30 to-blue-900/30 p-6 rounded-lg shadow-lg border border-purple-700">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-xl font-bold text-white mb-2">🧪 Backtest Your Bot</h3>
+                  <p className="text-gray-300">Test your bot's performance with 24h free trial</p>
+                </div>
+                <div className="text-right">
+                  <div className="text-2xl font-bold text-green-400">FREE</div>
+                  <div className="text-sm text-gray-400">24 hours</div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
+                  <h4 className="text-lg font-semibold text-white mb-2">📊 What You Get</h4>
+                  <ul className="text-gray-300 space-y-1">
+                    <li>• Real-time market analysis</li>
+                    <li>• Historical performance data</li>
+                    <li>• Risk management insights</li>
+                    <li>• Trading signal validation</li>
+                  </ul>
+                </div>
+
+                <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
+                  <h4 className="text-lg font-semibold text-white mb-2">🚀 Quick Start</h4>
+                  <ul className="text-gray-300 space-y-1">
+                    <li>• No setup required</li>
+                    <li>• Instant activation</li>
+                    <li>• Full bot capabilities</li>
+                    <li>• 24/7 monitoring</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
+                <div className="flex items-center space-x-4">
+                  <button
+                    onClick={() => handleStartFreeTrial()}
+                    disabled={isStartingTrial}
+                    className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 disabled:from-gray-600 disabled:to-gray-700 text-white px-6 py-3 rounded-lg font-semibold transition-all duration-200 transform hover:scale-105 disabled:scale-100 disabled:cursor-not-allowed shadow-lg"
+                  >
+                    {isStartingTrial ? (
+                      <span className="flex items-center">
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        Starting Trial...
+                      </span>
+                    ) : (
+                      '🚀 Start 24h Free Trial'
+                    )}
+                  </button>
+                  
+                  <div className="text-center">
+                    <div className="text-sm text-gray-400 mb-1">Need help?</div>
+                    <div className="flex space-x-2">
+                      <a
+                        href="https://t.me/cryptomancer_ai_bot"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-400 hover:text-blue-300 text-sm font-medium"
+                      >
+                        📱 Telegram
+                      </a>
+                      <span className="text-gray-500">|</span>
+                      <a
+                        href="https://discord.gg/cryptomancer_ai_bot"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-indigo-400 hover:text-indigo-300 text-sm font-medium"
+                      >
+                        💬 Discord
+                      </a>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="text-right">
+                  <div className="text-xs text-gray-500">
+                    Trial starts immediately • No credit card required
+                  </div>
+                </div>
               </div>
             </div>
           </div>

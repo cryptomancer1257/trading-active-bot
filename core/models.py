@@ -66,6 +66,7 @@ class PayPalPaymentStatus(enum.Enum):
 class PaymentMethod(enum.Enum):
     STRIPE = "STRIPE"
     PAYPAL = "PAYPAL"
+    TRIAL = "TRIAL"
 
 class PayPalEnvironment(enum.Enum):
     SANDBOX = "sandbox"
