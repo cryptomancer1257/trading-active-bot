@@ -138,7 +138,7 @@ export default function MyEntitiesPage() {
               <CpuChipIcon className="h-8 w-8 text-yellow-400" />
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-400">ICP Total Revenue Potential</p>
-                <p className="text-2xl font-bold text-white">{botsArray.reduce((sum, bot) => sum + parseFloat(bot.price_per_month || '0'), 0).toFixed(1)}</p>
+                <p className="text-2xl font-bold text-white">{botsArray.reduce((sum, bot) => sum + (parseFloat(String(bot.price_per_month || '0')) || 0), 0).toFixed(1)}</p>
               </div>
             </div>
           </div>

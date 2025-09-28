@@ -1292,7 +1292,7 @@ class PromptTemplatePublic(BaseModel):
 class PromptTemplateInDB(PromptTemplateBase):
     """Schema for prompt templates in database"""
     id: int
-    created_by: int
+    created_by: Optional[int] = None
     created_at: datetime
     updated_at: datetime
     

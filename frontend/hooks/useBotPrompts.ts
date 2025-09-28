@@ -49,7 +49,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 const fetchBotPrompts = async (botId: number): Promise<BotPrompt[]> => {
   const response = await fetch(`${API_BASE}/bot-prompts/bots/${botId}/prompts`, {
     headers: {
-      'Authorization': `Bearer ${localStorage.getItem('token')}`,
+      'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
     },
   })
   if (!response.ok) {
@@ -61,7 +61,7 @@ const fetchBotPrompts = async (botId: number): Promise<BotPrompt[]> => {
 const fetchPromptBots = async (promptId: number): Promise<BotPrompt[]> => {
   const response = await fetch(`${API_BASE}/bot-prompts/prompts/${promptId}/bots`, {
     headers: {
-      'Authorization': `Bearer ${localStorage.getItem('token')}`,
+      'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
     },
   })
   if (!response.ok) {
@@ -78,7 +78,7 @@ const attachPromptToBot = async (botId: number, promptId: number, data: AttachPr
   const response = await fetch(`${API_BASE}/bot-prompts/bots/${botId}/prompts/${promptId}?${params}`, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${localStorage.getItem('token')}`,
+      'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
     },
   })
   if (!response.ok) {
@@ -91,7 +91,7 @@ const detachPromptFromBot = async (botId: number, promptId: number): Promise<voi
   const response = await fetch(`${API_BASE}/bot-prompts/bots/${botId}/prompts/${promptId}`, {
     method: 'DELETE',
     headers: {
-      'Authorization': `Bearer ${localStorage.getItem('token')}`,
+      'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
     },
   })
   if (!response.ok) {
@@ -104,7 +104,7 @@ const updateBotPrompt = async (botId: number, promptId: number, data: UpdateBotP
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${localStorage.getItem('token')}`,
+      'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
     },
     body: JSON.stringify(data),
   })
@@ -117,7 +117,7 @@ const updateBotPrompt = async (botId: number, promptId: number, data: UpdateBotP
 const fetchSuggestedPrompts = async (botId: number, limit: number = 10): Promise<any[]> => {
   const response = await fetch(`${API_BASE}/bot-prompts/bots/${botId}/suggested-prompts?limit=${limit}`, {
     headers: {
-      'Authorization': `Bearer ${localStorage.getItem('token')}`,
+      'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
     },
   })
   if (!response.ok) {
@@ -129,7 +129,7 @@ const fetchSuggestedPrompts = async (botId: number, limit: number = 10): Promise
 const fetchSuggestedBots = async (promptId: number, limit: number = 10): Promise<any[]> => {
   const response = await fetch(`${API_BASE}/bot-prompts/prompts/${promptId}/suggested-bots?limit=${limit}`, {
     headers: {
-      'Authorization': `Bearer ${localStorage.getItem('token')}`,
+      'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
     },
   })
   if (!response.ok) {

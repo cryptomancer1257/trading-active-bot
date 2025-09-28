@@ -11,6 +11,10 @@ const nextConfig = {
       },
     ]
   },
+  // Default port configuration
+  env: {
+    PORT: '3001',
+  },
 }
 
 module.exports = nextConfig

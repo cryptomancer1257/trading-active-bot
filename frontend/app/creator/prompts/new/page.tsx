@@ -63,7 +63,7 @@ export default function NewPromptPage() {
     setFormData(prev => ({
       ...prev,
       name: template.name,
-      description: template.description,
+      description: template.description || '',
       content: template.content,
       category: template.category as 'TRADING' | 'ANALYSIS' | 'RISK_MANAGEMENT'
     }))
