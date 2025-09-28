@@ -2134,44 +2134,81 @@ class BinanceFuturesBot(CustomBot):
             return None
 
     def save_transaction_to_db(self, trade_result: Dict[str, Any]):
-        """Save trade transaction to database"""
+        """Save trade transaction to MySQL database"""
         try:
-            # This would connect to your database and save transaction
-            # For now, save to local JSON file for tracking
-            import json
+            from core.database import get_db
+            from core import models
+            from sqlalchemy.orm import Session
             from datetime import datetime
             
-            transaction = {
-                'timestamp': datetime.now().isoformat(),
-                'action': trade_result.get('action'),
-                'symbol': trade_result.get('symbol'),
-                'quantity': trade_result.get('quantity'),
-                'entry_price': trade_result.get('entry_price'),
-                'leverage': trade_result.get('leverage'),
-                'stop_loss': trade_result.get('stop_loss'),
-                'take_profit': trade_result.get('take_profit'),
-                'order_id': trade_result.get('main_order_id'),
-                'confidence': trade_result.get('confidence'),
-                'reason': trade_result.get('reason')
-            }
+            # Get database session
+            db = next(get_db())
             
-            # Save to file
-            filename = 'futures_transactions.json'
-            try:
-                with open(filename, 'r') as f:
-                    transactions = json.load(f)
-            except:
-                transactions = []
+            # Create transaction record
+            transaction = models.Transaction(
+                user_id=trade_result.get('user_id', 1),  # Default to admin user
+                bot_id=trade_result.get('bot_id', 1),    # Default bot ID
+                subscription_id=trade_result.get('subscription_id'),
+                action=trade_result.get('action'),
+                symbol=trade_result.get('symbol'),
+                quantity=float(trade_result.get('quantity', 0)),
+                entry_price=float(trade_result.get('entry_price', 0)),
+                leverage=int(trade_result.get('leverage', 1)),
+                stop_loss=float(trade_result.get('stop_loss', 0)) if trade_result.get('stop_loss') else None,
+                take_profit=float(trade_result.get('take_profit', 0)) if trade_result.get('take_profit') else None,
+                order_id=trade_result.get('main_order_id'),
+                confidence=float(trade_result.get('confidence', 0)) if trade_result.get('confidence') else None,
+                reason=trade_result.get('reason'),
+                status='PENDING',  # Default status
+                created_at=datetime.now(),
+                updated_at=datetime.now()
+            )
             
-            transactions.append(transaction)
+            # Add to database
+            db.add(transaction)
+            db.commit()
+            db.refresh(transaction)
             
-            with open(filename, 'w') as f:
-                json.dump(transactions, f, indent=2)
-            
-            print(f"✅ Transaction saved to {filename}")
+            print(f"✅ Transaction saved to database with ID: {transaction.id}")
             
         except Exception as e:
-            print(f"❌ Failed to save transaction: {e}")
+            print(f"❌ Failed to save transaction to database: {e}")
+            # Fallback to JSON file if database fails
+            try:
+                import json
+                from datetime import datetime
+                
+                transaction = {
+                    'timestamp': datetime.now().isoformat(),
+                    'action': trade_result.get('action'),
+                    'symbol': trade_result.get('symbol'),
+                    'quantity': trade_result.get('quantity'),
+                    'entry_price': trade_result.get('entry_price'),
+                    'leverage': trade_result.get('leverage'),
+                    'stop_loss': trade_result.get('stop_loss'),
+                    'take_profit': trade_result.get('take_profit'),
+                    'order_id': trade_result.get('main_order_id'),
+                    'confidence': trade_result.get('confidence'),
+                    'reason': trade_result.get('reason')
+                }
+                
+                # Save to file as fallback
+                filename = 'futures_transactions.json'
+                try:
+                    with open(filename, 'r') as f:
+                        transactions = json.load(f)
+                except:
+                    transactions = []
+                
+                transactions.append(transaction)
+                
+                with open(filename, 'w') as f:
+                    json.dump(transactions, f, indent=2)
+                
+                print(f"✅ Transaction saved to {filename} as fallback")
+                
+            except Exception as fallback_error:
+                print(f"❌ Failed to save transaction to file: {fallback_error}")
 
 async def main_execution():
     """Main execution function for real trading"""
