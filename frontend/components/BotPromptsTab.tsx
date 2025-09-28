@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { 
   PlusIcon, 
   TrashIcon, 
@@ -9,9 +10,12 @@ import {
   ExclamationTriangleIcon,
   CheckCircleIcon,
   XCircleIcon,
-  LightBulbIcon
+  LightBulbIcon,
+  EyeIcon
 } from '@heroicons/react/24/outline'
 import toast from 'react-hot-toast'
+import { useBotPrompts, useAttachPrompt, useDetachPrompt, useUpdateBotPrompt } from '@/hooks/useBotPrompts'
+import { useMyPrompts } from '@/hooks/usePrompts'
 
 interface BotPromptsTabProps {
   botId: number
@@ -23,63 +27,92 @@ export default function BotPromptsTab({ botId }: BotPromptsTabProps) {
   const [priority, setPriority] = useState(0)
   const [customOverride, setCustomOverride] = useState('')
 
-  // Mock data for testing
-  const attachedPrompts = [
-    {
-      id: 1,
-      prompt_template: {
-        name: "Advanced Trading Analysis",
-        description: "Comprehensive market analysis with technical indicators",
-        category: "TRADING"
-      },
-      priority: 2,
-      is_active: true,
-      custom_override: null
-    }
-  ]
+  // Use real data hooks
+  const { data: botPrompts, isLoading: botPromptsLoading, error: botPromptsError } = useBotPrompts(botId)
+  const { data: myPrompts, isLoading: myPromptsLoading } = useMyPrompts()
+  const attachPromptMutation = useAttachPrompt()
+  const detachPromptMutation = useDetachPrompt()
+  const updatePromptMutation = useUpdateBotPrompt()
 
-  const suggestedPrompts = [
-    {
-      id: 2,
-      name: "Risk Management & Capital Allocation",
-      description: "AI-driven risk assessment and position sizing",
-      category: "RISK_MANAGEMENT"
-    },
-    {
-      id: 3,
-      name: "Market Analysis Engine",
-      description: "Real-time market sentiment and trend analysis",
-      category: "ANALYSIS"
-    }
-  ]
+  // Get attached prompts
+  const attachedPrompts = botPrompts?.filter(bp => bp.is_active) || []
 
-  const allPrompts = [
-    {
-      id: 4,
-      name: "News Sentiment Analysis",
-      description: "Analyze market sentiment from news sources",
-      category: "ANALYSIS"
-    },
-    {
-      id: 5,
-      name: "Comprehensive Market Analysis",
-      description: "Complete market overview with multiple indicators",
-      category: "TRADING"
-    }
-  ]
+  // Get suggested prompts (prompts not yet attached)
+  const attachedPromptIds = attachedPrompts.map(ap => ap.prompt_template?.id).filter(Boolean)
+  const suggestedPrompts = myPrompts?.filter(p => !attachedPromptIds.includes(p.id)) || []
 
-  const handleAttachPrompt = (promptId: number) => {
-    toast.success(`Prompt ${promptId} attached successfully!`)
-    setShowAttachModal(false)
-    setSelectedPrompt(null)
+  // All available prompts (user's prompts only)
+  const allPrompts = myPrompts || []
+  
+  // Debug logs
+  console.log('🔍 BotPromptsTab Debug:', {
+    botId,
+    botPrompts: botPrompts?.length || 0,
+    myPrompts: myPrompts?.length || 0,
+    attachedPrompts: attachedPrompts.length,
+    suggestedPrompts: suggestedPrompts.length,
+    allPrompts: allPrompts.length,
+    myPromptsData: myPrompts
+  })
+
+  const handleAttachPrompt = async (promptId: number) => {
+    try {
+      await attachPromptMutation.mutateAsync({
+        botId,
+        promptId,
+        data: {
+          priority,
+          custom_override: customOverride || undefined
+        }
+      })
+      toast.success('Prompt attached successfully!')
+      setShowAttachModal(false)
+      setSelectedPrompt(null)
+    } catch (error) {
+      console.error('Error attaching prompt:', error)
+      toast.error('Failed to attach prompt')
+    }
   }
 
-  const handleDetachPrompt = (promptId: number) => {
-    toast.success(`Prompt ${promptId} detached successfully!`)
+  const handleDetachPrompt = async (botPromptId: number) => {
+    try {
+      // Find the prompt template ID from the bot prompt
+      const botPrompt = attachedPrompts.find(bp => bp.id === botPromptId)
+      if (!botPrompt) {
+        toast.error('Prompt not found')
+        return
+      }
+      
+      await detachPromptMutation.mutateAsync({
+        botId,
+        promptId: botPrompt.prompt_template.id
+      })
+      toast.success('Prompt detached successfully!')
+    } catch (error) {
+      console.error('Error detaching prompt:', error)
+      toast.error('Failed to detach prompt')
+    }
   }
 
-  const handleUpdatePrompt = (promptId: number) => {
-    toast.success(`Prompt ${promptId} updated successfully!`)
+  const handleUpdatePrompt = async (botPromptId: number, updateData: any) => {
+    try {
+      // Find the prompt template ID from the bot prompt
+      const botPrompt = attachedPrompts.find(bp => bp.id === botPromptId)
+      if (!botPrompt) {
+        toast.error('Prompt not found')
+        return
+      }
+      
+      await updatePromptMutation.mutateAsync({
+        botId,
+        promptId: botPrompt.prompt_template.id,
+        data: updateData
+      })
+      toast.success('Prompt updated successfully!')
+    } catch (error) {
+      console.error('Error updating prompt:', error)
+      toast.error('Failed to update prompt')
+    }
   }
 
   const getPriorityColor = (priority: number) => {
@@ -100,6 +133,28 @@ export default function BotPromptsTab({ botId }: BotPromptsTabProps) {
     }
   }
 
+  // Loading state
+  if (botPromptsLoading || myPromptsLoading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+        <span className="ml-2 text-gray-400">Loading prompts...</span>
+      </div>
+    )
+  }
+
+  // Error state
+  if (botPromptsError) {
+    return (
+      <div className="bg-red-900/30 border border-red-700 text-red-300 p-4 rounded-md">
+        <div className="flex items-center">
+          <ExclamationTriangleIcon className="h-5 w-5 mr-2" />
+          <span>Error loading prompts: {botPromptsError.message}</span>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="p-6 space-y-8">
       {/* Attached Prompts */}
@@ -116,8 +171,22 @@ export default function BotPromptsTab({ botId }: BotPromptsTabProps) {
               <li key={bp.id} className="bg-gray-800 p-4 rounded-lg shadow-md border border-gray-700">
                 <div className="flex justify-between items-center">
                   <div>
-                    <h4 className="text-lg font-medium text-white">{bp.prompt_template.name}</h4>
-                    <p className="text-sm text-gray-400">{bp.prompt_template.description}</p>
+                    <div className="flex items-center space-x-2">
+                      <Link 
+                        href={`/creator/prompts/${bp.prompt_template?.id}`}
+                        className="text-lg font-medium text-white hover:text-blue-400 transition-colors cursor-pointer"
+                      >
+                        {bp.prompt_template?.name || 'Unknown Prompt'}
+                      </Link>
+                      <Link 
+                        href={`/creator/prompts/${bp.prompt_template?.id}`}
+                        className="p-1 rounded text-gray-400 hover:text-blue-400 hover:bg-blue-500/20 transition-colors"
+                        title="View Prompt Details"
+                      >
+                        <EyeIcon className="h-4 w-4" />
+                      </Link>
+                    </div>
+                    <p className="text-sm text-gray-400">{bp.prompt_template?.description || 'No description available'}</p>
                     <div className="mt-2 flex items-center space-x-3 text-sm">
                       <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${getPriorityColor(bp.priority)}`}>
                         Priority: {getPriorityLabel(bp.priority)}
@@ -136,9 +205,10 @@ export default function BotPromptsTab({ botId }: BotPromptsTabProps) {
                   </div>
                   <div className="flex space-x-2">
                     <button
-                      onClick={() => handleUpdatePrompt(bp.id)}
+                      onClick={() => handleUpdatePrompt(bp.id, {})}
                       className="p-2 rounded-full text-blue-400 hover:bg-blue-500/20 hover:text-blue-300 transition-colors"
                       title="Edit Prompt Settings"
+                      disabled={updatePromptMutation.isPending}
                     >
                       <PencilIcon className="h-5 w-5" />
                     </button>
@@ -146,6 +216,7 @@ export default function BotPromptsTab({ botId }: BotPromptsTabProps) {
                       onClick={() => handleDetachPrompt(bp.id)}
                       className="p-2 rounded-full text-red-400 hover:bg-red-500/20 hover:text-red-300 transition-colors"
                       title="Detach Prompt"
+                      disabled={detachPromptMutation.isPending}
                     >
                       <TrashIcon className="h-5 w-5" />
                     </button>
@@ -173,7 +244,21 @@ export default function BotPromptsTab({ botId }: BotPromptsTabProps) {
             {suggestedPrompts.map((prompt) => (
               <li key={prompt.id} className="bg-gray-800 p-3 rounded-lg shadow-md border border-gray-700 flex justify-between items-center">
                 <div>
-                  <h4 className="text-lg font-medium text-white">{prompt.name}</h4>
+                  <div className="flex items-center space-x-2">
+                    <Link 
+                      href={`/creator/prompts/${prompt.id}`}
+                      className="text-lg font-medium text-white hover:text-blue-400 transition-colors cursor-pointer"
+                    >
+                      {prompt.name}
+                    </Link>
+                    <Link 
+                      href={`/creator/prompts/${prompt.id}`}
+                      className="p-1 rounded text-gray-400 hover:text-blue-400 hover:bg-blue-500/20 transition-colors"
+                      title="View Prompt Details"
+                    >
+                      <EyeIcon className="h-4 w-4" />
+                    </Link>
+                  </div>
                   <p className="text-sm text-gray-400">{prompt.description}</p>
                 </div>
                 <button
@@ -207,8 +292,23 @@ export default function BotPromptsTab({ botId }: BotPromptsTabProps) {
             {allPrompts.map((prompt) => (
               <li key={prompt.id} className="bg-gray-800 p-3 rounded-lg shadow-md border border-gray-700 flex justify-between items-center">
                 <div>
-                  <h4 className="text-lg font-medium text-white">{prompt.name}</h4>
-                  <p className="text-sm text-gray-400">{prompt.description}</p>
+                  <div className="flex items-center space-x-2">
+                    <Link 
+                      href={`/creator/prompts/${prompt.id}`}
+                      className="text-lg font-medium text-white hover:text-blue-400 transition-colors cursor-pointer"
+                    >
+                      {prompt.name || 'Unknown Prompt'}
+                    </Link>
+                    <Link 
+                      href={`/creator/prompts/${prompt.id}`}
+                      className="p-1 rounded text-gray-400 hover:text-blue-400 hover:bg-blue-500/20 transition-colors"
+                      title="View Prompt Details"
+                    >
+                      <EyeIcon className="h-4 w-4" />
+                    </Link>
+                  </div>
+                  <p className="text-sm text-gray-400">{prompt.description || 'No description available'}</p>
+                  <span className="text-xs text-gray-500">Category: {prompt.category || 'Unknown'}</span>
                 </div>
                 <button
                   onClick={() => {

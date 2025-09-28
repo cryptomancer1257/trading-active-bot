@@ -356,10 +356,10 @@ export default function MyBotsList() {
               <div className="items-center px-4 py-3">
                 <button
                   onClick={handleDelete}
-                  disabled={deleteBot.isLoading}
+                  disabled={deleteBot.isPending}
                   className="px-4 py-2 bg-red-500 text-white text-base font-medium rounded-md shadow-sm hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-300 mr-3 disabled:opacity-50"
                 >
-                  {deleteBot.isLoading ? 'Đang xóa...' : 'Xóa'}
+                  {deleteBot.isPending ? 'Đang xóa...' : 'Xóa'}
                 </button>
                 <button
                   onClick={() => {
