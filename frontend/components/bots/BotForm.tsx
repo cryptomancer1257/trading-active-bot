@@ -309,18 +309,21 @@ export default function BotForm({ bot, onSuccess, onCancel }: BotFormProps) {
               </div>
             </div>
 
-            {/* Timeframes */}
+            {/* Extra Timeframes */}
             <div>
               <label className="form-label">
-                Khung thời gian hỗ trợ
+                Extra Timeframes
               </label>
-              <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-6">
+              <p className="mt-1 text-sm text-gray-500">
+                Reference timeframes for better decision making
+              </p>
+              <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-6">
                 {timeframeOptions.map((option) => (
                   <button
                     key={option.value}
                     type="button"
                     onClick={() => handleTimeframeToggle(option.value)}
-                    className={`px-3 py-2 text-sm rounded-md border ${
+                    className={`px-3 py-2 text-sm rounded-md border transition-colors ${
                       watchTimeframes?.includes(option.value)
                         ? 'bg-primary-100 border-primary-500 text-primary-700'
                         : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
@@ -330,6 +333,11 @@ export default function BotForm({ bot, onSuccess, onCancel }: BotFormProps) {
                   </button>
                 ))}
               </div>
+              {watchTimeframes && watchTimeframes.length > 0 && (
+                <div className="mt-2 text-sm text-gray-600">
+                  <span className="font-medium">Đã chọn:</span> {watchTimeframes.join(', ')}
+                </div>
+              )}
             </div>
 
             {/* Pricing */}
