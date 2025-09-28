@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS bot_prompts (
 );
 
 -- Create indexes for better performance
-CREATE INDEX IF NOT EXISTS idx_bot_prompts_bot_id ON bot_prompts(bot_id);
-CREATE INDEX IF NOT EXISTS idx_bot_prompts_prompt_id ON bot_prompts(prompt_id);
-CREATE INDEX IF NOT EXISTS idx_bot_prompts_active ON bot_prompts(is_active);
-CREATE INDEX IF NOT EXISTS idx_bot_prompts_priority ON bot_prompts(priority);
+CREATE INDEX idx_bot_prompts_bot_id ON bot_prompts(bot_id);
+CREATE INDEX idx_bot_prompts_prompt_id ON bot_prompts(prompt_id);
+CREATE INDEX idx_bot_prompts_active ON bot_prompts(is_active);
+CREATE INDEX idx_bot_prompts_priority ON bot_prompts(priority);

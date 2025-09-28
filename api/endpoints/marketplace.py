@@ -243,8 +243,8 @@ async def create_marketplace_subscription_v2(
             models.UserPrincipal.status == models.UserPrincipalStatus.ACTIVE
         ).first()
         
-        # Set user_id if principal mapping exists, otherwise NULL
-        user_id = principal_mapping.user_id if principal_mapping else None
+        # Set user_id from request or principal mapping, otherwise NULL
+        user_id = request.user_id if request.user_id else (principal_mapping.user_id if principal_mapping else None)
         
         # Create default configs if not provided
         execution_config = request.execution_config or schemas.ExecutionConfig(
