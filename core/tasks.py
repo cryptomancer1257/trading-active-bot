@@ -1953,6 +1953,23 @@ def run_futures_bot_trading(self, user_principal_id: str = None, config: Dict[st
         logger.info(f"   User Principal ID: {user_principal_id or 'None (Direct Keys)'}")
         logger.info(f"   Config provided: {'Yes' if config else 'No'}")
         
+        # Log task start to database
+        try:
+            from utils.execution_logger import ExecutionLogger
+            bot_id = config.get('bot_id', 1) if config else 1
+            subscription_id = config.get('subscription_id') if config else None
+            execution_logger = ExecutionLogger(bot_id, subscription_id, self.request.id)
+            execution_logger.system(
+                "Futures Bot Celery task started",
+                {
+                    'user_principal_id': user_principal_id,
+                    'config_provided': bool(config),
+                    'trading_pair': config.get('trading_pair', 'BTCUSDT') if config else 'BTCUSDT'
+                }
+            )
+        except Exception as e:
+            logger.error(f"❌ Failed to log task start: {e}")
+        
         # Default configuration for Celery execution
         default_config = {
             'trading_pair': 'BTCUSDT',
@@ -2211,6 +2228,25 @@ async def run_advanced_futures_rpa_workflow(bot, subscription_id: int, subscript
         logger.info("🔍 Step 3: Analyzing multi-timeframe data with LLM...")
         action = await bot.analyze_images_with_llm(image_paths)
         logger.info(f"🎯 RPA LLM Analysis Result: {action}")
+        
+        # Log LLM analysis result
+        try:
+            from utils.execution_logger import ExecutionLogger
+            bot_id = config.get('bot_id', 1)
+            subscription_id = config.get('subscription_id')
+            execution_logger = ExecutionLogger(bot_id, subscription_id, self.request.id)
+            execution_logger.analysis(
+                f"LLM Analysis: {action.action} signal with {action.value*100:.1f}% confidence",
+                {
+                    'action': action.action,
+                    'confidence': action.value,
+                    'reason': action.reason,
+                    'signal_strength': action.value
+                }
+            )
+        except Exception as e:
+            logger.error(f"❌ Failed to log LLM analysis: {e}")
+        
         if action.action == "HOLD":
             logger.info("📊 Signal is HOLD - no position setup needed")
             return action, account_status, None
@@ -2250,10 +2286,59 @@ async def run_advanced_futures_rpa_workflow(bot, subscription_id: int, subscript
                 # Save transaction to database (like main_execution)
                 bot.save_transaction_to_db(trade_result)
                 logger.info("💾 Transaction saved to database")
+                
+                # Log execution to database
+                try:
+                    from utils.execution_logger import ExecutionLogger
+                    bot_id = config.get('bot_id', 1)
+                    subscription_id = config.get('subscription_id')
+                    execution_logger = ExecutionLogger(bot_id, subscription_id, self.request.id)
+                    
+                    # Log successful trade execution
+                    execution_logger.transaction(
+                        f"Trade executed: {action} {trade_result.get('quantity', 0)} {trade_result.get('symbol', 'N/A')} at ${trade_result.get('entry_price', 0)}",
+                        {
+                            'action': action,
+                            'symbol': trade_result.get('symbol'),
+                            'quantity': trade_result.get('quantity'),
+                            'entry_price': trade_result.get('entry_price'),
+                            'leverage': trade_result.get('leverage'),
+                            'order_id': trade_result.get('main_order_id'),
+                            'confidence': trade_result.get('confidence'),
+                            'position_value': trade_result.get('position_value')
+                        }
+                    )
+                    logger.info("📝 Execution logged to database")
+                except Exception as e:
+                    logger.error(f"❌ Failed to log execution: {e}")
             else:
                 logger.error(f"❌ Advanced trade execution failed: {trade_result}")
+                # Log failed execution
+                try:
+                    from utils.execution_logger import ExecutionLogger
+                    bot_id = config.get('bot_id', 1)
+                    subscription_id = config.get('subscription_id')
+                    execution_logger = ExecutionLogger(bot_id, subscription_id, self.request.id)
+                    execution_logger.error(
+                        f"Trade execution failed: {trade_result.get('error', 'Unknown error')}",
+                        {'error': trade_result}
+                    )
+                except Exception as e:
+                    logger.error(f"❌ Failed to log error: {e}")
         else:
             logger.info("📊 Signal is HOLD - no position setup needed")
+            # Log hold signal
+            try:
+                from utils.execution_logger import ExecutionLogger
+                bot_id = config.get('bot_id', 1)
+                subscription_id = config.get('subscription_id')
+                execution_logger = ExecutionLogger(bot_id, subscription_id, self.request.id)
+                execution_logger.system(
+                    "Signal is HOLD - no position setup needed",
+                    {'signal': 'HOLD', 'action': action}
+                )
+            except Exception as e:
+                logger.error(f"❌ Failed to log hold signal: {e}")
         
         logger.info(f"🎉 ADVANCED FUTURES RPA WORKFLOW completed successfully")
         return action, account_status, trade_result
@@ -2262,6 +2347,24 @@ async def run_advanced_futures_rpa_workflow(bot, subscription_id: int, subscript
         logger.error(f"❌ Error in advanced futures RPA workflow: {e}")
         import traceback
         logger.error(traceback.format_exc())
+        
+        # Log error to database
+        try:
+            from utils.execution_logger import ExecutionLogger
+            bot_id = config.get('bot_id', 1) if config else 1
+            subscription_id = config.get('subscription_id') if config else None
+            execution_logger = ExecutionLogger(bot_id, subscription_id, self.request.id)
+            execution_logger.error(
+                f"Advanced futures RPA workflow error: {str(e)}",
+                {
+                    'error': str(e),
+                    'traceback': traceback.format_exc(),
+                    'workflow': 'advanced_futures_rpa'
+                }
+            )
+        except Exception as log_error:
+            logger.error(f"❌ Failed to log error: {log_error}")
+        
         return Action(action="HOLD", value=0.0, reason=f"Advanced RPA workflow error: {e}"), None
 
 @app.task(bind=True, max_retries=3)

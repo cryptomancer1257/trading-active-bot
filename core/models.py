@@ -769,3 +769,74 @@ class DeveloperExchangeCredentials(Base):
         Index('idx_user_exchange_type_network', 'user_id', 'exchange_type', 'credential_type', 'network_type'),
         Index('idx_user_default_credentials', 'user_id', 'is_default'),
     )
+
+class Transaction(Base):
+    """Transaction records for trading activities"""
+    __tablename__ = "transactions"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    bot_id = Column(Integer, ForeignKey("bots.id"), nullable=True)
+    subscription_id = Column(Integer, ForeignKey("subscriptions.id"), nullable=True)
+    
+    # Transaction details
+    action = Column(String(20), nullable=False)  # BUY, SELL, etc.
+    symbol = Column(String(20), nullable=False)  # BTC/USDT
+    quantity = Column(Float, nullable=False)
+    entry_price = Column(Float, nullable=False)
+    leverage = Column(Integer, default=1)
+    stop_loss = Column(Float, nullable=True)
+    take_profit = Column(Float, nullable=True)
+    order_id = Column(String(100), nullable=True)
+    confidence = Column(Float, nullable=True)
+    reason = Column(Text, nullable=True)
+    status = Column(String(20), default='PENDING')  # PENDING, EXECUTED, FAILED
+    
+    # Timestamps
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    
+    # Relationships
+    user = relationship("User")
+    bot = relationship("Bot")
+    subscription = relationship("Subscription")
+    
+    # Indexes for faster queries
+    __table_args__ = (
+        Index('idx_transactions_user_id', 'user_id'),
+        Index('idx_transactions_bot_id', 'bot_id'),
+        Index('idx_transactions_subscription_id', 'subscription_id'),
+        Index('idx_transactions_symbol', 'symbol'),
+        Index('idx_transactions_created_at', 'created_at'),
+    )
+
+class ExecutionLog(Base):
+    """Execution logs for bot trading activities"""
+    __tablename__ = "execution_logs"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    bot_id = Column(Integer, ForeignKey("bots.id"), nullable=False)
+    subscription_id = Column(Integer, ForeignKey("subscriptions.id"), nullable=True)
+    task_id = Column(String(100), nullable=True)  # Celery task ID
+    
+    # Log details
+    log_type = Column(String(20), nullable=False)  # system, analysis, llm, transaction, error
+    message = Column(Text, nullable=False)
+    level = Column(String(10), default='info')  # info, warning, error, debug
+    data = Column(JSON, nullable=True)  # Additional structured data
+    
+    # Timestamps
+    created_at = Column(DateTime, server_default=func.now())
+    
+    # Relationships
+    bot = relationship("Bot")
+    subscription = relationship("Subscription")
+    
+    # Indexes for faster queries
+    __table_args__ = (
+        Index('idx_execution_logs_bot_id', 'bot_id'),
+        Index('idx_execution_logs_subscription_id', 'subscription_id'),
+        Index('idx_execution_logs_task_id', 'task_id'),
+        Index('idx_execution_logs_log_type', 'log_type'),
+        Index('idx_execution_logs_created_at', 'created_at'),
+    )

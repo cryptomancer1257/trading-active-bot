@@ -314,3 +314,78 @@ async def get_api_examples():
             "Results include full trading details and account status"
         ]
     }
+
+@router.get("/logs/{bot_id}")
+async def get_bot_logs(bot_id: int, limit: int = 50):
+    """Get execution logs for a specific bot from Celery task execution"""
+    try:
+        from core.database import get_db
+        from core import models
+        from sqlalchemy.orm import Session
+        from sqlalchemy import desc
+        
+        db = next(get_db())
+        
+        # Get execution logs from database
+        execution_logs = db.query(models.ExecutionLog).filter(
+            models.ExecutionLog.bot_id == bot_id
+        ).order_by(desc(models.ExecutionLog.created_at)).limit(limit).all()
+        
+        # Get transactions for this bot
+        transactions = db.query(models.Transaction).filter(
+            models.Transaction.bot_id == bot_id
+        ).order_by(desc(models.Transaction.created_at)).limit(10).all()
+        
+        logs = []
+        
+        # Add execution logs
+        for log in execution_logs:
+            log_entry = {
+                "timestamp": log.created_at.isoformat(),
+                "type": log.log_type,
+                "message": log.message,
+                "level": log.level,
+                "data": log.data,
+                "task_id": log.task_id
+            }
+            logs.append(log_entry)
+        
+        # Add transaction logs
+        for transaction in transactions:
+            log_entry = {
+                "timestamp": transaction.created_at.isoformat(),
+                "type": "transaction",
+                "message": f"{transaction.action} {transaction.quantity} {transaction.symbol} at ${transaction.entry_price} (${transaction.leverage}x)",
+                "level": "info",
+                "data": {
+                    "action": transaction.action,
+                    "symbol": transaction.symbol,
+                    "quantity": transaction.quantity,
+                    "entry_price": transaction.entry_price,
+                    "leverage": transaction.leverage,
+                    "status": transaction.status,
+                    "confidence": transaction.confidence,
+                    "reason": transaction.reason,
+                    "order_id": transaction.order_id
+                }
+            }
+            logs.append(log_entry)
+        
+        # Sort by timestamp (newest first)
+        logs.sort(key=lambda x: x['timestamp'], reverse=True)
+        
+        return {
+            "status": "success",
+            "bot_id": bot_id,
+            "logs": logs[:limit],
+            "total_logs": len(logs),
+            "last_updated": logs[0]['timestamp'] if logs else None
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get bot logs: {e}")
+        return {
+            "status": "error",
+            "message": f"Failed to get logs for bot {bot_id}",
+            "error": str(e)
+        }
