@@ -8,6 +8,7 @@ import { useAuthGuard } from '@/hooks/useAuthGuard'
 import { UserRole } from '@/lib/types'
 import toast from 'react-hot-toast'
 import MarkdownEditor from '@/components/MarkdownEditor'
+import PromptVariableTester from '@/components/PromptVariableTester'
 
 interface PromptFormData {
   name: string
@@ -28,7 +29,7 @@ export default function EditPromptPage() {
     requiredRole: UserRole.DEVELOPER 
   })
 
-  const { data: prompt, isLoading: promptLoading } = usePrompt(promptId)
+  const { data: prompt, isLoading: promptLoading } = usePrompt(parseInt(promptId))
   const updateMutation = useUpdatePrompt()
 
   const [formData, setFormData] = useState<PromptFormData>({
@@ -41,10 +42,12 @@ export default function EditPromptPage() {
   })
 
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [showVariableTester, setShowVariableTester] = useState(false)
 
   // Populate form when prompt data loads
   useEffect(() => {
     if (prompt) {
+      console.log('📥 Loading prompt data:', prompt)
       setFormData({
         name: prompt.name || '',
         description: prompt.description || '',
@@ -67,6 +70,7 @@ export default function EditPromptPage() {
     e.preventDefault()
     if (isSubmitting) return
 
+    console.log('📝 Form data being submitted:', formData)
     setIsSubmitting(true)
     try {
       await updateMutation.mutateAsync({
@@ -82,7 +86,10 @@ export default function EditPromptPage() {
       })
       
       toast.success('Prompt updated successfully!')
-      router.push('/creator/prompts')
+      // Small delay to ensure cache is updated
+      setTimeout(() => {
+        router.push('/creator/prompts')
+      }, 500)
     } catch (error) {
       console.error('Error updating prompt:', error)
       toast.error('Failed to update prompt. Please try again.')

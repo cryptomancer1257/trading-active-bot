@@ -1,34 +1,97 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { ArrowsPointingOutIcon, ArrowsPointingInIcon } from '@heroicons/react/24/outline'
+import { extractVariables, validateVariables, AVAILABLE_VARIABLES } from '@/utils/promptVariables'
 
 interface MarkdownEditorProps {
   content: string
   onChange: (content: string) => void
   placeholder?: string
   className?: string
+  readOnly?: boolean
 }
 
 export default function MarkdownEditor({ 
   content, 
   onChange, 
   placeholder = "Enter your content here...",
-  className = ""
+  className = "",
+  readOnly = false
 }: MarkdownEditorProps) {
   const [previewMode, setPreviewMode] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [internalContent, setInternalContent] = useState(content)
+  const [fontSize, setFontSize] = useState<'sm' | 'base' | 'lg'>('lg')
+  const [lineHeight, setLineHeight] = useState<'tight' | 'normal' | 'relaxed'>('relaxed')
+  const [wordWrap, setWordWrap] = useState<boolean>(true)
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark')
+  const [syntaxHighlight, setSyntaxHighlight] = useState<boolean>(true)
+  const [spellCheck, setSpellCheck] = useState<boolean>(true)
+  const [autoComplete, setAutoComplete] = useState<boolean>(true)
+  const [autoFocus, setAutoFocus] = useState<boolean>(true)
+  const [autoResize, setAutoResize] = useState<boolean>(true)
+  const [autoScroll, setAutoScroll] = useState<boolean>(true)
+  const [showVariables, setShowVariables] = useState<boolean>(false)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // Sync internal content with prop content
   useEffect(() => {
+    console.log('🔄 MarkdownEditor content sync:', { content, internalContent })
     setInternalContent(content)
   }, [content])
 
-  // Keyboard shortcut for fullscreen (F11 or Ctrl+Enter)
+  // Function to highlight variables in content
+  const highlightVariables = (text: string) => {
+    if (!syntaxHighlight) return text
+    
+    const variables = extractVariables(text)
+    let highlightedText = text
+    
+    variables.forEach(variable => {
+      const regex = new RegExp(`\\{${variable}\\}`, 'g')
+      highlightedText = highlightedText.replace(regex, `<span class="bg-blue-100 text-blue-800 px-1 py-0.5 rounded text-xs font-mono">{${variable}}</span>`)
+    })
+    
+    return highlightedText
+  }
+
+  // Function to insert variable into content
+  const insertVariable = (variable: string) => {
+    const variableText = `{${variable}}`
+    
+    // Use ref to get textarea element
+    if (textareaRef.current) {
+      const textarea = textareaRef.current
+      const start = textarea.selectionStart
+      const end = textarea.selectionEnd
+      const beforeCursor = internalContent.substring(0, start)
+      const afterCursor = internalContent.substring(end)
+      const newContent = beforeCursor + variableText + afterCursor
+      
+      setInternalContent(newContent)
+      onChange(newContent)
+      
+      // Set cursor position after the inserted variable
+      setTimeout(() => {
+        const newCursorPos = start + variableText.length
+        textarea.setSelectionRange(newCursorPos, newCursorPos)
+        textarea.focus()
+      }, 0)
+    } else {
+      // Fallback: append to end if textarea not found
+      const newContent = internalContent + variableText
+      setInternalContent(newContent)
+      onChange(newContent)
+    }
+    
+    // Don't auto-close variables panel - let developer close manually
+  }
+
+  // Fullscreen keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'F11' || (e.ctrlKey && e.key === 'Enter')) {
+      if (e.key === 'F11') {
         e.preventDefault()
         setIsFullscreen(!isFullscreen)
       }
@@ -59,14 +122,14 @@ export default function MarkdownEditor({
   ]
 
   const renderMarkdown = (text: string) => {
-    // Simple markdown rendering
-    return text
+    // Simple markdown rendering with variable highlighting
+    let rendered = text
       .replace(/^### (.*$)/gim, '<h3>$1</h3>')
       .replace(/^## (.*$)/gim, '<h2>$1</h2>')
       .replace(/^# (.*$)/gim, '<h1>$1</h1>')
       .replace(/\*\*(.*)\*\*/gim, '<strong>$1</strong>')
       .replace(/\*(.*)\*/gim, '<em>$1</em>')
-      .replace(/`(.*)`/gim, '<code>$1</code>')
+      .replace(/`(.*)`/gim, '<code class="bg-gray-100 px-1 py-0.5 rounded text-sm font-mono">$1</code>')
       .replace(/^> (.*$)/gim, '<blockquote>$1</blockquote>')
       .replace(/^- (.*$)/gim, '<li>$1</li>')
       .replace(/^\d+\. (.*$)/gim, '<li>$1</li>')
@@ -74,111 +137,198 @@ export default function MarkdownEditor({
       .replace(/!\[([^\]]*)\]\(([^)]+)\)/gim, '<img src="$2" alt="$1" />')
       .replace(/^---$/gim, '<hr />')
       .replace(/\n/g, '<br />')
+    
+    // Apply variable highlighting
+    if (syntaxHighlight) {
+      rendered = highlightVariables(rendered)
+    }
+    
+    return rendered
   }
 
   return (
     <div className={`border border-gray-600 rounded-lg bg-gray-800 ${className}`}>
       {/* Toolbar */}
-      <div className="border-b border-gray-600 p-3 flex items-center justify-between">
-        <div className="flex items-center space-x-2">
-          <button
-            onClick={() => setPreviewMode(false)}
-            className={`px-3 py-1 rounded text-sm transition-colors ${
-              !previewMode 
-                ? 'bg-purple-600 text-white' 
-                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-            }`}
-          >
-            Edit
-          </button>
-          <button
-            onClick={() => setPreviewMode(true)}
-            className={`px-3 py-1 rounded text-sm transition-colors ${
-              previewMode 
-                ? 'bg-purple-600 text-white' 
-                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-            }`}
-          >
-            Preview
-          </button>
+      {!readOnly && (
+        <div className="border-b border-gray-600 p-3 flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <button
+              type="button"
+              onClick={() => setPreviewMode(false)}
+              className={`px-3 py-1 rounded text-sm transition-colors ${
+                !previewMode 
+                  ? 'bg-blue-600 text-white' 
+                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+              }`}
+            >
+              Edit
+            </button>
+            <button
+              type="button"
+              onClick={() => setPreviewMode(true)}
+              className={`px-3 py-1 rounded text-sm transition-colors ${
+                previewMode 
+                  ? 'bg-blue-600 text-white' 
+                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+              }`}
+            >
+              Preview
+            </button>
+          </div>
+
+          <div className="flex items-center space-x-2">
+            <button
+              type="button"
+              onClick={() => {
+                console.log('🔧 Variables button clicked, current state:', showVariables)
+                setShowVariables(!showVariables)
+              }}
+              className={`px-3 py-1 rounded text-sm transition-colors ${
+                showVariables
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+              }`}
+              title="Insert Variables"
+            >
+              Variables
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsFullscreen(!isFullscreen)}
+              className="px-3 py-1 rounded text-sm transition-colors bg-gray-700 text-gray-300 hover:bg-gray-600"
+              title="Toggle Fullscreen (F11)"
+            >
+              {isFullscreen ? <ArrowsPointingInIcon className="h-4 w-4" /> : <ArrowsPointingOutIcon className="h-4 w-4" />}
+            </button>
+          </div>
         </div>
-        <div className="flex items-center space-x-3">
-          <span className="text-xs text-gray-500">
-            GitLab Flavored Markdown
-          </span>
-          <button
-            onClick={() => setIsFullscreen(!isFullscreen)}
-            className="p-2 rounded hover:bg-gray-700 transition-colors text-gray-400 hover:text-white"
-            title={isFullscreen ? "Exit fullscreen (F11, Ctrl+Enter, or Esc)" : "Enter fullscreen (F11 or Ctrl+Enter)"}
-          >
-            {isFullscreen ? (
-              <ArrowsPointingInIcon className="h-4 w-4" />
-            ) : (
-              <ArrowsPointingOutIcon className="h-4 w-4" />
-            )}
-          </button>
+      )}
+
+      {/* Variables Panel - Show at top of editor content */}
+      {!readOnly && showVariables && (
+        <div className="border-b border-gray-600 p-4 bg-gray-900 max-h-64 overflow-y-auto">
+          <div className="flex items-start space-x-2">
+            <span className="text-blue-400 text-sm">🔧</span>
+            <div className="text-xs text-gray-400">
+              <p className="font-medium mb-2 text-gray-300">Available Variables:</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {console.log('🔧 Rendering variables panel, AVAILABLE_VARIABLES:', AVAILABLE_VARIABLES)}
+                {Object.entries(AVAILABLE_VARIABLES).map(([key, variable]) => (
+                  <div key={key} className="flex items-center space-x-2 p-2 bg-gray-800 rounded">
+                    <button
+                      type="button"
+                      onClick={() => insertVariable(key)}
+                      className="bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded text-xs transition-colors"
+                    >
+                      Insert
+                    </button>
+                    <div className="flex-1">
+                      <code className="bg-gray-700 px-1 rounded text-xs">{`{${key}}`}</code>
+                      <p className="text-xs text-gray-500 mt-1">{variable.description}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-2 text-xs text-gray-500">
+                Click "Insert" to add variables to your prompt. Variables will be replaced with actual values when the prompt is used.
+              </p>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Editor Content */}
-      <div className={`${isFullscreen ? 'fixed inset-0 z-50 bg-gray-900' : ''} min-h-[300px]`}>
+      <div 
+        className={`${isFullscreen ? 'fixed inset-0 z-50 bg-gray-900' : ''} min-h-[800px] flex flex-col`}
+        onClick={(e) => e.stopPropagation()}
+      >
         {isFullscreen && (
           <div className="absolute top-4 right-4 z-10">
             <button
-              onClick={() => setIsFullscreen(false)}
-              className="p-2 rounded bg-gray-800 hover:bg-gray-700 transition-colors text-gray-400 hover:text-white border border-gray-600"
-              title="Exit fullscreen"
+              type="button"
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                setIsFullscreen(false)
+              }}
+              className="p-2 bg-gray-700 hover:bg-gray-600 text-white rounded-md transition-colors"
+              title="Exit Fullscreen (Esc)"
             >
               <ArrowsPointingInIcon className="h-5 w-5" />
             </button>
           </div>
         )}
-        
-        {previewMode ? (
-          <div className={`p-4 ${isFullscreen ? 'h-screen overflow-auto' : ''}`}>
+
+        {/* Editor/Preview Area */}
+        <div className="flex-1 overflow-hidden">
+          {previewMode ? (
             <div 
-              className="prose prose-invert max-w-none"
+              className="p-6 prose prose-lg max-w-none text-base bg-gray-900 rounded-lg text-gray-200 h-full overflow-y-auto cursor-default"
               dangerouslySetInnerHTML={{ 
                 __html: renderMarkdown(internalContent || 'No content to preview') 
               }}
             />
-          </div>
-        ) : (
-          <textarea
-            value={internalContent}
-            onChange={(e) => {
-              const newContent = e.target.value
-              setInternalContent(newContent)
-              onChange(newContent)
-            }}
-            placeholder={placeholder}
-            className={`w-full p-4 bg-transparent text-white font-mono text-sm leading-relaxed resize-none focus:outline-none ${
-              isFullscreen ? 'h-screen' : 'h-80'
-            }`}
-          />
-        )}
+          ) : (
+            <div className="relative h-full">
+              {/* Preview-style background */}
+              <div 
+                className="p-6 prose prose-lg max-w-none text-base bg-gray-900 rounded-lg h-full overflow-y-auto whitespace-pre-wrap text-gray-200 cursor-text"
+                style={{
+                  fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace',
+                  lineHeight: '1.6'
+                }}
+              >
+                {internalContent || placeholder}
+              </div>
+              
+              {/* Invisible textarea overlay */}
+              <textarea
+                ref={textareaRef}
+                value={internalContent}
+                onChange={(e) => {
+                  if (readOnly) return
+                  const newContent = e.target.value
+                  console.log('📝 MarkdownEditor onChange:', { newContent: newContent.substring(0, 100) + '...' })
+                  setInternalContent(newContent)
+                  onChange(newContent)
+                }}
+                placeholder={placeholder}
+                readOnly={readOnly}
+                className="absolute inset-0 w-full p-6 bg-transparent resize-none focus:outline-none text-transparent overflow-y-auto cursor-text"
+                style={{ 
+                  resize: 'none',
+                  fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace',
+                  fontSize: '1rem',
+                  lineHeight: '1.6',
+                  caretColor: '#3b82f6' // Blue caret color
+                }}
+                spellCheck={spellCheck}
+                autoComplete={autoComplete ? 'on' : 'off'}
+                autoFocus={autoFocus}
+              />
+            </div>
+          )}
+        </div>
+
       </div>
 
       {/* Markdown Tips */}
       {!isFullscreen && (
         <div className="border-t border-gray-600 p-4 bg-gray-900">
-        <div className="flex items-start space-x-2">
-          <span className="text-yellow-400 text-sm">💡</span>
-          <div className="text-xs text-gray-400">
-            <p className="font-medium mb-2 text-gray-300">GitLab Flavored Markdown Tips:</p>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-              {markdownTips.map((tip, index) => (
-                <div key={index} className="flex items-center space-x-2">
-                  <code className="bg-gray-700 px-1 rounded text-xs">{tip.syntax}</code>
-                  <span className="text-xs text-gray-500">{tip.description}</span>
-                </div>
-              ))}
+          <div className="flex items-start space-x-2">
+            <span className="text-yellow-400 text-sm">💡</span>
+            <div className="text-xs text-gray-400">
+              <p className="font-medium mb-2 text-gray-300">GitLab Flavored Markdown Tips:</p>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                {markdownTips.map((tip, index) => (
+                  <div key={index} className="flex items-center space-x-2">
+                    <code className="bg-gray-700 px-1 py-0.5 rounded text-xs">{tip.syntax}</code>
+                    <span className="text-xs text-gray-500">{tip.description}</span>
+                  </div>
+                ))}
+              </div>
             </div>
-            <p className="mt-2 text-xs text-gray-500">
-              Supports: <strong>Bold</strong>, <em>Italic</em>, <code>Code</code>, Headings, Lists, Links, Images, Tables, Task Lists, Blockquotes, and more!
-            </p>
           </div>
-        </div>
         </div>
       )}
     </div>

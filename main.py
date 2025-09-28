@@ -19,6 +19,8 @@ from core.models import Base
 from api.endpoints import auth, bots, subscriptions, admin
 from api.endpoints import exchange_credentials, user_principals, futures_bot, marketplace
 from api.endpoints import paypal_payments
+from api.endpoints import prompts
+from api.endpoints import bot_prompts
 
 import logging
 logger = logging.getLogger("uvicorn.error")
@@ -79,6 +81,9 @@ app.include_router(user_principals.router, prefix="/user-principals", tags=["Use
 app.include_router(futures_bot.router, prefix="/api", tags=["Futures Bot"])  # Available in both modes
 app.include_router(marketplace.router, prefix="/marketplace", tags=["Marketplace"])
 app.include_router(paypal_payments.router, prefix="/payments", tags=["PayPal Payments"])
+app.include_router(prompts.router, prefix="/prompts", tags=["Prompts"])
+app.include_router(bot_prompts.router, prefix="/bot-prompts", tags=["Bot prompts"])
+
 
 @app.post("/webhook")
 async def webhook(req: Request, db: Session = Depends(get_db)):

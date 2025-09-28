@@ -108,12 +108,19 @@ export const useUpdatePrompt = () => {
   
   return useMutation({
     mutationFn: async ({ promptId, data }: { promptId: number; data: UpdatePromptRequest }) => {
+      console.log('🔄 Updating prompt:', { promptId, data })
       const response = await api.put(`/prompts/${promptId}`, data)
+      console.log('✅ Update response:', response.data)
       return response.data as PromptTemplate
     },
-    onSuccess: () => {
+    onSuccess: (data, variables) => {
+      // Invalidate all prompt-related queries
       queryClient.invalidateQueries({ queryKey: ['prompts'] })
       queryClient.invalidateQueries({ queryKey: ['myPrompts'] })
+      queryClient.invalidateQueries({ queryKey: ['prompt', variables.promptId] })
+      
+      // Also refetch the specific prompt to ensure fresh data
+      queryClient.refetchQueries({ queryKey: ['prompt', variables.promptId] })
     },
   })
 }
