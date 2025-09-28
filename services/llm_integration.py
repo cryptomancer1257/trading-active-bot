@@ -353,8 +353,59 @@ FINAL VALIDATION CHECKLIST:
     IF any ✗ → HOLD
 DỮ LIỆU:"""
     
-    def _get_capital_management_prompt(self) -> str:
-        """Get the capital management prompt template for position sizing advice"""
+    def _get_capital_management_prompt(self, bot_id: int = None) -> str:
+        """Get dynamic capital management prompt from bot's attached risk management prompt template"""
+        # If bot_id is provided, try to get risk management prompt from bot's attached prompts
+        if bot_id:
+            try:
+                from core.database import get_db
+                from core import crud, models
+                from sqlalchemy.orm import Session
+                
+                # Get database session
+                db = next(get_db())
+                
+                # Get bot's attached prompts
+                bot_prompts = crud.get_bot_prompts(db, bot_id)
+                if bot_prompts:
+                    # Filter for risk management prompts
+                    risk_prompts = [bp for bp in bot_prompts if bp.prompt_template and bp.prompt_template.category == 'RISK_MANAGEMENT']
+                    
+                    if risk_prompts:
+                        # Get the highest priority risk management prompt
+                        active_risk_prompt = max(risk_prompts, key=lambda x: x.priority)
+                        prompt_template = crud.get_prompt_template_by_id(db, active_risk_prompt.prompt_id)
+                        
+                        if prompt_template and prompt_template.content:
+                            # Use bot's custom risk management prompt with variable injection
+                            bot_prompt = prompt_template.content
+                            
+                            # Inject variables into the prompt
+                            variables = {
+                                'current_price': '{current_price}',  # Will be replaced by actual price
+                                'symbol': '{symbol}',  # Will be replaced by actual symbol
+                                'exchange': '{exchange}',  # Will be replaced by actual exchange
+                                'timestamp': '{timestamp}',  # Will be replaced by current timestamp
+                                'user_id': '{user_id}',  # Will be replaced by actual user ID
+                                'bot_id': str(bot_id)
+                            }
+                            
+                            # Replace variables in the prompt
+                            for key, value in variables.items():
+                                bot_prompt = bot_prompt.replace(f'{{{key}}}', value)
+                            
+                            logger.info(f"Using dynamic risk management prompt from bot {bot_id}")
+                            return bot_prompt
+                            
+            except Exception as e:
+                logger.warning(f"Failed to get risk management prompt for bot {bot_id}: {e}")
+                # Fall back to default prompt
+        
+        # Fallback to default capital management prompt if no bot_id or error
+        return self._get_default_capital_management_prompt()
+    
+    def _get_default_capital_management_prompt(self) -> str:
+        """Get the default capital management prompt template"""
         return """You are a professional risk management and capital allocation specialist for crypto futures trading.
 
 I will provide you with account and market information to help determine optimal position sizing.
@@ -848,7 +899,7 @@ Please provide sentiment analysis in JSON format:
     
     async def get_capital_management_advice(self, capital_context: Dict[str, Any], 
                                           base_position_size: float, max_position_size: float,
-                                          model: str = "openai") -> Dict[str, Any]:
+                                          model: str = "openai", bot_id: int = None) -> Dict[str, Any]:
         """
         Get capital management and position sizing advice from LLM
         
@@ -857,13 +908,14 @@ Please provide sentiment analysis in JSON format:
             base_position_size: Base position size percentage
             max_position_size: Maximum allowed position size percentage
             model: LLM to use for analysis
+            bot_id: Optional bot ID to use bot's attached risk management prompt
             
         Returns:
             Capital management recommendations
         """
         try:
-            # Prepare capital management prompt
-            prompt = self._get_capital_management_prompt()
+            # Prepare capital management prompt (dynamic from bot's risk management prompt)
+            prompt = self._get_capital_management_prompt(bot_id)
             
             # Format the context data
             context_str = "\n".join([f"{key}: {value}" for key, value in capital_context.items()])
