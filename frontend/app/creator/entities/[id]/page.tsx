@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { 
   ArrowLeftIcon,
@@ -33,6 +33,8 @@ export default function BotDetailPage() {
     tradingPair: 'BTC/USDT',
     networkType: 'TESTNET'
   })
+  const [botLogs, setBotLogs] = useState<any[]>([])
+  const [isLoadingLogs, setIsLoadingLogs] = useState(false)
 
   // Mock bot data for testing
   const bot = {
@@ -105,6 +107,31 @@ export default function BotDetailPage() {
       setIsStartingTrial(false)
     }
   }
+
+  const fetchBotLogs = async () => {
+    setIsLoadingLogs(true)
+    try {
+      const response = await fetch(`${config.studioBaseUrl}/api/futures-bot/logs/${bot.id}`)
+      if (response.ok) {
+        const data = await response.json()
+        setBotLogs(data.logs || [])
+      } else {
+        console.error('Failed to fetch bot logs')
+      }
+    } catch (error) {
+      console.error('Error fetching bot logs:', error)
+    } finally {
+      setIsLoadingLogs(false)
+    }
+  }
+
+  // Fetch logs on component mount
+  useEffect(() => {
+    fetchBotLogs()
+    // Auto-refresh logs every 5 seconds
+    const interval = setInterval(fetchBotLogs, 5000)
+    return () => clearInterval(interval)
+  }, [bot.id])
 
   const renderContent = () => {
     switch (activeTab) {
@@ -213,53 +240,152 @@ export default function BotDetailPage() {
             </div>
           </div>
 
-              <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
-                <div className="flex items-center space-x-4">
-                  <button
-                    onClick={() => handleStartFreeTrial()}
-                    disabled={isStartingTrial}
-                    className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 disabled:from-gray-600 disabled:to-gray-700 text-white px-6 py-3 rounded-lg font-semibold transition-all duration-200 transform hover:scale-105 disabled:scale-100 disabled:cursor-not-allowed shadow-lg"
+          <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <button
+                onClick={() => handleStartFreeTrial()}
+                disabled={isStartingTrial}
+                className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 disabled:from-gray-600 disabled:to-gray-700 text-white px-6 py-3 rounded-lg font-semibold transition-all duration-200 transform hover:scale-105 disabled:scale-100 disabled:cursor-not-allowed shadow-lg"
+              >
+                {isStartingTrial ? (
+                  <span className="flex items-center">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Starting Trial...
+                  </span>
+                ) : (
+                  '🚀 Start 24h Free Trial'
+                )}
+              </button>
+              
+              <div className="text-center">
+                <div className="text-sm text-gray-400 mb-1">Need help?</div>
+                <div className="flex space-x-2">
+                  <a
+                    href="https://t.me/cryptomancer_ai_bot"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-400 hover:text-blue-300 text-sm font-medium"
                   >
-                    {isStartingTrial ? (
-                      <span className="flex items-center">
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                        Starting Trial...
-                      </span>
-                    ) : (
-                      '🚀 Start 24h Free Trial'
-                    )}
-                  </button>
-                  
-                  <div className="text-center">
-                    <div className="text-sm text-gray-400 mb-1">Need help?</div>
-                    <div className="flex space-x-2">
-                      <a
-                        href="https://t.me/cryptomancer_ai_bot"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-400 hover:text-blue-300 text-sm font-medium"
-                      >
-                        📱 Telegram
-                      </a>
-                      <span className="text-gray-500">|</span>
-                      <a
-                        href="https://discord.gg/cryptomancer_ai_bot"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-indigo-400 hover:text-indigo-300 text-sm font-medium"
-                      >
-                        💬 Discord
-                      </a>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="text-right">
-                  <div className="text-xs text-gray-500">
-                    Trial starts immediately • No credit card required
-                  </div>
+                    📱 Telegram
+                  </a>
+                  <span className="text-gray-500">|</span>
+                  <a
+                    href="https://discord.gg/cryptomancer_ai_bot"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-indigo-400 hover:text-indigo-300 text-sm font-medium"
+                  >
+                    💬 Discord
+                  </a>
                 </div>
               </div>
+            </div>
+
+            <div className="text-right">
+              <div className="text-xs text-gray-500">
+                Trial starts immediately • No credit card required
+              </div>
+            </div>
+          </div>
+
+          {/* Monitor Logs Section */}
+          <div className="bg-gray-800/50 p-6 rounded-lg border border-gray-700 mt-6">
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="text-lg font-semibold text-white flex items-center">
+                📊 Monitor Execution Logs
+                <span className="ml-2 px-2 py-1 bg-green-500/20 text-green-400 text-xs rounded-full">LIVE</span>
+              </h4>
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={fetchBotLogs}
+                  disabled={isLoadingLogs}
+                  className="px-3 py-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white text-sm rounded-md transition-colors"
+                >
+                  {isLoadingLogs ? '⏳ Loading...' : '🔄 Refresh'}
+                </button>
+                <button
+                  onClick={() => {/* TODO: Implement clear logs */}}
+                  className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-sm rounded-md transition-colors"
+                >
+                  🗑️ Clear
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-black/50 rounded-lg p-4 h-64 overflow-y-auto">
+              {isLoadingLogs ? (
+                <div className="flex items-center justify-center h-full">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-400"></div>
+                  <span className="ml-2 text-gray-400">Loading logs...</span>
+                </div>
+              ) : (
+                <div className="font-mono text-sm space-y-2">
+                  {botLogs.length > 0 ? (
+                    botLogs.map((log, index) => {
+                      const timestamp = new Date(log.timestamp).toLocaleTimeString()
+                      const getLogColor = (type: string) => {
+                        switch (type) {
+                          case 'transaction': return 'text-green-400'
+                          case 'system': return 'text-blue-400'
+                          case 'analysis': return 'text-yellow-400'
+                          case 'llm': return 'text-purple-400'
+                          case 'position': return 'text-cyan-400'
+                          case 'order': return 'text-orange-400'
+                          case 'error': return 'text-red-400'
+                          default: return 'text-gray-400'
+                        }
+                      }
+                      const getLogIcon = (type: string) => {
+                        switch (type) {
+                          case 'transaction': return '💰'
+                          case 'system': return '✅'
+                          case 'analysis': return '🔍'
+                          case 'llm': return '📊'
+                          case 'position': return '📈'
+                          case 'order': return '🎯'
+                          case 'error': return '❌'
+                          default: return '📝'
+                        }
+                      }
+                      
+                      return (
+                        <div key={index} className={getLogColor(log.type)}>
+                          <span className="text-gray-500">[{timestamp}]</span> {getLogIcon(log.type)} {
+                            log.type === 'transaction' 
+                              ? `${log.action} ${log.quantity} ${log.symbol} at $${log.entry_price} (${log.leverage}x)`
+                              : log.message || `${log.action} ${log.symbol}`
+                          }
+                          {log.confidence && (
+                            <span className="text-gray-500 ml-2">(Confidence: {(log.confidence * 100).toFixed(1)}%)</span>
+                          )}
+                        </div>
+                      )
+                    })
+                  ) : (
+                    <div className="text-gray-500 text-center py-8">
+                      No logs available for this bot yet.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="mt-4 flex items-center justify-between text-sm text-gray-400">
+              <div className="flex items-center space-x-4">
+                <span className="flex items-center">
+                  <div className="w-2 h-2 bg-green-400 rounded-full mr-2"></div>
+                  Bot Status: Active
+                </span>
+                <span className="flex items-center">
+                  <div className="w-2 h-2 bg-blue-400 rounded-full mr-2"></div>
+                  Last Update: 2 seconds ago
+                </span>
+              </div>
+              <div className="text-xs">
+                Auto-refresh every 5 seconds
+              </div>
+            </div>
+          </div>
             </div>
           </div>
         )
