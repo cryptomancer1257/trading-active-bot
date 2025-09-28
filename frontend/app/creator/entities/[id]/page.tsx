@@ -29,6 +29,10 @@ export default function BotDetailPage() {
 
   const [activeTab, setActiveTab] = useState<TabType>('overview')
   const [isStartingTrial, setIsStartingTrial] = useState(false)
+  const [trialConfig, setTrialConfig] = useState({
+    tradingPair: 'BTC/USDT',
+    networkType: 'TESTNET'
+  })
 
   // Mock bot data for testing
   const bot = {
@@ -63,7 +67,11 @@ export default function BotDetailPage() {
         user_id: currentUserId, // Add developer user_id
         bot_id: bot.id,
         subscription_start: startDate.toISOString(),
-        subscription_end: endDate.toISOString()
+        subscription_end: endDate.toISOString(),
+        is_testnet: trialConfig.networkType === 'TESTNET',
+        trading_pair: trialConfig.tradingPair,
+        trading_network: trialConfig.networkType,
+        payment_method: 'TRIAL'
       }
       
       // Call marketplace subscription API
@@ -80,10 +88,10 @@ export default function BotDetailPage() {
         const result = await response.json()
         toast.success('🎉 24h Free Trial Started! Your bot is now active.')
         
-        // Show success modal with trial details
-        setTimeout(() => {
-          alert(`🚀 Free Trial Activated!\n\nBot: ${bot.name}\nSubscription ID: ${result.subscription_id}\nDuration: 24 hours\nExpires: ${endDate.toLocaleString()}\nStatus: ${result.status}\n\nNeed help? Contact us on Telegram or Discord!`)
-        }, 1000)
+                // Show success modal with trial details
+                setTimeout(() => {
+                  alert(`🚀 Free Trial Activated!\n\nBot: ${bot.name}\nSubscription ID: ${result.subscription_id}\nDuration: 24 hours\nExpires: ${endDate.toLocaleString()}\nStatus: ${result.status}\n\nConfiguration:\n• Network: ${trialConfig.networkType}\n• Trading Pair: ${trialConfig.tradingPair}\n• Environment: ${trialConfig.networkType === 'TESTNET' ? 'Testnet' : 'Mainnet'}\n\nNeed help? Contact us on Telegram or Discord!`)
+                }, 1000)
         
       } else {
         const error = await response.json()
@@ -137,27 +145,73 @@ export default function BotDetailPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
-                  <h4 className="text-lg font-semibold text-white mb-2">📊 What You Get</h4>
-                  <ul className="text-gray-300 space-y-1">
-                    <li>• Real-time market analysis</li>
-                    <li>• Historical performance data</li>
-                    <li>• Risk management insights</li>
-                    <li>• Trading signal validation</li>
-                  </ul>
-                </div>
-
-                <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
-                  <h4 className="text-lg font-semibold text-white mb-2">🚀 Quick Start</h4>
-                  <ul className="text-gray-300 space-y-1">
-                    <li>• No setup required</li>
-                    <li>• Instant activation</li>
-                    <li>• Full bot capabilities</li>
-                    <li>• 24/7 monitoring</li>
-                  </ul>
-                </div>
+          {/* Trial Configuration */}
+          <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700 mb-6">
+            <h4 className="text-lg font-semibold text-white mb-4">⚙️ Trial Configuration</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Network Type
+                </label>
+                <select
+                  value={trialConfig.networkType}
+                  onChange={(e) => setTrialConfig(prev => ({ ...prev, networkType: e.target.value }))}
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                >
+                  <option value="TESTNET">TESTNET (Safe Testing)</option>
+                  <option value="MAINNET">MAINNET (Real Trading)</option>
+                </select>
+                <p className="text-xs text-gray-400 mt-1">
+                  {trialConfig.networkType === 'TESTNET' 
+                    ? '🔒 Safe testing environment with virtual funds' 
+                    : '⚠️ Real trading environment with actual funds'
+                  }
+                </p>
               </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Trading Pair
+                </label>
+                <select
+                  value={trialConfig.tradingPair}
+                  onChange={(e) => setTrialConfig(prev => ({ ...prev, tradingPair: e.target.value }))}
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                >
+                  <option value="BTC/USDT">BTC/USDT</option>
+                  <option value="ETH/USDT">ETH/USDT</option>
+                  <option value="BNB/USDT">BNB/USDT</option>
+                  <option value="ADA/USDT">ADA/USDT</option>
+                  <option value="SOL/USDT">SOL/USDT</option>
+                </select>
+                <p className="text-xs text-gray-400 mt-1">
+                  Choose the trading pair for your bot trial
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
+              <h4 className="text-lg font-semibold text-white mb-2">📊 What You Get</h4>
+              <ul className="text-gray-300 space-y-1">
+                <li>• Real-time market analysis</li>
+                <li>• Historical performance data</li>
+                <li>• Risk management insights</li>
+                <li>• Trading signal validation</li>
+              </ul>
+            </div>
+
+            <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
+              <h4 className="text-lg font-semibold text-white mb-2">🚀 Quick Start</h4>
+              <ul className="text-gray-300 space-y-1">
+                <li>• No setup required</li>
+                <li>• Instant activation</li>
+                <li>• Full bot capabilities</li>
+                <li>• 24/7 monitoring</li>
+              </ul>
+            </div>
+          </div>
 
               <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
                 <div className="flex items-center space-x-4">
