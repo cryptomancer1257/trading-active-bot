@@ -176,8 +176,8 @@ class LLMIntegrationService:
             self.gemini_client = None
             logger.warning("Gemini client not available")
     
-    def _get_analysis_prompt(self, timeframes: list = None) -> str:
-        """Get the high-quality trading analysis prompt with comprehensive technical analysis"""
+    def _get_analysis_prompt(self, bot_id: int = None, timeframes: list = None) -> str:
+        """Get dynamic trading analysis prompt from bot's attached prompt template"""
         # Default timeframes if not provided - Optimized 3 timeframes
         if not timeframes:
             timeframes = ["30M", "1H", "4H"]
@@ -185,43 +185,57 @@ class LLMIntegrationService:
         # Format timeframes for display (e.g., ['5m', '30m', '1h'] -> "5M, 30M, 1H")
         formatted_timeframes = ", ".join([tf.upper() for tf in timeframes])
         
-        # Generate analysis structure for each timeframe in JSON format
-        analysis_section = ""
-        for i, tf in enumerate(timeframes):
-            tf_lower = tf.lower()
-            if i == 0:
-                # Full structure for first timeframe
-                analysis_section += f'    "{tf_lower}": {{\n'
-                analysis_section += '      "ma20": "value and position vs price",\n'
-                analysis_section += '      "ma50": "value and position vs price",\n'
-                analysis_section += '      "bollinger_bands": "position and signal",\n'
-                analysis_section += '      "rsi": "value and interpretation",\n'
-                analysis_section += '      "macd": "signal and trend",\n'
-                analysis_section += '      "stoch_rsi": "value and signal",\n'
-                analysis_section += '      "volume_trend": "rising/falling with analysis",\n'
-                analysis_section += '      "fibonacci": {\n'
-                analysis_section += '        "trend": "uptrend/downtrend",\n'
-                analysis_section += '        "swing_high": "price_value",\n'
-                analysis_section += '        "swing_low": "price_value",\n'
-                analysis_section += '        "current_position": "above_618/between_382_618/below_382/etc",\n'
-                analysis_section += '        "key_levels": {\n'
-                analysis_section += '          "support": "nearest_fib_level_price",\n'
-                analysis_section += '          "resistance": "nearest_fib_level_price"\n'
-                analysis_section += '        }\n'
-                analysis_section += '      }\n'
-                analysis_section += '    }'
-            else:
-                # Reference structure for other timeframes
-                analysis_section += f',\n    "{tf_lower}": {{ "similar structure as {timeframes[0].lower()}" }}'
+        # If bot_id is provided, try to get prompt from bot's attached prompt
+        if bot_id:
+            try:
+                from core.database import get_db
+                from core import crud, models
+                from sqlalchemy.orm import Session
+                
+                # Get database session
+                db = next(get_db())
+                
+                # Get bot's attached prompt
+                bot_prompts = crud.get_bot_prompts(db, bot_id)
+                if bot_prompts:
+                    # Get the active prompt (highest priority)
+                    active_prompt = max(bot_prompts, key=lambda x: x.priority)
+                    prompt_template = crud.get_prompt_template_by_id(db, active_prompt.prompt_id)
+                    
+                    if prompt_template and prompt_template.content:
+                        # Use bot's custom prompt with variable injection
+                        bot_prompt = prompt_template.content
+                        
+                        # Inject variables into the prompt
+                        variables = {
+                            'formatted_timeframes': formatted_timeframes,
+                            'current_price': '{current_price}',  # Will be replaced by actual price
+                            'symbol': '{symbol}',  # Will be replaced by actual symbol
+                            'exchange': '{exchange}',  # Will be replaced by actual exchange
+                            'timeframe': '{timeframe}',  # Will be replaced by primary timeframe
+                            'timestamp': '{timestamp}',  # Will be replaced by current timestamp
+                            'user_id': '{user_id}',  # Will be replaced by actual user ID
+                            'bot_id': str(bot_id)
+                        }
+                        
+                        # Replace variables in the prompt
+                        for key, value in variables.items():
+                            bot_prompt = bot_prompt.replace(f'{{{key}}}', value)
+                        
+                        logger.info(f"Using dynamic prompt from bot {bot_id}")
+                        return bot_prompt
+                        
+            except Exception as e:
+                logger.warning(f"Failed to get bot prompt for bot {bot_id}: {e}")
+                # Fall back to default prompt
         
-        # Determine Fibonacci base timeframe (use longest available)
-        fib_base_timeframe = "1D"
-        if "1d" in [tf.lower() for tf in timeframes]:
-            fib_base_timeframe = "1D"
-        elif "1w" in [tf.lower() for tf in timeframes]:
-            fib_base_timeframe = "1W"
-        elif timeframes:
-            fib_base_timeframe = timeframes[-1].upper()
+        # Fallback to default prompt if no bot_id or error
+        return self._get_default_analysis_prompt(timeframes)
+    
+    def _get_default_analysis_prompt(self, timeframes: list) -> str:
+        """Get the default high-quality trading analysis prompt"""
+        # Format timeframes for display
+        formatted_timeframes = ", ".join([tf.upper() for tf in timeframes])
         
         return f"""You are a professional crypto futures trading analyst.
 I will provide you OHLCV data for multiple timeframes ({formatted_timeframes}) in JSON format.
@@ -427,7 +441,7 @@ Please respond in JSON format:
             logger.error(f"Error preparing market data: {e}")
             return {}
     
-    async def analyze_with_openai(self, market_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def analyze_with_openai(self, market_data: Dict[str, Any], bot_id: int = None) -> Dict[str, Any]:
         """Analyze market data using OpenAI"""
         if not self.openai_client:
             return {"error": "OpenAI client not available"}
@@ -436,8 +450,8 @@ Please respond in JSON format:
             # Extract timeframes from market_data
             timeframes = list(market_data.get("timeframes", {}).keys())
             
-            # Generate dynamic prompt based on actual timeframes
-            dynamic_prompt = self._get_analysis_prompt(timeframes)
+            # Generate dynamic prompt based on actual timeframes and bot_id
+            dynamic_prompt = self._get_analysis_prompt(bot_id, timeframes)
             
             prompt = f"{dynamic_prompt}\n\nMarket Data:\n{json.dumps(market_data, indent=2)}"
             
@@ -459,7 +473,7 @@ Please respond in JSON format:
             logger.error(f"OpenAI analysis error: {e}")
             return {"error": f"OpenAI analysis failed: {str(e)}"}
     
-    async def analyze_with_claude(self, market_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def analyze_with_claude(self, market_data: Dict[str, Any], bot_id: int = None) -> Dict[str, Any]:
         """Analyze market data using Claude"""
         if not self.claude_client:
             return {"error": "Claude client not available"}
@@ -468,8 +482,8 @@ Please respond in JSON format:
             # Extract timeframes from market_data
             timeframes = list(market_data.get("timeframes", {}).keys())
             
-            # Generate dynamic prompt based on actual timeframes
-            dynamic_prompt = self._get_analysis_prompt(timeframes)
+            # Generate dynamic prompt based on actual timeframes and bot_id
+            dynamic_prompt = self._get_analysis_prompt(bot_id, timeframes)
             
             prompt = f"{dynamic_prompt}\n\nMarket Data:\n{json.dumps(market_data, indent=2)}"
             
@@ -489,7 +503,7 @@ Please respond in JSON format:
             logger.error(f"Claude analysis error: {e}")
             return {"error": f"Claude analysis failed: {str(e)}"}
     
-    async def analyze_with_gemini(self, market_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def analyze_with_gemini(self, market_data: Dict[str, Any], bot_id: int = None) -> Dict[str, Any]:
         """Analyze market data using Gemini"""
         if not self.gemini_client:
             return {"error": "Gemini client not available"}
@@ -498,8 +512,8 @@ Please respond in JSON format:
             # Extract timeframes from market_data
             timeframes = list(market_data.get("timeframes", {}).keys())
             
-            # Generate dynamic prompt based on actual timeframes
-            dynamic_prompt = self._get_analysis_prompt(timeframes)
+            # Generate dynamic prompt based on actual timeframes and bot_id
+            dynamic_prompt = self._get_analysis_prompt(bot_id, timeframes)
             
             prompt = f"{dynamic_prompt}\n\nMarket Data:\n{json.dumps(market_data, indent=2)}"
             
@@ -548,7 +562,7 @@ Please respond in JSON format:
             }
     
     async def analyze_market(self, symbol: str, timeframes_data: Dict[str, List[Dict]], 
-                           model: str = "openai") -> Dict[str, Any]:
+                           model: str = "openai", bot_id: int = None) -> Dict[str, Any]:
         """
         Main method to analyze market data with specified LLM
         
@@ -575,11 +589,11 @@ Please respond in JSON format:
             
             # Analyze with specified model using retry mechanism
             if model.lower() == "openai":
-                analysis = await self._retry_with_backoff(self.analyze_with_openai, market_data)
+                analysis = await self._retry_with_backoff(self.analyze_with_openai, market_data, bot_id)
             elif model.lower() == "claude":
-                analysis = await self._retry_with_backoff(self.analyze_with_claude, market_data)
+                analysis = await self._retry_with_backoff(self.analyze_with_claude, market_data, bot_id)
             elif model.lower() == "gemini":
-                analysis = await self._retry_with_backoff(self.analyze_with_gemini, market_data)
+                analysis = await self._retry_with_backoff(self.analyze_with_gemini, market_data, bot_id)
             else:
                 return {"error": f"Unsupported model: {model}"}
             
@@ -731,7 +745,7 @@ Please provide sentiment analysis in JSON format:
     
     async def comprehensive_analysis(self, symbol: str, timeframes_data: Dict[str, List[Dict]], 
                                    news_data: List[Dict[str, Any]] = None,
-                                   model: str = "openai") -> Dict[str, Any]:
+                                   model: str = "openai", bot_id: int = None) -> Dict[str, Any]:
         """
         Comprehensive market analysis combining technical analysis and sentiment
         
@@ -746,7 +760,7 @@ Please provide sentiment analysis in JSON format:
         """
         try:
             # Get technical analysis
-            technical_analysis = await self.analyze_market(symbol, timeframes_data, model)
+            technical_analysis = await self.analyze_market(symbol, timeframes_data, model, bot_id)
             
             # Get sentiment analysis if news data provided
             sentiment_analysis = None
