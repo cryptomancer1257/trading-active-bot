@@ -539,6 +539,7 @@ class MarketplaceSubscriptionCreateV2(BaseModel):
     # Required fields
     user_principal_id: str = Field(..., description="ICP Principal ID of marketplace user")
     bot_id: int = Field(..., description="ID of bot to subscribe to")
+    user_id: Optional[int] = Field(None, description="Studio user ID for trial subscriptions")
     # instance_name: Optional[str] = Field(None, description="User's custom name for this bot instance")
     # Subscription timing - REQUIRED
     subscription_start: datetime = Field(..., description="When subscription starts (UTC) - REQUIRED")
