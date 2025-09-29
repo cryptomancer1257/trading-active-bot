@@ -2,11 +2,11 @@
 
 import { Fragment, useEffect } from 'react'
 import { Disclosure, Menu, Transition } from '@headlessui/react'
-import { Bars3Icon, XMarkIcon, UserIcon, CogIcon, ArrowRightOnRectangleIcon, KeyIcon } from '@heroicons/react/24/outline'
+import { Bars3Icon, XMarkIcon, UserIcon, CogIcon, ArrowRightOnRectangleIcon, KeyIcon, CpuChipIcon } from '@heroicons/react/24/outline'
 import { useAuth } from '@/contexts/AuthContext'
 import { UserRole } from '@/lib/types'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import clsx from 'clsx'
 
 const navigation = [
@@ -32,6 +32,7 @@ const adminNavigation = [
 export default function Navbar() {
   const { user, logout, refreshAuth } = useAuth()
   const pathname = usePathname()
+  const router = useRouter()
 
   // Refresh auth state when pathname changes (with debouncing)
   useEffect(() => {
@@ -143,20 +144,39 @@ export default function Navbar() {
                           )}
                         </Menu.Item>
                         {(user.role === UserRole.DEVELOPER || user.role === UserRole.ADMIN) && (
-                          <Menu.Item>
-                            {({ active }) => (
-                              <Link
-                                href="/creator/credentials"
-                                className={clsx(
-                                  active ? 'bg-quantum-500/20 text-gray-100' : 'text-gray-300',
-                                  'flex items-center px-4 py-2 text-sm hover:bg-quantum-500/10 transition-colors duration-200'
-                                )}
-                              >
-                                <KeyIcon className="h-4 w-4 mr-2" />
-                                API Credentials
-                              </Link>
-                            )}
-                          </Menu.Item>
+                          <>
+                            <Menu.Item>
+                              {({ active }) => (
+                                <Link
+                                  href="/creator/credentials"
+                                  className={clsx(
+                                    active ? 'bg-quantum-500/20 text-gray-100' : 'text-gray-300',
+                                    'flex items-center px-4 py-2 text-sm hover:bg-quantum-500/10 transition-colors duration-200'
+                                  )}
+                                >
+                                  <KeyIcon className="h-4 w-4 mr-2" />
+                                  API Credentials
+                                </Link>
+                              )}
+                            </Menu.Item>
+                            <Menu.Item>
+                              {({ active }) => (
+                                <a
+                                  href="/creator/llm-providers"
+                                  onClick={(e) => {
+                                    console.log('LLM Providers clicked - desktop')
+                                  }}
+                                  className={clsx(
+                                    active ? 'bg-quantum-500/20 text-gray-100' : 'text-gray-300',
+                                    'flex items-center px-4 py-2 text-sm hover:bg-quantum-500/10 transition-colors duration-200'
+                                  )}
+                                >
+                                  <CpuChipIcon className="h-4 w-4 mr-2" />
+                                  LLM Providers
+                                </a>
+                              )}
+                            </Menu.Item>
+                          </>
                         )}
                         <Menu.Item>
                           {({ active }) => (
@@ -264,13 +284,25 @@ export default function Navbar() {
                     Hồ sơ cá nhân
                   </Disclosure.Button>
                   {(user.role === UserRole.DEVELOPER || user.role === UserRole.ADMIN) && (
-                    <Disclosure.Button
-                      as={Link}
-                      href="/creator/credentials"
-                      className="block px-4 py-2 text-base font-medium text-gray-500 hover:text-gray-800 hover:bg-gray-100"
-                    >
-                      API Credentials
-                    </Disclosure.Button>
+                    <>
+                      <Disclosure.Button
+                        as={Link}
+                        href="/creator/credentials"
+                        className="block px-4 py-2 text-base font-medium text-gray-500 hover:text-gray-800 hover:bg-gray-100"
+                      >
+                        API Credentials
+                      </Disclosure.Button>
+                      <Disclosure.Button
+                        as="a"
+                        href="/creator/llm-providers"
+                        onClick={(e) => {
+                          console.log('LLM Providers clicked - mobile')
+                        }}
+                        className="block px-4 py-2 text-base font-medium text-gray-500 hover:text-gray-800 hover:bg-gray-100"
+                      >
+                        LLM Providers
+                      </Disclosure.Button>
+                    </>
                   )}
                   <Disclosure.Button
                     as={Link}
