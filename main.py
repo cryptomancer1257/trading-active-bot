@@ -21,6 +21,7 @@ from api.endpoints import exchange_credentials, user_principals, futures_bot, ma
 from api.endpoints import paypal_payments
 from api.endpoints import prompts
 from api.endpoints import bot_prompts
+from api.endpoints import llm_providers
 
 import logging
 logger = logging.getLogger("uvicorn.error")
@@ -83,6 +84,7 @@ app.include_router(marketplace.router, prefix="/marketplace", tags=["Marketplace
 app.include_router(paypal_payments.router, prefix="/payments", tags=["PayPal Payments"])
 app.include_router(prompts.router, prefix="/prompts", tags=["Prompts"])
 app.include_router(bot_prompts.router, prefix="/bot-prompts", tags=["Bot prompts"])
+app.include_router(llm_providers.router, prefix="/developer/llm-providers", tags=["LLM Providers"])
 
 
 @app.post("/webhook")

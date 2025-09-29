@@ -1299,3 +1299,72 @@ class PromptTemplateInDB(PromptTemplateBase):
     
     class Config:
         from_attributes = True
+
+# LLM Provider Schemas
+class LLMProviderType(str, Enum):
+    OPENAI = "OPENAI"
+    ANTHROPIC = "ANTHROPIC"
+    GEMINI = "GEMINI"
+    GROQ = "GROQ"
+    COHERE = "COHERE"
+
+class LLMModelBase(BaseModel):
+    """Base schema for LLM models"""
+    model_name: str = Field(..., min_length=1, max_length=255)
+    display_name: str = Field(..., min_length=1, max_length=255)
+    is_active: bool = True
+    max_tokens: Optional[int] = Field(None, gt=0)
+    cost_per_1k_tokens: Optional[Decimal] = Field(None, ge=0)
+
+class LLMModelCreate(LLMModelBase):
+    """Schema for creating LLM models"""
+    pass
+
+class LLMModelUpdate(BaseModel):
+    """Schema for updating LLM models"""
+    display_name: Optional[str] = Field(None, min_length=1, max_length=255)
+    is_active: Optional[bool] = None
+    max_tokens: Optional[int] = Field(None, gt=0)
+    cost_per_1k_tokens: Optional[Decimal] = Field(None, ge=0)
+
+class LLMModelInDB(LLMModelBase):
+    """Schema for LLM models in database"""
+    id: int
+    provider_id: int
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+class LLMProviderBase(BaseModel):
+    """Base schema for LLM providers"""
+    provider_type: LLMProviderType
+    name: str = Field(..., min_length=1, max_length=255)
+    api_key: str = Field(..., min_length=1)
+    base_url: Optional[str] = Field(None, max_length=500)
+    is_active: bool = True
+    is_default: bool = False
+
+class LLMProviderCreate(LLMProviderBase):
+    """Schema for creating LLM providers"""
+    models: Optional[List[LLMModelCreate]] = []
+
+class LLMProviderUpdate(BaseModel):
+    """Schema for updating LLM providers"""
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    api_key: Optional[str] = Field(None, min_length=1)
+    base_url: Optional[str] = Field(None, max_length=500)
+    is_active: Optional[bool] = None
+    is_default: Optional[bool] = None
+
+class LLMProviderInDB(LLMProviderBase):
+    """Schema for LLM providers in database"""
+    id: int
+    user_id: int
+    models: List[LLMModelInDB] = []
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
