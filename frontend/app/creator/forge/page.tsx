@@ -1041,6 +1041,44 @@ export default function ForgePage() {
                       </select>
                     </div>
                   </div>
+                  
+                  {/* Extra Timeframes */}
+                  <div className="mt-6">
+                    <label className="form-label">Extra Timeframes</label>
+                    <p className="mt-1 text-sm text-gray-400 mb-3">
+                      Reference timeframes for better decision making
+                    </p>
+                    <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+                      {timeframeOptions.map((tf) => {
+                        const currentTimeframes = watch('timeframes') || []
+                        const isSelected = currentTimeframes.includes(tf)
+                        return (
+                          <button
+                            key={tf}
+                            type="button"
+                            onClick={() => {
+                              const newTimeframes = isSelected
+                                ? currentTimeframes.filter(t => t !== tf)
+                                : [...currentTimeframes, tf]
+                              setValue('timeframes', newTimeframes)
+                            }}
+                            className={`px-3 py-2 text-sm rounded-md border transition-colors ${
+                              isSelected
+                                ? 'bg-quantum-500/20 border-quantum-500 text-quantum-400'
+                                : 'bg-dark-700/50 border-gray-600 text-gray-300 hover:bg-dark-600/50'
+                            }`}
+                          >
+                            {tf}
+                          </button>
+                        )
+                      })}
+                    </div>
+                    {watch('timeframes') && watch('timeframes').length > 0 && (
+                      <div className="mt-2 text-sm text-gray-500">
+                        <span className="font-medium">Selected:</span> {watch('timeframes').join(', ')}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* Pricing Configuration */}
