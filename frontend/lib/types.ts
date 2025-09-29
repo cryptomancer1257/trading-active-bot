@@ -203,6 +203,74 @@ export interface AdminStats {
   total_revenue: number
 }
 
+// LLM Provider Types
+export enum LLMProviderType {
+  OPENAI = "OPENAI",
+  ANTHROPIC = "ANTHROPIC", 
+  GEMINI = "GEMINI",
+  GROQ = "GROQ",
+  COHERE = "COHERE"
+}
+
+export interface LLMProvider {
+  id: number
+  user_id: number
+  provider_type: LLMProviderType
+  name: string
+  api_key: string
+  base_url?: string
+  is_active: boolean
+  is_default: boolean
+  models: LLMModel[]
+  created_at: string
+  updated_at: string
+}
+
+export interface LLMModel {
+  id: number
+  provider_id: number
+  model_name: string
+  display_name: string
+  is_active: boolean
+  max_tokens?: number
+  cost_per_1k_tokens?: number
+  created_at: string
+  updated_at: string
+}
+
+export interface LLMProviderCreate {
+  provider_type: LLMProviderType
+  name: string
+  api_key: string
+  base_url?: string
+  is_active?: boolean
+  is_default?: boolean
+  models?: LLMModelCreate[]
+}
+
+export interface LLMProviderUpdate {
+  name?: string
+  api_key?: string
+  base_url?: string
+  is_active?: boolean
+  is_default?: boolean
+}
+
+export interface LLMModelCreate {
+  model_name: string
+  display_name: string
+  is_active?: boolean
+  max_tokens?: number
+  cost_per_1k_tokens?: number
+}
+
+export interface LLMModelUpdate {
+  display_name?: string
+  is_active?: boolean
+  max_tokens?: number
+  cost_per_1k_tokens?: number
+}
+
 // API Response Types
 export interface ApiResponse<T> {
   data: T

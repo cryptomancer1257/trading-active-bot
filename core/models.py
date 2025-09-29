@@ -68,6 +68,13 @@ class PaymentMethod(enum.Enum):
     PAYPAL = "PAYPAL"
     TRIAL = "TRIAL"
 
+class LLMProviderType(enum.Enum):
+    OPENAI = "OPENAI"
+    ANTHROPIC = "ANTHROPIC"
+    GEMINI = "GEMINI"
+    GROQ = "GROQ"
+    COHERE = "COHERE"
+
 class PayPalEnvironment(enum.Enum):
     SANDBOX = "sandbox"
     LIVE = "live"
@@ -839,4 +846,59 @@ class ExecutionLog(Base):
         Index('idx_execution_logs_task_id', 'task_id'),
         Index('idx_execution_logs_log_type', 'log_type'),
         Index('idx_execution_logs_created_at', 'created_at'),
+    )
+
+class LLMProvider(Base):
+    """LLM Provider configurations for users"""
+    __tablename__ = "llm_providers"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    provider_type = Column(Enum(LLMProviderType), nullable=False)
+    name = Column(String(255), nullable=False)
+    api_key = Column(Text, nullable=False)  # Encrypted
+    base_url = Column(String(500), nullable=True)
+    is_active = Column(Boolean, default=True)
+    is_default = Column(Boolean, default=False)
+    
+    # Timestamps
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    
+    # Relationships
+    user = relationship("User")
+    models = relationship("LLMModel", back_populates="provider", cascade="all, delete-orphan")
+    
+    # Indexes for faster queries
+    __table_args__ = (
+        Index('idx_llm_providers_user_id', 'user_id'),
+        Index('idx_llm_providers_provider_type', 'provider_type'),
+        Index('idx_llm_providers_is_active', 'is_active'),
+        Index('idx_llm_providers_is_default', 'is_default'),
+    )
+
+class LLMModel(Base):
+    """LLM Models for each provider"""
+    __tablename__ = "llm_models"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    provider_id = Column(Integer, ForeignKey("llm_providers.id"), nullable=False)
+    model_name = Column(String(255), nullable=False)  # e.g., "gpt-4o"
+    display_name = Column(String(255), nullable=False)  # e.g., "GPT-4o"
+    is_active = Column(Boolean, default=True)
+    max_tokens = Column(Integer, nullable=True)
+    cost_per_1k_tokens = Column(DECIMAL(10, 6), nullable=True)
+    
+    # Timestamps
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    
+    # Relationships
+    provider = relationship("LLMProvider", back_populates="models")
+    
+    # Indexes for faster queries
+    __table_args__ = (
+        Index('idx_llm_models_provider_id', 'provider_id'),
+        Index('idx_llm_models_model_name', 'model_name'),
+        Index('idx_llm_models_is_active', 'is_active'),
     )
