@@ -12,6 +12,25 @@ from core.database import get_db
 
 router = APIRouter()
 
+@router.get("/credentials", response_model=List[schemas.DeveloperExchangeCredentialsPublic])
+def list_credentials_alt(
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(security.get_current_active_user)
+):
+    """Get all credentials for current user - alternative endpoint"""
+    return list_credentials(skip, limit, db, current_user)
+
+@router.post("/credentials", response_model=schemas.DeveloperExchangeCredentialsPublic)
+def create_credentials_alt(
+    credentials: schemas.DeveloperExchangeCredentialsCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(security.get_current_active_user)
+):
+    """Create new exchange credentials - alternative endpoint"""
+    return create_credentials(credentials, db, current_user)
+
 @router.post("/", response_model=schemas.DeveloperExchangeCredentialsPublic)
 def create_credentials(
     credentials: schemas.DeveloperExchangeCredentialsCreate,

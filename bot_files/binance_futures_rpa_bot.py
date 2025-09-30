@@ -600,7 +600,7 @@ class BinanceFuturesIntegration:
 class BinanceFuturesRPABot(CustomBot):
     """Advanced Binance Futures Trading Bot with RPA + LLM Image Analysis"""
     
-    def __init__(self, config: Dict[str, Any], api_keys: Dict[str, str] = None, user_principal_id: str = None):
+    def __init__(self, config: Dict[str, Any], api_keys: Dict[str, str] = None, user_principal_id: str = None, subscription_id: int = None):
         """Initialize Futures Trading Bot with RPA"""
         super().__init__(config, api_keys)
         
@@ -643,7 +643,8 @@ class BinanceFuturesRPABot(CustomBot):
         db_credentials = get_bot_api_keys(
             user_principal_id=user_principal_id,
             exchange="BINANCE",
-            is_testnet=config.get('testnet', True)
+            is_testnet=config.get('testnet', True),
+            subscription_id=subscription_id
         )
 
         if not db_credentials:
