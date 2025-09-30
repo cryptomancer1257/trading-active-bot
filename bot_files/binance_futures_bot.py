@@ -507,7 +507,7 @@ class BinanceFuturesIntegration:
 class BinanceFuturesBot(CustomBot):
     """Advanced Binance Futures Trading Bot with LLM Integration and Stop Loss"""
     
-    def __init__(self, config: Dict[str, Any], api_keys: Dict[str, str] = None, user_principal_id: str = None):
+    def __init__(self, config: Dict[str, Any], api_keys: Dict[str, str] = None, user_principal_id: str = None, subscription_id: int = None):
         """Initialize Futures Trading Bot"""
         super().__init__(config, api_keys)
         
@@ -579,7 +579,8 @@ class BinanceFuturesBot(CustomBot):
         db_credentials = get_bot_api_keys(
             user_principal_id=user_principal_id,
             exchange="BINANCE",
-            is_testnet=config.get('testnet', True)
+            is_testnet=config.get('testnet', True),
+            subscription_id=subscription_id
         )
 
         if not db_credentials:
@@ -597,20 +598,26 @@ class BinanceFuturesBot(CustomBot):
             testnet=client_testnet
         )
 
+        # Try to get mainnet credentials (optional for TRIAL users)
         db_credentials_mainnet = get_bot_api_keys(
             user_principal_id=user_principal_id,
             exchange="BINANCE",
-            is_testnet=False
+            is_testnet=False,
+            subscription_id=subscription_id
         )
 
-        client_api_key_mainnet = db_credentials_mainnet.get('api_key', None)
-        client_api_secret_mainnet = db_credentials_mainnet.get('api_secret', None)
+        if db_credentials_mainnet:
+            client_api_key_mainnet = db_credentials_mainnet.get('api_key', None)
+            client_api_secret_mainnet = db_credentials_mainnet.get('api_secret', None)
 
-        self.futures_client_mainnet = BinanceFuturesIntegration(
-            api_key=client_api_key_mainnet,
-            api_secret=client_api_secret_mainnet,
-            testnet=False
-        )
+            self.futures_client_mainnet = BinanceFuturesIntegration(
+                api_key=client_api_key_mainnet,
+                api_secret=client_api_secret_mainnet,
+                testnet=False
+            )
+        else:
+            logger.warning("No mainnet credentials available, mainnet client not initialized")
+            self.futures_client_mainnet = None
         
         # Initialize LLM service - get LLM keys from api_keys or environment
         self.llm_service = None

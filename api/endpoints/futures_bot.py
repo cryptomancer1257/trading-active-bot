@@ -317,12 +317,13 @@ async def get_api_examples():
 
 @router.get("/logs/{bot_id}")
 async def get_bot_logs(bot_id: int, limit: int = 50):
-    """Get execution logs for a specific bot from Celery task execution"""
+    """Get comprehensive execution logs for a specific bot with detailed trading information"""
     try:
         from core.database import get_db
         from core import models
         from sqlalchemy.orm import Session
         from sqlalchemy import desc
+        import json
         
         db = next(get_db())
         
@@ -331,55 +332,197 @@ async def get_bot_logs(bot_id: int, limit: int = 50):
             models.ExecutionLog.bot_id == bot_id
         ).order_by(desc(models.ExecutionLog.created_at)).limit(limit).all()
         
+        # Get performance logs for this bot (from subscriptions)
+        performance_logs = db.query(models.PerformanceLog).join(
+            models.Subscription
+        ).filter(
+            models.Subscription.bot_id == bot_id
+        ).order_by(desc(models.PerformanceLog.timestamp)).limit(limit).all()
+        
         # Get transactions for this bot
         transactions = db.query(models.Transaction).filter(
             models.Transaction.bot_id == bot_id
-        ).order_by(desc(models.Transaction.created_at)).limit(10).all()
+        ).order_by(desc(models.Transaction.created_at)).limit(limit).all()
+        
+        # Get trades for this bot
+        trades = db.query(models.Trade).join(
+            models.Subscription
+        ).filter(
+            models.Subscription.bot_id == bot_id
+        ).order_by(desc(models.Trade.entry_time)).limit(limit).all()
         
         logs = []
         
-        # Add execution logs
+        # Add execution logs with enhanced information
         for log in execution_logs:
             log_entry = {
                 "timestamp": log.created_at.isoformat(),
+                "execution_time": log.created_at.strftime("%Y-%m-%d %H:%M:%S UTC"),
                 "type": log.log_type,
                 "message": log.message,
                 "level": log.level,
                 "data": log.data,
-                "task_id": log.task_id
+                "task_id": log.task_id,
+                "subscription_id": log.subscription_id
             }
             logs.append(log_entry)
         
-        # Add transaction logs
+        # Add performance logs with detailed trading information
+        for log in performance_logs:
+            # Parse signal data for detailed information
+            signal_data = {}
+            if log.signal_data:
+                try:
+                    if isinstance(log.signal_data, str):
+                        signal_data = json.loads(log.signal_data)
+                    else:
+                        signal_data = log.signal_data
+                except:
+                    signal_data = {"raw": log.signal_data}
+            
+            log_entry = {
+                "timestamp": log.timestamp.isoformat(),
+                "execution_time": log.timestamp.strftime("%Y-%m-%d %H:%M:%S UTC"),
+                "type": "performance",
+                "message": f"Bot executed: {log.action}",
+                "level": "info",
+                "subscription_id": log.subscription_id,
+                
+                # Trading Information
+                "action": log.action,
+                "price": float(log.price) if log.price else None,
+                "quantity": float(log.quantity) if log.quantity else None,
+                "balance": float(log.balance) if log.balance else None,
+                
+                # Signal Details
+                "signal_data": signal_data,
+                "reason": signal_data.get("reason", "N/A"),
+                "confidence": signal_data.get("confidence", "N/A"),
+                
+                # Risk Management
+                "stop_loss": signal_data.get("stop_loss", "N/A"),
+                "take_profit": signal_data.get("take_profit", "N/A"),
+                "risk_reward_ratio": signal_data.get("risk_reward_ratio", "N/A"),
+                
+                # Account Information
+                "account_balance": {
+                    "available": float(log.balance) if log.balance else None,
+                    "total": signal_data.get("total_balance", "N/A")
+                },
+                
+                # Notification Status
+                "notifications": {
+                    "telegram_sent": signal_data.get("telegram_sent", "Unknown"),
+                    "discord_sent": signal_data.get("discord_sent", "Unknown"),
+                    "email_sent": signal_data.get("email_sent", "Unknown")
+                }
+            }
+            logs.append(log_entry)
+        
+        # Add transaction logs with comprehensive trading details
         for transaction in transactions:
             log_entry = {
                 "timestamp": transaction.created_at.isoformat(),
+                "execution_time": transaction.created_at.strftime("%Y-%m-%d %H:%M:%S UTC"),
                 "type": "transaction",
-                "message": f"{transaction.action} {transaction.quantity} {transaction.symbol} at ${transaction.entry_price} (${transaction.leverage}x)",
+                "message": f"{transaction.action} {transaction.quantity} {transaction.symbol} at ${transaction.entry_price}",
                 "level": "info",
-                "data": {
-                    "action": transaction.action,
-                    "symbol": transaction.symbol,
-                    "quantity": transaction.quantity,
-                    "entry_price": transaction.entry_price,
-                    "leverage": transaction.leverage,
-                    "status": transaction.status,
-                    "confidence": transaction.confidence,
-                    "reason": transaction.reason,
-                    "order_id": transaction.order_id
-                }
+                
+                # Core Trading Information
+                "action": transaction.action,
+                "symbol": transaction.symbol,
+                "quantity": float(transaction.quantity),
+                "entry_price": float(transaction.entry_price),
+                "leverage": transaction.leverage,
+                "status": transaction.status,
+                "order_id": transaction.order_id,
+                
+                # Risk Management
+                "stop_loss": float(transaction.stop_loss) if transaction.stop_loss else None,
+                "take_profit": float(transaction.take_profit) if transaction.take_profit else None,
+                
+                # Analysis Information
+                "confidence": float(transaction.confidence) if transaction.confidence else None,
+                "reason": transaction.reason or "N/A",
+                
+                # Timing
+                "created_at": transaction.created_at.strftime("%Y-%m-%d %H:%M:%S UTC"),
+                "updated_at": transaction.updated_at.strftime("%Y-%m-%d %H:%M:%S UTC") if transaction.updated_at else None,
+                
+                # Additional Data
+                "subscription_id": transaction.subscription_id,
+                "user_id": transaction.user_id,
+                "bot_id": transaction.bot_id
+            }
+            logs.append(log_entry)
+        
+        # Add trade logs with P&L information
+        for trade in trades:
+            pnl_info = ""
+            if trade.pnl:
+                pnl_info = f" | P&L: ${float(trade.pnl):.2f}"
+                if trade.pnl_percentage:
+                    pnl_info += f" ({trade.pnl_percentage:.2f}%)"
+            
+            log_entry = {
+                "timestamp": trade.entry_time.isoformat(),
+                "execution_time": trade.entry_time.strftime("%Y-%m-%d %H:%M:%S UTC"),
+                "type": "trade",
+                "message": f"{trade.side} trade - Entry: ${float(trade.entry_price):.2f}{pnl_info}",
+                "level": "info",
+                
+                # Trade Details
+                "action": trade.side,
+                "status": trade.status.value if hasattr(trade.status, 'value') else str(trade.status),
+                "entry_price": float(trade.entry_price) if trade.entry_price else None,
+                "exit_price": float(trade.exit_price) if trade.exit_price else None,
+                "quantity": float(trade.quantity) if trade.quantity else None,
+                
+                # Risk Management
+                "stop_loss": float(trade.stop_loss_price) if trade.stop_loss_price else None,
+                "take_profit": float(trade.take_profit_price) if trade.take_profit_price else None,
+                
+                # P&L Information
+                "pnl": float(trade.pnl) if trade.pnl else None,
+                "pnl_percentage": trade.pnl_percentage,
+                
+                # Exchange Information
+                "order_id": trade.exchange_order_id,
+                "trade_id": trade.exchange_trade_id,
+                
+                # Timing
+                "entry_time": trade.entry_time.strftime("%Y-%m-%d %H:%M:%S UTC"),
+                "exit_time": trade.exit_time.strftime("%Y-%m-%d %H:%M:%S UTC") if trade.exit_time else None,
+                
+                "subscription_id": trade.subscription_id
             }
             logs.append(log_entry)
         
         # Sort by timestamp (newest first)
         logs.sort(key=lambda x: x['timestamp'], reverse=True)
         
+        # Calculate summary statistics
+        total_trades = len([log for log in logs if log['type'] in ['transaction', 'trade']])
+        successful_trades = len([log for log in logs if log['type'] in ['transaction', 'trade'] and log.get('status') in ['EXECUTED', 'CLOSED']])
+        
         return {
             "status": "success",
             "bot_id": bot_id,
             "logs": logs[:limit],
             "total_logs": len(logs),
-            "last_updated": logs[0]['timestamp'] if logs else None
+            "last_updated": logs[0]['timestamp'] if logs else None,
+            "summary": {
+                "total_entries": len(logs),
+                "total_trades": total_trades,
+                "successful_trades": successful_trades,
+                "success_rate": f"{(successful_trades/total_trades*100):.1f}%" if total_trades > 0 else "0%",
+                "log_types": {
+                    "execution": len([log for log in logs if log['type'] == 'system']),
+                    "performance": len([log for log in logs if log['type'] == 'performance']),
+                    "transactions": len([log for log in logs if log['type'] == 'transaction']),
+                    "trades": len([log for log in logs if log['type'] == 'trade'])
+                }
+            }
         }
         
     except Exception as e:
