@@ -546,7 +546,9 @@ class S3Manager:
 
                 if len(key_parts) > version_index:
                     version = key_parts[version_index]
-                    if "." not in version:
+                    # Accept version folders (exclude filenames with extensions like .py, .json)
+                    # Version can be "1.0.0", "v1", "latest", etc.
+                    if not version.endswith(('.py', '.json', '.txt', '.md', '.yml', '.yaml')):
                         versions.add(version)
 
             if not versions:

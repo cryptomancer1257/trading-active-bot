@@ -950,16 +950,77 @@ def get_subscription_performance_metrics(db: Session, subscription_id: int, days
     # Implementation depends on your specific requirements
     pass
 
-def log_bot_action(db: Session, subscription_id: int, action: str, details: str = None):
-    """Log bot action to performance log table"""
+def log_bot_action(db: Session, subscription_id: int, action: str, details: str = None, 
+                  price: float = None, quantity: float = None, balance: float = None,
+                  signal_data: dict = None, trade_result: dict = None, 
+                  account_status: dict = None, notification_status: dict = None):
+    """Log comprehensive bot action to performance log table with detailed trading information"""
     try:
+        # Build comprehensive signal data
+        comprehensive_signal_data = {}
+        
+        # Add basic details
+        if details:
+            comprehensive_signal_data["details"] = details
+            
+        # Add trading information
+        if trade_result:
+            comprehensive_signal_data.update({
+                "trade_result": trade_result,
+                "entry_price": trade_result.get("entry_price"),
+                "stop_loss": trade_result.get("stop_loss"),
+                "take_profit": trade_result.get("take_profit"),
+                "order_id": trade_result.get("order_id"),
+                "leverage": trade_result.get("leverage"),
+                "risk_reward_ratio": trade_result.get("risk_reward_ratio"),
+                "confidence": trade_result.get("confidence"),
+                "reason": trade_result.get("reason")
+            })
+            
+        # Add account information
+        if account_status:
+            comprehensive_signal_data.update({
+                "account_status": account_status,
+                "available_balance": account_status.get("available_balance"),
+                "total_balance": account_status.get("total_balance"),
+                "margin_level": account_status.get("margin_level"),
+                "unrealized_pnl": account_status.get("unrealized_pnl")
+            })
+            
+        # Add notification status
+        if notification_status:
+            comprehensive_signal_data.update({
+                "notifications": notification_status,
+                "telegram_sent": notification_status.get("telegram_sent", False),
+                "discord_sent": notification_status.get("discord_sent", False),
+                "email_sent": notification_status.get("email_sent", False)
+            })
+            
+        # Add any additional signal data
+        if signal_data:
+            comprehensive_signal_data.update(signal_data)
+            
+        # Extract price, quantity, balance from various sources
+        final_price = price
+        final_quantity = quantity  
+        final_balance = balance
+        
+        if not final_price and trade_result:
+            final_price = trade_result.get("entry_price") or trade_result.get("current_price")
+            
+        if not final_quantity and trade_result:
+            final_quantity = trade_result.get("quantity")
+            
+        if not final_balance and account_status:
+            final_balance = account_status.get("available_balance") or account_status.get("total_balance")
+            
         log_entry = models.PerformanceLog(
             subscription_id=subscription_id,
             action=action,
-            price=0.0,  # Default price for non-trade actions
-            quantity=0.0,  # Default quantity for non-trade actions  
-            balance=0.0,  # Default balance for non-trade actions
-            signal_data={"details": details} if details else {}
+            price=final_price or 0.0,
+            quantity=final_quantity or 0.0,
+            balance=final_balance or 0.0,
+            signal_data=comprehensive_signal_data
         )
         db.add(log_entry)
         db.commit()

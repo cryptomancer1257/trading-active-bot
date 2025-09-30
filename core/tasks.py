@@ -197,10 +197,15 @@ def initialize_bot(subscription):
             if subscription.bot.strategy_config:
                 logger.info(f"🎯 Merging DATABASE STRATEGY CONFIG: {subscription.bot.strategy_config}")
                 bot_config.update(subscription.bot.strategy_config)
+            
+            # Set trading pair in bot config
             if subscription.trading_pair:
                 trading_pair = subscription.trading_pair
             else:
                 trading_pair = subscription.bot.trading_pair.replace("/", "")
+            
+            # Add trading pair to bot config (without slash for Binance API)
+            bot_config['trading_pair'] = trading_pair
             # Prepare subscription context for bot (includes principal ID)
             subscription_context = {
                 'subscription_id': subscription.id,
@@ -234,7 +239,7 @@ def initialize_bot(subscription):
                         sys.path.insert(0, bot_files_path)
                     
                     from binance_futures_bot import BinanceFuturesBot
-                    bot_instance = BinanceFuturesBot(bot_config, api_keys, subscription.user_principal_id)
+                    bot_instance = BinanceFuturesBot(bot_config, api_keys, subscription.user_principal_id, subscription.id)
                     init_success = True
                     logger.info(f"✅ FUTURES BOT initialized successfully with principal ID")
                 except Exception as e:
@@ -493,12 +498,21 @@ def initialize_bot_rpa_v1(subscription):
                         sys.path.insert(0, bot_files_path)
                     
                     from binance_futures_rpa_bot import BinanceFuturesRPABot
-                    bot_instance = BinanceFuturesRPABot(bot_config, api_keys, subscription.user_principal_id)
+                    bot_instance = BinanceFuturesRPABot(bot_config, api_keys, subscription.user_principal_id, subscription.id)
                     init_success = True
                     logger.info(f"✅ FUTURES_RPA BOT initialized successfully with principal ID")
                 except Exception as e:
                     logger.warning(f"FUTURES_RPA BOT direct init failed: {e}")
-            # Method 2: Try downloaded bot with 3 arguments (config, api_keys, principal_id)
+            # Method 2: Try downloaded bot with 4 arguments (config, api_keys, principal_id, subscription_id)
+            if not init_success:
+                try:
+                    bot_instance = bot_class(bot_config, api_keys, subscription.user_principal_id, subscription.id)
+                    init_success = True
+                    logger.info(f"✅ Downloaded bot initialized with 4 args: {bot_class.__name__}")
+                except TypeError as e:
+                    logger.warning(f"4-arg constructor failed: {e}")
+            
+            # Method 3: Try downloaded bot with 3 arguments (config, api_keys, principal_id) - fallback
             if not init_success:
                 try:
                     bot_instance = bot_class(bot_config, api_keys, subscription.user_principal_id)
@@ -846,13 +860,14 @@ def run_bot_logic(self, subscription_id: int):
             if subscription.user_principal_id:
     # Marketplace user - use principal_id (PRIORITY)
                 logger.info(f"Looking for exchange credentials for marketplace user (principal: {subscription.user_principal_id})")
-                from core.api_key_manager import APIKeyManager
-                api_key_manager = APIKeyManager()
-                creds = api_key_manager.get_user_credentials_by_principal_id(
-                    db=db,
+                from core.api_key_manager import get_bot_api_keys
+                
+                # Use get_bot_api_keys which handles TRIAL payment method
+                creds = get_bot_api_keys(
                     user_principal_id=subscription.user_principal_id,
                     exchange=exchange_type.value,
-                    is_testnet=use_testnet
+                    is_testnet=use_testnet,
+                    subscription_id=subscription_id  # Pass subscription_id for TRIAL check
                 )
                 if creds:
                     api_key = creds.get('api_key')
@@ -955,10 +970,30 @@ def run_bot_logic(self, subscription_id: int):
             if final_action:
                 logger.info(f"Bot {subscription.bot.name} executed with action: {final_action.action}, value: {final_action.value}, reason: {final_action.reason}")
                 
-                # Log action to database
+                # Prepare notification status tracking
+                notification_status = {
+                    "telegram_sent": False,
+                    "discord_sent": False,
+                    "email_sent": False
+                }
+                
+                # Log action to database with comprehensive information
                 crud.log_bot_action(
                     db, subscription_id, final_action.action,
-                    f"{final_action.reason}. Value: {final_action.value or 0.0}. Price: ${current_price}"
+                    details=f"{final_action.reason}. Value: {final_action.value or 0.0}. Price: ${current_price}",
+                    price=current_price,
+                    quantity=0.0,  # Will be updated if trade is executed
+                    balance=account_status.get('available_balance', 0.0) if account_status else 0.0,
+                    signal_data={
+                        "confidence": final_action.value,
+                        "reason": final_action.reason,
+                        "timeframe": subscription.timeframe,
+                        "trading_pair": trading_pair,
+                        "bot_type": subscription.bot.bot_type,
+                        "execution_mode": "automated"
+                    },
+                    account_status=account_status,
+                    notification_status=notification_status
                 )
                 
             # Get balance info for BUY/SELL actions (real API call)
@@ -1281,13 +1316,14 @@ def run_bot_rpa_logic(self, subscription_id: int):
             if subscription.user_principal_id:
     # Marketplace user - use principal_id (PRIORITY)
                 logger.info(f"Looking for exchange credentials for marketplace user (principal: {subscription.user_principal_id})")
-                from core.api_key_manager import APIKeyManager
-                api_key_manager = APIKeyManager()
-                creds = api_key_manager.get_user_credentials_by_principal_id(
-                    db=db,
+                from core.api_key_manager import get_bot_api_keys
+                
+                # Use get_bot_api_keys which handles TRIAL payment method
+                creds = get_bot_api_keys(
                     user_principal_id=subscription.user_principal_id,
                     exchange=exchange_type.value,
-                    is_testnet=use_testnet
+                    is_testnet=use_testnet,
+                    subscription_id=subscription_id  # Pass subscription_id for TRIAL check
                 )
                 if creds:
                     api_key = creds.get('api_key')

@@ -379,7 +379,7 @@ class APIKeyManager:
 api_key_manager = APIKeyManager()
 
 def get_bot_api_keys(user_principal_id: str, exchange: str = "BINANCE", 
-                    is_testnet: bool = True) -> Optional[Dict[str, str]]:
+                    is_testnet: bool = True, subscription_id: int = None) -> Optional[Dict[str, str]]:
     """
     Convenience function to get API keys for bot initialization
     
@@ -387,6 +387,7 @@ def get_bot_api_keys(user_principal_id: str, exchange: str = "BINANCE",
         user_principal_id: ICP Principal ID
         exchange: Exchange name
         is_testnet: Whether to get testnet credentials
+        subscription_id: Subscription ID to check payment method
         
     Returns:
         Dict with api_key and api_secret for bot initialization
@@ -395,6 +396,68 @@ def get_bot_api_keys(user_principal_id: str, exchange: str = "BINANCE",
         # Get database session
         db = next(get_db())
         
+        # Check if this is a TRIAL subscription
+        is_trial_payment = False
+        if subscription_id:
+            subscription = db.query(models.Subscription).filter(
+                models.Subscription.id == subscription_id
+            ).first()
+            
+            if subscription:
+                logger.info(f"Found subscription {subscription_id}: payment_method={subscription.payment_method}, bot_id={subscription.bot_id}")
+                if subscription.payment_method == models.PaymentMethod.TRIAL:
+                    is_trial_payment = True
+                    logger.info(f"TRIAL subscription detected for {user_principal_id}, using developer credentials")
+            else:
+                logger.warning(f"No subscription found with ID {subscription_id}")
+        
+        # For TRIAL payments, use developer credentials from developer_exchange_credentials table
+        if is_trial_payment:
+            # Get the bot's developer credentials
+            if subscription and subscription.bot:
+                developer_id = subscription.bot.developer_id
+                logger.info(f"Looking for developer credentials: developer_id={developer_id}, exchange={exchange}, is_testnet={is_testnet}")
+                
+                # Query developer_exchange_credentials table
+                # Convert string exchange to ExchangeType enum
+                exchange_enum = getattr(models.ExchangeType, exchange, None)
+                if not exchange_enum:
+                    logger.error(f"Invalid exchange type: {exchange}")
+                    return None
+                    
+                network_type = models.NetworkType.TESTNET if is_testnet else models.NetworkType.MAINNET
+                dev_credentials = db.query(models.DeveloperExchangeCredentials).filter(
+                    models.DeveloperExchangeCredentials.user_id == developer_id,
+                    models.DeveloperExchangeCredentials.exchange_type == exchange_enum,
+                    models.DeveloperExchangeCredentials.network_type == network_type,
+                    models.DeveloperExchangeCredentials.is_active == True
+                ).first()
+                
+                if dev_credentials:
+                    logger.info(f"Found developer credentials: id={dev_credentials.id}, name={dev_credentials.name}")
+                    # Decrypt developer credentials using security module (not api_key_manager)
+                    from core.security import decrypt_sensitive_data
+                    decrypted_key = decrypt_sensitive_data(dev_credentials.api_key)
+                    decrypted_secret = decrypt_sensitive_data(dev_credentials.api_secret)
+                    
+                    logger.info(f"Using developer credentials for TRIAL subscription {subscription_id}")
+                    return {
+                        'api_key': decrypted_key,
+                        'api_secret': decrypted_secret,
+                        'testnet': dev_credentials.network_type == models.NetworkType.TESTNET
+                    }
+                else:
+                    logger.warning(f"No developer credentials found for developer {developer_id}, exchange: {exchange}, network: {'TESTNET' if is_testnet else 'MAINNET'}")
+                    # Let's also check what credentials exist for this developer
+                    all_dev_creds = db.query(models.DeveloperExchangeCredentials).filter(
+                        models.DeveloperExchangeCredentials.user_id == developer_id,
+                        models.DeveloperExchangeCredentials.is_active == True
+                    ).all()
+                    logger.info(f"Available developer credentials for developer {developer_id}: {[(c.exchange_type, c.network_type, c.name) for c in all_dev_creds]}")
+            else:
+                logger.warning(f"No bot found for subscription {subscription_id} or bot has no developer_id")
+        
+        # For non-TRIAL payments, use user credentials as before
         credentials = api_key_manager.get_user_credentials_by_principal_id(
             db, user_principal_id, exchange, is_testnet
         )
