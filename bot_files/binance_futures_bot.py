@@ -512,7 +512,16 @@ class BinanceFuturesBot(CustomBot):
         super().__init__(config, api_keys)
         
         # Futures specific configuration
-        self.trading_pair = config.get('trading_pair', 'BTCUSDT')
+        raw_trading_pair = config.get('trading_pair', 'BTCUSDT')
+        # Normalize trading pair: remove '/' for Binance Futures API (BTC/USDT → BTCUSDT)
+        self.trading_pair = raw_trading_pair.replace('/', '')
+        
+        # Log normalization for debugging
+        if raw_trading_pair != self.trading_pair:
+            logger.info(f"🔧 [BOT INIT] Normalized trading pair: '{raw_trading_pair}' → '{self.trading_pair}'")
+        else:
+            logger.info(f"✅ [BOT INIT] Trading pair already normalized: '{self.trading_pair}'")
+        
         self.leverage = config.get('leverage', 5)  # Safer default leverage
         self.stop_loss_pct = config.get('stop_loss_pct', 0.02)  # 2% stop loss
         self.take_profit_pct = config.get('take_profit_pct', 0.04)  # 4% take profit
@@ -615,9 +624,16 @@ class BinanceFuturesBot(CustomBot):
                 api_secret=client_api_secret_mainnet,
                 testnet=False
             )
+            logger.info("✅ Mainnet client initialized with user credentials")
         else:
-            logger.warning("No mainnet credentials available, mainnet client not initialized")
-            self.futures_client_mainnet = None
+            # ALWAYS create mainnet client for data crawling (public endpoints don't need auth)
+            logger.warning("⚠️ No mainnet credentials, creating public mainnet client for data crawling only")
+            self.futures_client_mainnet = BinanceFuturesIntegration(
+                api_key="",  # Empty key for public endpoints
+                api_secret="",
+                testnet=False
+            )
+            logger.info("✅ Public mainnet client created for accurate market data")
         
         # Initialize LLM service - get LLM keys from api_keys or environment
         self.llm_service = None
@@ -876,6 +892,7 @@ class BinanceFuturesBot(CustomBot):
                 return Action(action="HOLD", value=0.0, reason="Failed to format data for LLM")
             
             # Get LLM analysis with futures context
+            self.trading_pair = self.trading_pair.replace('/', '')
             symbol = self.trading_pair  # e.g., "BTCUSDT"
             llm_analysis = await self.llm_service.analyze_market(
                 symbol=symbol,
@@ -942,6 +959,7 @@ class BinanceFuturesBot(CustomBot):
             # If LLM is enabled and we have historical data, use LLM analysis
             if allow_llm and self.use_llm_analysis and self.llm_service and 'historical_data' in analysis:
                 # 🔍 Step 1: Check cache first
+                self.trading_pair = self.trading_pair.replace('/', '')
                 cached_result = self._get_cached_llm_result(self.trading_pair, self.timeframes)
                 if cached_result:
                     return Action(
@@ -1105,7 +1123,7 @@ class BinanceFuturesBot(CustomBot):
                     'action': 'HOLD',
                     'reason': action.reason
                 }
-            
+            self.trading_pair = self.trading_pair.replace('/', '')
             # Get account information for capital management
             account_info = self.futures_client.get_account_info()
             available_balance = float(account_info.get('availableBalance', 0))
@@ -1489,8 +1507,20 @@ class BinanceFuturesBot(CustomBot):
         MIN_NEEDED = 20  # Bắt buộc tối thiểu
         INITIAL_LOOKBACK_MULT = 1.5  # lần đầu lấy rộng hơn limit 1.5x
         MAX_RETRIES = 3  # số vòng backfill tối đa nếu thiếu
-        SYMBOL = self.trading_pair
-        CLIENT = self.futures_client_mainnet  # client mainnet
+        # SYMBOL = self.trading_pair
+        self.trading_pair = self.trading_pair.replace('/', '')
+        # ALWAYS use mainnet client for data crawling (accurate volume & real-time data)
+        # Fallback to testnet ONLY if mainnet unavailable (trial users)
+        CLIENT = self.futures_client_mainnet if self.futures_client_mainnet else self.futures_client
+        if not CLIENT:
+            logger.error("❌ No futures client available (neither mainnet nor testnet)")
+            return {
+                'timeframes': {},
+                'error': 'No futures client initialized'
+            }
+        
+        client_type = "MAINNET" if self.futures_client_mainnet else "TESTNET (fallback)"
+        logger.info(f"📊 Data crawling using {client_type} client for accurate volume & real-time data")
 
         timeframes_data = {}
         try:
@@ -1515,11 +1545,11 @@ class BinanceFuturesBot(CustomBot):
                     lookback = int(max(desired_limit, int(desired_limit * INITIAL_LOOKBACK_MULT)))
                     start_time = end_time - (lookback - 1) * interval_ms
 
-                    logger.info(f"📊 [{i}/{len(self.timeframes)}] Fetching {lookback} {timeframe} candles for {SYMBOL}")
+                    logger.info(f"📊 [{i}/{len(self.timeframes)}] Fetching {lookback} {timeframe} candles for {self.trading_pair}")
 
                     # ---- Lần fetch đầu
-                    df = self.futures_client_mainnet.get_klines(
-                        symbol=SYMBOL,
+                    df = CLIENT.get_klines(
+                        symbol=self.trading_pair,
                         interval=timeframe,
                         start_time=start_time,
                         end_time=end_time,
@@ -1539,8 +1569,8 @@ class BinanceFuturesBot(CustomBot):
                         new_end = start_time - 1  # nối liền trước cửa sổ cũ
 
                         logger.warning(f"⚠️ {timeframe} thiếu nến {len(df)}/{MIN_NEEDED}, backfill lần {retries}...")
-                        df_more = self.futures_client_mainnet.get_klines(
-                            symbol=SYMBOL,
+                        df_more = CLIENT.get_klines(
+                            symbol=self.trading_pair,
                             interval=timeframe,
                             start_time=new_start,
                             end_time=new_end,
@@ -1740,6 +1770,7 @@ class BinanceFuturesBot(CustomBot):
         """
         Generate trading signal based on multi-timeframe analysis
         """
+        self.trading_pair = self.trading_pair.replace('/', '')
         try:
             # Check for analysis errors
             if 'error' in analysis:
@@ -1932,6 +1963,7 @@ class BinanceFuturesBot(CustomBot):
                     cleaned_timeframes_data[timeframe] = cleaned_data
             
             # Get LLM analysis
+            self.trading_pair = self.trading_pair.replace('/', '')
             symbol = self.trading_pair
             llm_analysis = await self.llm_service.analyze_market(
                 symbol=symbol,

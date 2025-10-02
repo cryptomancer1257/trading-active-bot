@@ -2,8 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { useCreatePrompt, usePrompts } from '@/hooks/usePrompts'
-import { PromptTemplate } from '@/hooks/usePrompts'
+import { useCreatePrompt, useTradingStrategyTemplates, TradingStrategyTemplate } from '@/hooks/usePrompts'
 import { useAuthGuard } from '@/hooks/useAuthGuard'
 import { UserRole } from '@/lib/types'
 import toast from 'react-hot-toast'
@@ -40,8 +39,8 @@ export default function NewPromptPage() {
 
   const createMutation = useCreatePrompt()
   
-  // Get template prompts (default prompts)
-  const { data: templatePrompts, isLoading: templatesLoading } = usePrompts({
+  // Get trading strategy templates from library (17 pre-seeded strategies)
+  const { data: templatePrompts, isLoading: templatesLoading } = useTradingStrategyTemplates({
     limit: 100
   })
 
@@ -57,18 +56,18 @@ export default function NewPromptPage() {
     })
   }
 
-  const handleUseTemplate = (template: PromptTemplate) => {
-    console.log('Using template:', template)
-    console.log('Template content:', template.content)
+  const handleUseTemplate = (strategy: TradingStrategyTemplate) => {
+    console.log('Using trading strategy:', strategy)
+    console.log('Strategy prompt:', strategy.prompt)
     setFormData(prev => ({
       ...prev,
-      name: template.name,
-      description: template.description || '',
-      content: template.content,
-      category: template.category as 'TRADING' | 'ANALYSIS' | 'RISK_MANAGEMENT'
+      name: strategy.title,
+      description: `${strategy.category} | ${strategy.timeframe || 'Any'} | Win Rate: ${strategy.win_rate_estimate || 'N/A'}`,
+      content: strategy.prompt,
+      category: 'TRADING'
     }))
     setShowTemplates(false)
-    toast.success(`Template "${template.name}" applied!`)
+    toast.success(`Strategy "${strategy.title}" applied!`)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -160,8 +159,12 @@ export default function NewPromptPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {templatePrompts.map((template) => (
                     <div key={template.id} className="bg-gray-700 p-4 rounded-lg border border-gray-600 hover:border-purple-500 transition-colors">
-                      <h4 className="text-white font-medium mb-2">{template.name}</h4>
-                      <p className="text-gray-300 text-sm mb-3 line-clamp-2">{template.description}</p>
+                      <h4 className="text-white font-medium mb-2">{template.title}</h4>
+                      <p className="text-gray-300 text-sm mb-3 line-clamp-2">
+                        {template.best_for || template.category}
+                        {template.timeframe && ` | ${template.timeframe}`}
+                        {template.win_rate_estimate && ` | Win: ${template.win_rate_estimate}`}
+                      </p>
                       <div className="flex items-center justify-between">
                         <span className="text-xs text-purple-400 bg-purple-500/20 px-2 py-1 rounded">
                           {template.category}

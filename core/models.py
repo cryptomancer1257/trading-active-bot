@@ -104,7 +104,7 @@ class User(Base):
     subscriptions = relationship("Subscription", back_populates="user")
     reviews = relationship("BotReview", back_populates="user")
     exchange_credentials = relationship("ExchangeCredentials", back_populates="user", cascade="all, delete-orphan")
-    prompt_templates = relationship("PromptTemplate", back_populates="creator")
+    llm_prompt_templates = relationship("LLMPromptTemplate", back_populates="creator")
     principals = relationship("UserPrincipal", back_populates="user", cascade="all, delete-orphan")
 
 class UserPrincipal(Base):
@@ -528,9 +528,9 @@ class BotPricingPlan(Base):
     bot = relationship("Bot", back_populates="pricing_plans")
     subscriptions = relationship("Subscription", back_populates="pricing_plan")
 
-class PromptTemplate(Base):
+class LLMPromptTemplate(Base):
     """LLM Prompt templates for trading analysis"""
-    __tablename__ = "prompt_templates"
+    __tablename__ = "llm_prompt_templates"
     
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), nullable=False)
@@ -546,8 +546,8 @@ class PromptTemplate(Base):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
     
     # Relationships
-    creator = relationship("User", back_populates="prompt_templates")
-    bot_prompts = relationship("BotPrompt", back_populates="prompt_template")
+    creator = relationship("User", back_populates="llm_prompt_templates")
+    bot_prompts = relationship("BotPrompt", back_populates="llm_prompt_template")
 
 class BotPrompt(Base):
     """Relationship between bots and prompt templates"""
@@ -555,7 +555,7 @@ class BotPrompt(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     bot_id = Column(Integer, ForeignKey("bots.id"), nullable=False)
-    prompt_id = Column(Integer, ForeignKey("prompt_templates.id"), nullable=False)
+    prompt_id = Column(Integer, ForeignKey("llm_prompt_templates.id"), nullable=False)
     is_active = Column(Boolean, default=True)
     priority = Column(Integer, default=0)  # Higher number = higher priority
     custom_override = Column(Text)  # Bot-specific prompt customization
@@ -565,7 +565,7 @@ class BotPrompt(Base):
     
     # Relationships
     bot = relationship("Bot", back_populates="bot_prompts")
-    prompt_template = relationship("PromptTemplate", back_populates="bot_prompts")
+    llm_prompt_template = relationship("LLMPromptTemplate", back_populates="bot_prompts")
 
 class BotPromotion(Base):
     """Promotional offers and discounts for bots"""
@@ -776,6 +776,76 @@ class DeveloperExchangeCredentials(Base):
         Index('idx_user_exchange_type_network', 'user_id', 'exchange_type', 'credential_type', 'network_type'),
         Index('idx_user_default_credentials', 'user_id', 'is_default'),
     )
+
+class TradingPromptTemplate(Base):
+    """Trading strategy prompt templates"""
+    __tablename__ = "prompt_templates"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    template_id = Column(String(100), unique=True, nullable=False, index=True)
+    title = Column(String(255), nullable=False)
+    category = Column(String(100), nullable=False, index=True)
+    timeframe = Column(String(50), nullable=True)
+    win_rate_estimate = Column(String(50), nullable=True)
+    prompt = Column(Text, nullable=False)
+    risk_management = Column(Text, nullable=True)
+    best_for = Column(Text, nullable=True)
+    template_metadata = Column("metadata", JSON, nullable=True)  # Use template_metadata as attribute name
+    is_active = Column(Boolean, default=True, index=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class PromptCategory(Base):
+    """Prompt template categories"""
+    __tablename__ = "prompt_categories"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    category_name = Column(String(100), unique=True, nullable=False, index=True)
+    description = Column(Text, nullable=True)
+    parent_category = Column(String(100), nullable=True, index=True)
+    display_order = Column(Integer, default=0)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+
+class UserFavoritePrompt(Base):
+    """User's favorite prompt templates"""
+    __tablename__ = "user_favorite_prompts"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    template_id = Column(String(100), ForeignKey("prompt_templates.template_id"), nullable=False)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    
+    # Relationships
+    user = relationship("User")
+    template = relationship("TradingPromptTemplate")
+    
+    # Indexes
+    __table_args__ = (
+        Index('idx_user_template', 'user_id', 'template_id', unique=True),
+    )
+
+
+class PromptUsageStats(Base):
+    """Prompt template usage statistics"""
+    __tablename__ = "prompt_usage_stats"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    template_id = Column(String(100), ForeignKey("prompt_templates.template_id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    bot_id = Column(Integer, ForeignKey("bots.id"), nullable=True)
+    used_at = Column(DateTime, server_default=func.now(), index=True)
+    performance_rating = Column(Integer, nullable=True)
+    notes = Column(Text, nullable=True)
+    
+    # Relationships
+    template = relationship("TradingPromptTemplate")
+    user = relationship("User")
+    bot = relationship("Bot")
+
 
 class Transaction(Base):
     """Transaction records for trading activities"""

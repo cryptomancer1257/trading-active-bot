@@ -987,7 +987,7 @@ def run_bot_logic(self, subscription_id: int):
                     signal_data={
                         "confidence": final_action.value,
                         "reason": final_action.reason,
-                        "timeframe": subscription.timeframe,
+                        "timeframe": subscription.bot.timeframe,
                         "trading_pair": trading_pair,
                         "bot_type": subscription.bot.bot_type,
                         "execution_mode": "automated"
@@ -2025,6 +2025,12 @@ def run_futures_bot_trading(self, user_principal_id: str = None, config: Dict[st
         # Merge with provided config
         if config:
             default_config.update(config)
+        
+        # Normalize trading pair: remove '/' for Binance Futures API (BTC/USDT → BTCUSDT)
+        if 'trading_pair' in default_config and '/' in default_config['trading_pair']:
+            original_pair = default_config['trading_pair']
+            default_config['trading_pair'] = original_pair.replace('/', '')
+            logger.info(f"🔧 Normalized trading pair: {original_pair} → {default_config['trading_pair']}")
             
         logger.info(f"🤖 Bot Config: {default_config['trading_pair']} | {len(default_config['timeframes'])} timeframes | Auto-confirm: ON")
         

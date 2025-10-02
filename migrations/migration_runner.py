@@ -11,6 +11,10 @@ import time
 from pathlib import Path
 from typing import List, Dict
 import pymysql
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
