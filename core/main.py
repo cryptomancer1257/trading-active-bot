@@ -30,9 +30,9 @@ development_mode = os.getenv('DEVELOPMENT_MODE', 'false').lower() == 'true'
 # Only import API endpoints that don't require external services in development mode
 if not development_mode:
     from api.endpoints import auth, bots, subscriptions, admin, exchanges, exchange_credentials, credentials
-    from api.endpoints import marketplace, futures_bot, user_principals, paypal_payments, prompts, bot_prompts, prompt_test
+    from api.endpoints import marketplace, futures_bot, user_principals, paypal_payments, prompts, bot_prompts, llm_prompts
 else:
-    from api.endpoints import auth, bots, admin, exchange_credentials, credentials, futures_bot, user_principals, prompts, bot_prompts, prompt_test
+    from api.endpoints import auth, bots, admin, exchange_credentials, credentials, futures_bot, user_principals, prompts, bot_prompts, llm_prompts
     # Import marketplace for publish-token functionality in development
     from api.endpoints import marketplace
     # Import simplified subscriptions for testing without S3
@@ -91,9 +91,10 @@ app.include_router(exchange_credentials.router, prefix="/exchange-credentials", 
 app.include_router(credentials.router, prefix="/developer/credentials", tags=["Developer API Credentials"])
 app.include_router(user_principals.router, prefix="/user-principals", tags=["User Principals"])
 app.include_router(futures_bot.router, prefix="/api", tags=["Futures Bot"])  # Available in both modes
-app.include_router(prompts.router, prefix="/prompts", tags=["Prompt Templates"])  # Available in both modes
+# Register prompts routers - ORDER MATTERS! More specific routes first
+app.include_router(prompts.router, prefix="/prompts", tags=["Trading Strategy Templates"])  # /prompts/templates/* routes
+app.include_router(llm_prompts.router, prefix="/prompts", tags=["LLM Prompts"])  # /prompts/* routes (less specific)
 app.include_router(bot_prompts.router, prefix="/bot-prompts", tags=["Bot-Prompt Management"])  # Available in both modes
-app.include_router(prompt_test.router, prefix="/prompt-test", tags=["Prompt Testing"])  # Available in both modes
 
 # Only include these routers in production mode (they require external services)
 if not development_mode:

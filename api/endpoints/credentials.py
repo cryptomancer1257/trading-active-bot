@@ -212,8 +212,13 @@ def delete_credentials(
     current_user: models.User = Depends(security.get_current_active_user)
 ):
     """Delete exchange credentials"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    logger.info(f"DELETE request for credential {credentials_id} by user {current_user.id} ({current_user.email})")
     
     if current_user.role != models.UserRole.DEVELOPER:
+        logger.warning(f"User {current_user.id} is not a developer, role={current_user.role}")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only developers can manage exchange credentials"
@@ -226,11 +231,13 @@ def delete_credentials(
     )
     
     if not deleted_credentials:
+        logger.warning(f"Credential {credentials_id} not found for user {current_user.id}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Credentials not found"
+            detail=f"Credentials {credentials_id} not found or you don't have permission to delete it"
         )
     
+    logger.info(f"Successfully soft-deleted credential {credentials_id}")
     return {"message": "Credentials deleted successfully"}
 
 @router.post("/{credentials_id}/mark-used")

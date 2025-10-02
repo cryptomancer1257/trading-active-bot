@@ -222,7 +222,26 @@ class LLMIntegrationService:
                         for key, value in variables.items():
                             bot_prompt = bot_prompt.replace(f'{{{key}}}', value)
                         
-                        logger.info(f"Using dynamic prompt from bot {bot_id}")
+                        # Append mandatory output format to ensure consistent JSON response
+                        output_format = """
+
+                                    OUTPUT FORMAT (STRICT JSON SCHEMA):
+                                    {
+                                    "recommendation": {
+                                        "action": "BUY" | "SELL" | "HOLD",
+                                        "entry_price": "<string or null>",
+                                        "take_profit": "<string or null>",
+                                        "stop_loss": "<string or null>",
+                                        "strategy": "<MA, MACD, RSI, BollingerBands, Fibonacci_Retracement hoặc kết hợp>",
+                                        "risk_reward": "<string hoặc null>",
+                                        "confidence": "<0-100>",
+                                        "reasoning": "<ngắn gọn 1-2 câu giải thích tại sao>"
+                                    }
+                                    }
+                                    """
+                        bot_prompt = bot_prompt + output_format
+                        
+                        logger.info(f"Using dynamic prompt from bot {bot_id} with output format")
                         return bot_prompt
                         
             except Exception as e:

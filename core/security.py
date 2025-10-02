@@ -167,7 +167,8 @@ import base64
 from cryptography.fernet import Fernet
 
 # Generate or get encryption key (in production, store this securely)
-ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY", Fernet.generate_key())
+# Try API_KEY_ENCRYPTION_KEY first, then fall back to ENCRYPTION_KEY
+ENCRYPTION_KEY = os.getenv("API_KEY_ENCRYPTION_KEY") or os.getenv("ENCRYPTION_KEY") or Fernet.generate_key()
 if isinstance(ENCRYPTION_KEY, str):
     ENCRYPTION_KEY = ENCRYPTION_KEY.encode()
     

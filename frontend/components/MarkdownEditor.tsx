@@ -212,7 +212,6 @@ export default function MarkdownEditor({
             <div className="text-xs text-gray-400">
               <p className="font-medium mb-2 text-gray-300">Available Variables:</p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                {console.log('🔧 Rendering variables panel, AVAILABLE_VARIABLES:', AVAILABLE_VARIABLES)}
                 {Object.entries(AVAILABLE_VARIABLES).map(([key, variable]) => (
                   <div key={key} className="flex items-center space-x-2 p-2 bg-gray-800 rounded">
                     <button
@@ -239,7 +238,7 @@ export default function MarkdownEditor({
 
       {/* Editor Content */}
       <div 
-        className={`${isFullscreen ? 'fixed inset-0 z-50 bg-gray-900' : ''} min-h-[800px] flex flex-col`}
+        className={`${isFullscreen ? 'fixed inset-0 z-50 bg-gray-900' : ''} min-h-[600px] flex flex-col`}
         onClick={(e) => e.stopPropagation()}
       >
         {isFullscreen && (
@@ -263,16 +262,16 @@ export default function MarkdownEditor({
         <div className="flex-1 overflow-hidden">
           {previewMode ? (
             <div 
-              className="p-6 prose prose-lg max-w-none text-base bg-gray-900 rounded-lg text-gray-200 h-full overflow-y-auto cursor-default"
+              className="p-6 w-full text-base bg-gray-800 rounded-lg text-gray-200 h-full overflow-y-auto cursor-default"
               dangerouslySetInnerHTML={{ 
                 __html: renderMarkdown(internalContent || 'No content to preview') 
               }}
             />
           ) : (
-            <div className="relative h-full">
+            <div className="relative h-full w-full">
               {/* Preview-style background */}
               <div 
-                className="p-6 prose prose-lg max-w-none text-base bg-gray-900 rounded-lg h-full overflow-y-auto whitespace-pre-wrap text-gray-200 cursor-text"
+                className="p-6 w-full text-base bg-gray-800 rounded-lg h-full overflow-y-auto whitespace-pre-wrap text-gray-100 cursor-text"
                 style={{
                   fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace',
                   lineHeight: '1.6'

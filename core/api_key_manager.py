@@ -11,6 +11,10 @@ from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from sqlalchemy.orm import Session
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 from core import models, crud
 from core.database import get_db
@@ -435,10 +439,19 @@ def get_bot_api_keys(user_principal_id: str, exchange: str = "BINANCE",
                 
                 if dev_credentials:
                     logger.info(f"Found developer credentials: id={dev_credentials.id}, name={dev_credentials.name}")
-                    # Decrypt developer credentials using security module (not api_key_manager)
+                    # Decrypt developer credentials using Security module
                     from core.security import decrypt_sensitive_data
+                    
+                    # Decrypt developer credentials using Security module
                     decrypted_key = decrypt_sensitive_data(dev_credentials.api_key)
                     decrypted_secret = decrypt_sensitive_data(dev_credentials.api_secret)
+                    
+                    # Check if still encrypted (only if it looks like encrypted data AND is very long)
+                    if decrypted_key.startswith('Z0FBQUFBQm8z') and len(decrypted_key) > 200:
+                        logger.info("Detected double encryption, decrypting again...")
+                        decrypted_key = decrypt_sensitive_data(decrypted_key)
+                        decrypted_secret = decrypt_sensitive_data(decrypted_secret)
+                        logger.info("Double decryption completed")
                     
                     logger.info(f"Using developer credentials for TRIAL subscription {subscription_id}")
                     return {

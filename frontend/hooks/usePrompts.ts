@@ -139,3 +139,39 @@ export const useDeletePrompt = () => {
     },
   })
 }
+
+// ============================================
+// TRADING STRATEGY TEMPLATES (Pre-seeded Library)
+// ============================================
+
+export interface TradingStrategyTemplate {
+  id: number
+  template_id: string
+  title: string
+  category: string
+  timeframe?: string
+  win_rate_estimate?: string
+  prompt: string
+  risk_management?: string
+  best_for?: string
+  metadata?: any
+  created_at?: string
+}
+
+// Get trading strategy templates from library (17 pre-seeded strategies)
+export const useTradingStrategyTemplates = (params?: {
+  skip?: number
+  limit?: number
+  category?: string
+  search?: string
+  timeframe?: string
+  min_win_rate?: number
+}) => {
+  return useQuery({
+    queryKey: ['tradingStrategyTemplates', params],
+    queryFn: async () => {
+      const response = await api.get('/prompts/templates', { params })
+      return response.data as TradingStrategyTemplate[]
+    },
+  })
+}
