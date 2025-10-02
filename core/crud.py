@@ -2136,7 +2136,7 @@ def get_bot_prompts(db: Session, bot_id: int) -> List[models.BotPrompt]:
     return db.query(models.BotPrompt).filter(
         models.BotPrompt.bot_id == bot_id
     ).options(
-        joinedload(models.BotPrompt.prompt_template),
+        joinedload(models.BotPrompt.llm_prompt_template),  # Fixed: use llm_prompt_template not prompt_template
         joinedload(models.BotPrompt.bot)
     ).order_by(desc(models.BotPrompt.priority), desc(models.BotPrompt.attached_at)).all()
 
@@ -2146,7 +2146,7 @@ def get_prompt_bots(db: Session, prompt_id: int) -> List[models.BotPrompt]:
         models.BotPrompt.prompt_id == prompt_id
     ).options(
         joinedload(models.BotPrompt.bot),
-        joinedload(models.BotPrompt.prompt_template)
+        joinedload(models.BotPrompt.llm_prompt_template)  # Fixed: use llm_prompt_template not prompt_template
     ).order_by(desc(models.BotPrompt.priority), desc(models.BotPrompt.attached_at)).all()
 
 def attach_prompt_to_bot(db: Session, bot_id: int, prompt_id: int, priority: int = 0, custom_override: str = None) -> models.BotPrompt:

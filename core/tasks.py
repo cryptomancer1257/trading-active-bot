@@ -152,6 +152,8 @@ def initialize_bot(subscription):
                 else:
                     trading_pair = subscription.bot.trading_pair.replace("/", "")
                 bot_config = {
+                    'bot_id': subscription.bot.id,  # ✅ CRITICAL: Pass bot_id for custom prompt loading
+                    'subscription_id': subscription.id,  # ✅ Pass subscription_id for tracking
                     'trading_pair': trading_pair,
                     'testnet': subscription.is_testnet if subscription.is_testnet else True,
                     'leverage': 5,
@@ -181,6 +183,7 @@ def initialize_bot(subscription):
                     'require_confirmation': False,  # No confirmation for Celery
                     'auto_confirm': True  # Auto-confirm trades (for Celery/automated execution)
                 }
+                logger.info(f"🎯 Config with bot_id={subscription.bot.id}, subscription_id={subscription.id}")
                 logger.info(f"🚀 Applied RICH FUTURES CONFIG: {len(bot_config['timeframes'])} timeframes, {bot_config['leverage']}x leverage")
             else:
                 # Standard configuration for other bots
@@ -2019,12 +2022,17 @@ def run_futures_bot_trading(self, user_principal_id: str = None, config: Dict[st
             'use_llm_analysis': True,
             'llm_model': 'openai',
             'require_confirmation': False,  # Disable confirmation for Celery
-            'auto_confirm': True  # Enable auto-confirmation
+            'auto_confirm': True,  # Enable auto-confirmation
+            'bot_id': None,  # Will be set from config if provided
+            'subscription_id': None  # Will be set from config if provided
         }
         
         # Merge with provided config
         if config:
             default_config.update(config)
+        
+        # Log bot_id and subscription_id for debugging
+        logger.info(f"📋 Config: bot_id={default_config.get('bot_id')}, subscription_id={default_config.get('subscription_id')}")
         
         # Normalize trading pair: remove '/' for Binance Futures API (BTC/USDT → BTCUSDT)
         if 'trading_pair' in default_config and '/' in default_config['trading_pair']:
