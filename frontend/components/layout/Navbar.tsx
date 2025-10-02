@@ -71,7 +71,7 @@ export default function Navbar() {
   const navigationItems = getNavigationItems()
 
   return (
-    <Disclosure as="nav" className="bg-dark-800/80 backdrop-blur-md shadow-lg border-b border-quantum-500/20">
+    <Disclosure as="nav" className="bg-dark-800/80 backdrop-blur-md shadow-lg border-b border-quantum-500/20 sticky top-0 z-[999]">
       {({ open }) => (
         <>
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -102,7 +102,7 @@ export default function Navbar() {
 
               <div className="hidden sm:ml-6 sm:flex sm:items-center">
                 {user ? (
-                  <Menu as="div" className="ml-3 relative">
+                  <Menu as="div" className="ml-3 relative z-[100]">
                     <div>
                       <Menu.Button className="bg-dark-700/50 backdrop-blur-sm flex text-sm rounded-full focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-quantum-500 border border-quantum-500/30 animate-neural-pulse">
                         <span className="sr-only">Open user menu</span>
@@ -120,7 +120,7 @@ export default function Navbar() {
                       leaveFrom="transform opacity-100 scale-100"
                       leaveTo="transform opacity-0 scale-95"
                     >
-                      <Menu.Items className="origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-xl py-1 bg-dark-800/90 backdrop-blur-md ring-1 ring-quantum-500/20 focus:outline-none border border-quantum-500/30">
+                      <Menu.Items className="origin-top-right absolute right-0 mt-2 w-56 rounded-md shadow-xl py-1 bg-dark-800/95 backdrop-blur-md ring-1 ring-quantum-500/20 focus:outline-none border border-quantum-500/30 z-[100]">
                         <div className="px-4 py-2 text-sm text-gray-200 border-b border-quantum-500/20">
                           <div className="font-medium cyber-text">{user.developer_name || user.email}</div>
                           <div className="text-xs text-gray-400">

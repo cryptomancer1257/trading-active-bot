@@ -31,11 +31,71 @@ CREATE TABLE IF NOT EXISTS llm_models (
 );
 
 -- Create indexes for better performance
-CREATE INDEX idx_llm_providers_user_id ON llm_providers(user_id);
-CREATE INDEX idx_llm_providers_provider_type ON llm_providers(provider_type);
-CREATE INDEX idx_llm_providers_is_active ON llm_providers(is_active);
-CREATE INDEX idx_llm_providers_is_default ON llm_providers(is_default);
+-- Note: Indexes will be created only if they don't exist
+-- Migration runner will handle errors if indexes already exist
 
-CREATE INDEX idx_llm_models_provider_id ON llm_models(provider_id);
-CREATE INDEX idx_llm_models_model_name ON llm_models(model_name);
-CREATE INDEX idx_llm_models_is_active ON llm_models(is_active);
+-- Check and create indexes using SET statements
+SET @idx_exists = 0;
+
+-- idx_llm_providers_user_id
+SELECT COUNT(*) INTO @idx_exists FROM information_schema.statistics 
+WHERE table_schema = DATABASE() AND table_name = 'llm_providers' 
+AND index_name = 'idx_llm_providers_user_id';
+SET @sql = IF(@idx_exists = 0, 'CREATE INDEX idx_llm_providers_user_id ON llm_providers(user_id)', 'SELECT "Index exists"');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- idx_llm_providers_provider_type
+SELECT COUNT(*) INTO @idx_exists FROM information_schema.statistics 
+WHERE table_schema = DATABASE() AND table_name = 'llm_providers' 
+AND index_name = 'idx_llm_providers_provider_type';
+SET @sql = IF(@idx_exists = 0, 'CREATE INDEX idx_llm_providers_provider_type ON llm_providers(provider_type)', 'SELECT "Index exists"');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- idx_llm_providers_is_active
+SELECT COUNT(*) INTO @idx_exists FROM information_schema.statistics 
+WHERE table_schema = DATABASE() AND table_name = 'llm_providers' 
+AND index_name = 'idx_llm_providers_is_active';
+SET @sql = IF(@idx_exists = 0, 'CREATE INDEX idx_llm_providers_is_active ON llm_providers(is_active)', 'SELECT "Index exists"');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- idx_llm_providers_is_default
+SELECT COUNT(*) INTO @idx_exists FROM information_schema.statistics 
+WHERE table_schema = DATABASE() AND table_name = 'llm_providers' 
+AND index_name = 'idx_llm_providers_is_default';
+SET @sql = IF(@idx_exists = 0, 'CREATE INDEX idx_llm_providers_is_default ON llm_providers(is_default)', 'SELECT "Index exists"');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- idx_llm_models_provider_id
+SELECT COUNT(*) INTO @idx_exists FROM information_schema.statistics 
+WHERE table_schema = DATABASE() AND table_name = 'llm_models' 
+AND index_name = 'idx_llm_models_provider_id';
+SET @sql = IF(@idx_exists = 0, 'CREATE INDEX idx_llm_models_provider_id ON llm_models(provider_id)', 'SELECT "Index exists"');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- idx_llm_models_model_name
+SELECT COUNT(*) INTO @idx_exists FROM information_schema.statistics 
+WHERE table_schema = DATABASE() AND table_name = 'llm_models' 
+AND index_name = 'idx_llm_models_model_name';
+SET @sql = IF(@idx_exists = 0, 'CREATE INDEX idx_llm_models_model_name ON llm_models(model_name)', 'SELECT "Index exists"');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- idx_llm_models_is_active
+SELECT COUNT(*) INTO @idx_exists FROM information_schema.statistics 
+WHERE table_schema = DATABASE() AND table_name = 'llm_models' 
+AND index_name = 'idx_llm_models_is_active';
+SET @sql = IF(@idx_exists = 0, 'CREATE INDEX idx_llm_models_is_active ON llm_models(is_active)', 'SELECT "Index exists"');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;

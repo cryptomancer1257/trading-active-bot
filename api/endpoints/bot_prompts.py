@@ -64,8 +64,8 @@ async def get_bot_prompts(
         result = []
         for bp in bot_prompts:
             # Get prompt template info
-            prompt_template = db.query(models.PromptTemplate).filter(
-                models.PromptTemplate.id == bp.prompt_id
+            prompt_template = db.query(models.LLMPromptTemplate).filter(
+                models.LLMPromptTemplate.id == bp.prompt_id
             ).first()
             
             result.append({
@@ -106,7 +106,7 @@ async def get_prompt_bots(
 ):
     """Get all bots using a specific prompt"""
     # Verify prompt access
-    prompt = db.query(models.PromptTemplate).filter(models.PromptTemplate.id == prompt_id).first()
+    prompt = db.query(models.LLMPromptTemplate).filter(models.LLMPromptTemplate.id == prompt_id).first()
     if not prompt:
         raise HTTPException(status_code=404, detail="Prompt not found")
     
@@ -134,7 +134,7 @@ async def attach_prompt_to_bot(
         raise HTTPException(status_code=403, detail="Not authorized to access this bot")
     
     # Verify prompt exists
-    prompt = db.query(models.PromptTemplate).filter(models.PromptTemplate.id == prompt_id).first()
+    prompt = db.query(models.LLMPromptTemplate).filter(models.LLMPromptTemplate.id == prompt_id).first()
     if not prompt:
         raise HTTPException(status_code=404, detail="Prompt not found")
     
@@ -275,7 +275,7 @@ async def get_suggested_bots(
 ):
     """Get suggested bots for a prompt"""
     # Verify prompt access
-    prompt = db.query(models.PromptTemplate).filter(models.PromptTemplate.id == prompt_id).first()
+    prompt = db.query(models.LLMPromptTemplate).filter(models.LLMPromptTemplate.id == prompt_id).first()
     if not prompt:
         raise HTTPException(status_code=404, detail="Prompt not found")
     

@@ -1606,12 +1606,12 @@ def create_prompt_template(db: Session, prompt: schemas.PromptTemplateCreate, cr
     """Create a new prompt template"""
     # If this is set as default, unset other defaults in the same category
     if prompt.is_default:
-        db.query(models.PromptTemplate).filter(
-            models.PromptTemplate.category == prompt.category,
-            models.PromptTemplate.is_default == True
+        db.query(models.LLMPromptTemplate).filter(
+            models.LLMPromptTemplate.category == prompt.category,
+            models.LLMPromptTemplate.is_default == True
         ).update({"is_default": False})
     
-    db_prompt = models.PromptTemplate(
+    db_prompt = models.LLMPromptTemplate(
         **prompt.dict(),
         created_by=created_by
     )
@@ -1622,7 +1622,7 @@ def create_prompt_template(db: Session, prompt: schemas.PromptTemplateCreate, cr
 
 def get_prompt_template_by_id(db: Session, prompt_id: int):
     """Get prompt template by ID"""
-    return db.query(models.PromptTemplate).filter(models.PromptTemplate.id == prompt_id).first()
+    return db.query(models.LLMPromptTemplate).filter(models.LLMPromptTemplate.id == prompt_id).first()
 
 def get_prompt_templates(
     db: Session, 
@@ -1633,23 +1633,23 @@ def get_prompt_templates(
     created_by: int = None
 ):
     """Get prompt templates with optional filters"""
-    query = db.query(models.PromptTemplate)
+    query = db.query(models.LLMPromptTemplate)
     
     if category:
-        query = query.filter(models.PromptTemplate.category == category)
+        query = query.filter(models.LLMPromptTemplate.category == category)
     if is_active is not None:
-        query = query.filter(models.PromptTemplate.is_active == is_active)
+        query = query.filter(models.LLMPromptTemplate.is_active == is_active)
     if created_by:
-        query = query.filter(models.PromptTemplate.created_by == created_by)
+        query = query.filter(models.LLMPromptTemplate.created_by == created_by)
     
-    return query.order_by(models.PromptTemplate.created_at.desc()).offset(skip).limit(limit).all()
+    return query.order_by(models.LLMPromptTemplate.created_at.desc()).offset(skip).limit(limit).all()
 
 def get_default_prompt_template(db: Session, category: str = "TRADING"):
     """Get the default prompt template for a category"""
-    return db.query(models.PromptTemplate).filter(
-        models.PromptTemplate.category == category,
-        models.PromptTemplate.is_default == True,
-        models.PromptTemplate.is_active == True
+    return db.query(models.LLMPromptTemplate).filter(
+        models.LLMPromptTemplate.category == category,
+        models.LLMPromptTemplate.is_default == True,
+        models.LLMPromptTemplate.is_active == True
     ).first()
 
 def update_prompt_template(db: Session, prompt_id: int, prompt_update: schemas.PromptTemplateUpdate):
@@ -1662,10 +1662,10 @@ def update_prompt_template(db: Session, prompt_id: int, prompt_update: schemas.P
     
     # If setting as default, unset other defaults in the same category
     if update_data.get('is_default') and db_prompt.category:
-        db.query(models.PromptTemplate).filter(
-            models.PromptTemplate.category == db_prompt.category,
-            models.PromptTemplate.is_default == True,
-            models.PromptTemplate.id != prompt_id
+        db.query(models.LLMPromptTemplate).filter(
+            models.LLMPromptTemplate.category == db_prompt.category,
+            models.LLMPromptTemplate.is_default == True,
+            models.LLMPromptTemplate.id != prompt_id
         ).update({"is_default": False})
     
     for key, value in update_data.items():
@@ -1697,9 +1697,9 @@ def delete_prompt_template(db: Session, prompt_id: int):
 
 def get_prompt_templates_by_user(db: Session, user_id: int, skip: int = 0, limit: int = 100):
     """Get prompt templates created by a specific user"""
-    return db.query(models.PromptTemplate).filter(
-        models.PromptTemplate.created_by == user_id
-    ).order_by(models.PromptTemplate.created_at.desc()).offset(skip).limit(limit).all()
+    return db.query(models.LLMPromptTemplate).filter(
+        models.LLMPromptTemplate.created_by == user_id
+    ).order_by(models.LLMPromptTemplate.created_at.desc()).offset(skip).limit(limit).all()
 
 def get_bot_registration_by_principal_id(
     db: Session,
@@ -2096,7 +2096,14 @@ def update_developer_exchange_credentials(db: Session, credentials_id: int, user
 
 def delete_developer_exchange_credentials(db: Session, credentials_id: int, user_id: int):
     """Soft delete exchange credentials"""
-    db_credentials = get_developer_credentials_by_id(db, credentials_id, user_id)
+    # Don't filter by is_active to allow deleting already soft-deleted credentials
+    db_credentials = db.query(models.DeveloperExchangeCredentials).filter(
+        and_(
+            models.DeveloperExchangeCredentials.id == credentials_id,
+            models.DeveloperExchangeCredentials.user_id == user_id
+        )
+    ).first()
+    
     if not db_credentials:
         return None
     
@@ -2129,7 +2136,7 @@ def get_bot_prompts(db: Session, bot_id: int) -> List[models.BotPrompt]:
     return db.query(models.BotPrompt).filter(
         models.BotPrompt.bot_id == bot_id
     ).options(
-        joinedload(models.BotPrompt.prompt_template),
+        joinedload(models.BotPrompt.llm_prompt_template),  # Fixed: use llm_prompt_template not prompt_template
         joinedload(models.BotPrompt.bot)
     ).order_by(desc(models.BotPrompt.priority), desc(models.BotPrompt.attached_at)).all()
 
@@ -2139,7 +2146,7 @@ def get_prompt_bots(db: Session, prompt_id: int) -> List[models.BotPrompt]:
         models.BotPrompt.prompt_id == prompt_id
     ).options(
         joinedload(models.BotPrompt.bot),
-        joinedload(models.BotPrompt.prompt_template)
+        joinedload(models.BotPrompt.llm_prompt_template)  # Fixed: use llm_prompt_template not prompt_template
     ).order_by(desc(models.BotPrompt.priority), desc(models.BotPrompt.attached_at)).all()
 
 def attach_prompt_to_bot(db: Session, bot_id: int, prompt_id: int, priority: int = 0, custom_override: str = None) -> models.BotPrompt:
@@ -2177,7 +2184,7 @@ def update_bot_prompt(db: Session, bot_prompt_id: int, update_data: dict) -> mod
     db.refresh(bot_prompt)
     return bot_prompt
 
-def get_suggested_prompts(db: Session, bot_id: int, limit: int = 10) -> List[models.PromptTemplate]:
+def get_suggested_prompts(db: Session, bot_id: int, limit: int = 10) -> List[models.LLMPromptTemplate]:
     """Get suggested prompts for a bot based on bot type and category"""
     bot = db.query(models.Bot).filter(models.Bot.id == bot_id).first()
     if not bot:
@@ -2189,24 +2196,24 @@ def get_suggested_prompts(db: Session, bot_id: int, limit: int = 10) -> List[mod
     ).subquery()
     
     # Build query based on bot characteristics
-    query = db.query(models.PromptTemplate).filter(
-        models.PromptTemplate.is_active == True,
-        ~models.PromptTemplate.id.in_(attached_prompt_ids)
+    query = db.query(models.LLMPromptTemplate).filter(
+        models.LLMPromptTemplate.is_active == True,
+        ~models.LLMPromptTemplate.id.in_(attached_prompt_ids)
     )
     
     # Smart suggestions based on bot type
     if bot.bot_type == "LLM":
-        query = query.filter(models.PromptTemplate.category == "TRADING")
+        query = query.filter(models.LLMPromptTemplate.category == "TRADING")
     elif bot.bot_type == "TECHNICAL":
-        query = query.filter(models.PromptTemplate.category.in_(["TRADING", "ANALYSIS"]))
+        query = query.filter(models.LLMPromptTemplate.category.in_(["TRADING", "ANALYSIS"]))
     elif bot.bot_type == "ML":
-        query = query.filter(models.PromptTemplate.category.in_(["ANALYSIS", "RISK_MANAGEMENT"]))
+        query = query.filter(models.LLMPromptTemplate.category.in_(["ANALYSIS", "RISK_MANAGEMENT"]))
     
-    return query.order_by(desc(models.PromptTemplate.is_default), desc(models.PromptTemplate.created_at)).limit(limit).all()
+    return query.order_by(desc(models.LLMPromptTemplate.is_default), desc(models.LLMPromptTemplate.created_at)).limit(limit).all()
 
 def get_suggested_bots(db: Session, prompt_id: int, limit: int = 10) -> List[models.Bot]:
     """Get suggested bots for a prompt"""
-    prompt = db.query(models.PromptTemplate).filter(models.PromptTemplate.id == prompt_id).first()
+    prompt = db.query(models.LLMPromptTemplate).filter(models.LLMPromptTemplate.id == prompt_id).first()
     if not prompt:
         return []
     

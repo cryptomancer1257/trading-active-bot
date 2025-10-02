@@ -19,7 +19,7 @@ from core.models import Base
 from api.endpoints import auth, bots, subscriptions, admin
 from api.endpoints import exchange_credentials, user_principals, futures_bot, marketplace
 from api.endpoints import paypal_payments
-from api.endpoints import prompts
+from api.endpoints import prompts, llm_prompts
 from api.endpoints import bot_prompts
 from api.endpoints import llm_providers
 from api.endpoints import credentials
@@ -83,10 +83,12 @@ app.include_router(user_principals.router, prefix="/user-principals", tags=["Use
 app.include_router(futures_bot.router, prefix="/api", tags=["Futures Bot"])  # Available in both modes
 app.include_router(marketplace.router, prefix="/marketplace", tags=["Marketplace"])
 app.include_router(paypal_payments.router, prefix="/payments", tags=["PayPal Payments"])
-app.include_router(prompts.router, prefix="/prompts", tags=["Prompts"])
+# Register prompts routers - ORDER MATTERS! More specific routes first
+app.include_router(prompts.router, prefix="/prompts", tags=["Trading Strategy Templates"])  # /prompts/templates/* routes
+app.include_router(llm_prompts.router, prefix="/prompts", tags=["LLM Prompts"])  # /prompts/* routes (less specific)
 app.include_router(bot_prompts.router, prefix="/bot-prompts", tags=["Bot prompts"])
 app.include_router(llm_providers.router, prefix="/developer/llm-providers", tags=["LLM Providers"])
-app.include_router(credentials.router, prefix="/developer", tags=["Developer Exchange Credentials"])
+app.include_router(credentials.router, prefix="/developer/credentials", tags=["Developer"])
 
 
 @app.post("/webhook")
