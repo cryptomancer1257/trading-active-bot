@@ -511,6 +511,11 @@ class BinanceFuturesBot(CustomBot):
         """Initialize Futures Trading Bot"""
         super().__init__(config, api_keys)
         
+        # Store bot_id and subscription_id for LLM prompt customization
+        self.bot_id = config.get('bot_id')
+        self.subscription_id = subscription_id
+        logger.info(f"🤖 [BOT INIT] bot_id={self.bot_id}, subscription_id={subscription_id}")
+        
         # Futures specific configuration
         raw_trading_pair = config.get('trading_pair', 'BTCUSDT')
         # Normalize trading pair: remove '/' for Binance Futures API (BTC/USDT → BTCUSDT)
@@ -897,7 +902,8 @@ class BinanceFuturesBot(CustomBot):
             llm_analysis = await self.llm_service.analyze_market(
                 symbol=symbol,
                 timeframes_data=timeframes_data,
-                model=self.llm_model
+                model=self.llm_model,
+                bot_id=self.bot_id  # Pass bot_id for custom prompt
             )
             
             if "error" in llm_analysis:
@@ -1968,7 +1974,8 @@ class BinanceFuturesBot(CustomBot):
             llm_analysis = await self.llm_service.analyze_market(
                 symbol=symbol,
                 timeframes_data=cleaned_timeframes_data,
-                model=self.llm_model
+                model=self.llm_model,
+                bot_id=self.bot_id  # Pass bot_id for custom prompt
             )
             
             if "error" in llm_analysis:

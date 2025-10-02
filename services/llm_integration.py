@@ -200,7 +200,8 @@ class LLMIntegrationService:
                 if bot_prompts:
                     # Get the active prompt (highest priority)
                     active_prompt = max(bot_prompts, key=lambda x: x.priority)
-                    prompt_template = crud.get_prompt_template_by_id(db, active_prompt.prompt_id)
+                    # Use relationship instead of separate query
+                    prompt_template = active_prompt.llm_prompt_template
                     
                     if prompt_template and prompt_template.content:
                         # Use bot's custom prompt with variable injection
