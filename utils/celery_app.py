@@ -46,6 +46,10 @@ app.conf.update(
         'core.tasks.send_telegram_notification': {'queue': 'notifications'},
         'core.tasks.send_telegram_beauty_notification': {'queue': 'notifications'},
         'core.tasks.send_discord_notification': {'queue': 'notifications'},
+        'core.tasks.monitor_open_positions_task': {'queue': 'monitoring'},
+        'core.tasks.update_bot_performance_metrics': {'queue': 'analytics'},
+        'core.tasks.update_prompt_performance_metrics': {'queue': 'analytics'},
+        'core.tasks.update_risk_management_performance': {'queue': 'analytics'},
         'core.tasks.test_task': {'queue': 'default'},
     },
     task_default_queue='default',
@@ -56,6 +60,8 @@ app.conf.update(
         Queue('maintenance'),
         Queue('notifications'),
         Queue('bot_execution_signal'),
+        Queue('monitoring'),
+        Queue('analytics'),
     ),
     beat_schedule={
         'cleanup-old-logs': {
@@ -65,6 +71,10 @@ app.conf.update(
         'schedule-active-bots': {
             'task': 'core.tasks.schedule_active_bots',
             'schedule': 60.0,  # Run every 1 minute to check for bot executions
+        },
+        'monitor-open-positions': {
+            'task': 'core.tasks.monitor_open_positions_task',
+            'schedule': 180.0,  # Run every 3 minutes to check TP/SL and update P&L
         },
     },
 )

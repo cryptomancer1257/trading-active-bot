@@ -65,6 +65,7 @@ class BinanceFuturesIntegration:
         self.api_secret = api_secret
         self.testnet = testnet
         self._time_offset = 0
+        self._symbol_info_cache = {}  # Cache for exchange info
         
         # Futures API endpoints
         if testnet:
@@ -220,14 +221,85 @@ class BinanceFuturesIntegration:
             logger.error(f"Failed to set leverage: {e}")
             return False
     
-    def create_market_order(self, symbol: str, side: str, quantity: str) -> FuturesOrderInfo:
-        """Create futures market order"""
+    def get_symbol_precision(self, symbol: str) -> dict:
+        """
+        Get quantity and price precision for a symbol
+        Returns: {'quantityPrecision': int, 'stepSize': str, 'tickSize': str}
+        """
+        if symbol in self._symbol_info_cache:
+            return self._symbol_info_cache[symbol]
+        
         try:
+            # Get exchange info
+            response = self._make_request("GET", "/fapi/v1/exchangeInfo", signed=False)
+            
+            # Find symbol info
+            for sym_info in response.get('symbols', []):
+                if sym_info['symbol'] == symbol:
+                    precision_info = {
+                        'quantityPrecision': sym_info['quantityPrecision'],
+                        'pricePrecision': sym_info['pricePrecision'],
+                        'stepSize': '0.01',  # Default
+                        'tickSize': '0.01'   # Default
+                    }
+                    
+                    # Get step size from LOT_SIZE filter
+                    for filter_item in sym_info.get('filters', []):
+                        if filter_item['filterType'] == 'LOT_SIZE':
+                            precision_info['stepSize'] = filter_item['stepSize']
+                        elif filter_item['filterType'] == 'PRICE_FILTER':
+                            precision_info['tickSize'] = filter_item['tickSize']
+                    
+                    # Cache result
+                    self._symbol_info_cache[symbol] = precision_info
+                    logger.info(f"📏 {symbol} precision: {precision_info}")
+                    return precision_info
+            
+            # Symbol not found, use defaults
+            logger.warning(f"Symbol {symbol} not found in exchange info, using defaults")
+            return {'quantityPrecision': 3, 'pricePrecision': 2, 'stepSize': '0.001', 'tickSize': '0.01'}
+            
+        except Exception as e:
+            logger.error(f"Failed to get symbol precision: {e}")
+            # Return safe defaults
+            return {'quantityPrecision': 3, 'pricePrecision': 2, 'stepSize': '0.001', 'tickSize': '0.01'}
+    
+    def round_quantity(self, quantity: float, symbol: str) -> str:
+        """
+        Round quantity to proper precision for a symbol
+        Args:
+            quantity: Raw quantity as float
+            symbol: Trading pair symbol (e.g., 'SOLUSDT')
+        Returns:
+            Properly rounded quantity as string
+        """
+        precision_info = self.get_symbol_precision(symbol)
+        decimals = precision_info['quantityPrecision']
+        step_size = float(precision_info['stepSize'])
+        
+        # Round to step size
+        rounded_qty = round(quantity / step_size) * step_size
+        
+        # Format with correct decimals
+        qty_str = f"{rounded_qty:.{decimals}f}"
+        
+        logger.debug(f"Rounded quantity: {quantity} → {qty_str} (precision={decimals}, step={step_size})")
+        return qty_str
+    
+    def create_market_order(self, symbol: str, side: str, quantity: str) -> FuturesOrderInfo:
+        """Create futures market order with proper quantity rounding"""
+        try:
+            # Round quantity to proper precision
+            quantity_float = float(quantity)
+            rounded_quantity = self.round_quantity(quantity_float, symbol)
+            
+            logger.info(f"📊 Creating market order: {symbol} {side} {rounded_quantity}")
+            
             params = {
                 'symbol': symbol,
                 'side': side,
                 'type': 'MARKET',
-                'quantity': quantity
+                'quantity': rounded_quantity
             }
             
             response = self._make_request("POST", "/fapi/v1/order", params, signed=True)
@@ -1186,15 +1258,42 @@ class BinanceFuturesBot(CustomBot):
                     if entry_str and entry_str != 'Market' and entry_str != 'N/A':
                         entry_price = float(entry_str)
                     
-                    # Parse take profit
+                    # Parse take profit (handle multiple TP levels)
+                    # Formats: "4481.70 4493.06 4519.36" or "TP1: 0.8575 TP2: 0.8703" or "0.8575"
                     tp_str = rec.get('take_profit', '').replace(',', '').strip()
                     if tp_str and tp_str != 'N/A':
-                        take_profit_target = float(tp_str)
+                        import re
+                        # Match decimal numbers (with mandatory decimal point for prices)
+                        numbers = re.findall(r'\d+\.\d+', tp_str)
+                        if numbers:
+                            take_profit_target = float(numbers[0])  # Take first TP
+                            logger.info(f"📊 Extracted TP from '{tp_str}' → {take_profit_target}")
+                        else:
+                            # Try integers if no decimals found
+                            numbers = re.findall(r'\d+', tp_str)
+                            if numbers:
+                                take_profit_target = float(numbers[0])
+                                logger.info(f"📊 Extracted TP from '{tp_str}' → {take_profit_target}")
+                            else:
+                                logger.warning(f"Could not extract TP from: {tp_str}")
                     
-                    # Parse stop loss
+                    # Parse stop loss (handle multiple SL levels)
                     sl_str = rec.get('stop_loss', '').replace(',', '').strip()
                     if sl_str and sl_str != 'N/A':
-                        stop_loss_target = float(sl_str)
+                        import re
+                        # Match decimal numbers
+                        numbers = re.findall(r'\d+\.\d+', sl_str)
+                        if numbers:
+                            stop_loss_target = float(numbers[0])  # Take first SL
+                            logger.info(f"📊 Extracted SL from '{sl_str}' → {stop_loss_target}")
+                        else:
+                            # Try integers if no decimals found
+                            numbers = re.findall(r'\d+', sl_str)
+                            if numbers:
+                                stop_loss_target = float(numbers[0])
+                                logger.info(f"📊 Extracted SL from '{sl_str}' → {stop_loss_target}")
+                            else:
+                                logger.warning(f"Could not extract SL from: {sl_str}")
                         
                 except (ValueError, TypeError) as e:
                     logger.warning(f"Failed to parse recommendation prices in setup_position: {e}")
@@ -2180,32 +2279,68 @@ class BinanceFuturesBot(CustomBot):
             return None
 
     def save_transaction_to_db(self, trade_result: Dict[str, Any]):
-        """Save trade transaction to MySQL database"""
+        """Save trade transaction to MySQL database with enhanced tracking"""
         try:
             from core.database import get_db
             from core import models
             from sqlalchemy.orm import Session
             from datetime import datetime
+            from decimal import Decimal
             
             # Get database session
             db = next(get_db())
             
-            # Create transaction record
+            # Determine position side
+            action = trade_result.get('action', '').upper()
+            position_side = 'LONG' if action == 'BUY' else 'SHORT' if action == 'SELL' else None
+            
+            # Calculate planned risk-reward ratio
+            entry_price = float(trade_result.get('entry_price', 0))
+            stop_loss = float(trade_result.get('stop_loss', 0)) if trade_result.get('stop_loss') else None
+            take_profit = float(trade_result.get('take_profit', 0)) if trade_result.get('take_profit') else None
+            
+            risk_reward_ratio = None
+            if stop_loss and take_profit and entry_price > 0:
+                risk = abs(entry_price - stop_loss)
+                reward = abs(take_profit - entry_price)
+                if risk > 0:
+                    risk_reward_ratio = Decimal(str(round(reward / risk, 4)))
+            
+            # Create transaction record with enhanced fields
             transaction = models.Transaction(
-                user_id=trade_result.get('user_id', 1),  # Default to admin user
-                bot_id=trade_result.get('bot_id', 1),    # Default bot ID
+                # Identity & Ownership
+                user_id=trade_result.get('user_id'),  # Can be None for marketplace users
+                user_principal_id=trade_result.get('user_principal_id'),  # For marketplace
+                bot_id=trade_result.get('bot_id', 1),
                 subscription_id=trade_result.get('subscription_id'),
-                action=trade_result.get('action'),
+                prompt_id=trade_result.get('prompt_id'),  # Track which prompt was used
+                
+                # Trade Details
+                action=action,
+                position_side=position_side,
                 symbol=trade_result.get('symbol'),
-                quantity=float(trade_result.get('quantity', 0)),
-                entry_price=float(trade_result.get('entry_price', 0)),
+                quantity=Decimal(str(trade_result.get('quantity', 0))),
+                entry_price=Decimal(str(entry_price)),
+                entry_time=datetime.now(),  # Precise entry time
                 leverage=int(trade_result.get('leverage', 1)),
-                stop_loss=float(trade_result.get('stop_loss', 0)) if trade_result.get('stop_loss') else None,
-                take_profit=float(trade_result.get('take_profit', 0)) if trade_result.get('take_profit') else None,
+                
+                # Risk Management
+                stop_loss=Decimal(str(stop_loss)) if stop_loss else None,
+                take_profit=Decimal(str(take_profit)) if take_profit else None,
+                risk_reward_ratio=risk_reward_ratio,
+                
+                # Order Info
                 order_id=trade_result.get('main_order_id'),
-                confidence=float(trade_result.get('confidence', 0)) if trade_result.get('confidence') else None,
+                
+                # LLM Strategy
+                strategy_used=trade_result.get('strategy_name'),  # From LLM analysis
+                confidence=Decimal(str(trade_result.get('confidence', 0))) if trade_result.get('confidence') else None,
                 reason=trade_result.get('reason'),
-                status='PENDING',  # Default status
+                
+                # Status
+                status='OPEN',  # Position is now OPEN
+                
+                # Timestamps
                 created_at=datetime.now(),
                 updated_at=datetime.now()
             )
@@ -2215,10 +2350,14 @@ class BinanceFuturesBot(CustomBot):
             db.commit()
             db.refresh(transaction)
             
-            print(f"✅ Transaction saved to database with ID: {transaction.id}")
+            print(f"✅ Transaction saved to database with ID: {transaction.id} (Status: OPEN)")
+            print(f"   Position: {position_side}, Entry: ${entry_price:.2f}, RR: {risk_reward_ratio or 'N/A'}")
             
         except Exception as e:
             print(f"❌ Failed to save transaction to database: {e}")
+            import traceback
+            traceback.print_exc()
+            
             # Fallback to JSON file if database fails
             try:
                 import json
@@ -2227,6 +2366,7 @@ class BinanceFuturesBot(CustomBot):
                 transaction = {
                     'timestamp': datetime.now().isoformat(),
                     'action': trade_result.get('action'),
+                    'position_side': 'LONG' if trade_result.get('action') == 'BUY' else 'SHORT',
                     'symbol': trade_result.get('symbol'),
                     'quantity': trade_result.get('quantity'),
                     'entry_price': trade_result.get('entry_price'),
@@ -2235,7 +2375,8 @@ class BinanceFuturesBot(CustomBot):
                     'take_profit': trade_result.get('take_profit'),
                     'order_id': trade_result.get('main_order_id'),
                     'confidence': trade_result.get('confidence'),
-                    'reason': trade_result.get('reason')
+                    'reason': trade_result.get('reason'),
+                    'status': 'OPEN'
                 }
                 
                 # Save to file as fallback

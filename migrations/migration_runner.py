@@ -97,14 +97,15 @@ class MigrationRunner:
         applied = set(self.get_applied_migrations())
         pending = []
         
-        # Get all SQL files in migrations/versions directory
+        # Get all SQL and Python files in migrations/versions directory
         if self.migrations_dir.exists():
-            for file_path in sorted(self.migrations_dir.glob('*.sql')):
+            for file_path in sorted(self.migrations_dir.glob('*.sql')) + sorted(self.migrations_dir.glob('*.py')):
                 version = file_path.stem
                 if version not in applied:
                     pending.append({
                         'version': version,
-                        'file_path': file_path
+                        'file_path': file_path,
+                        'file_type': file_path.suffix
                     })
         
         return pending
@@ -114,25 +115,45 @@ class MigrationRunner:
         try:
             logger.info(f"Applying migration: {migration['version']}")
             
-            # Read SQL file
-            with open(migration['file_path'], 'r', encoding='utf-8') as f:
-                sql_content = f.read()
-            
-            # Split by semicolon and execute each statement
-            statements = [stmt.strip() for stmt in sql_content.split(';') if stmt.strip()]
-            
-            with self.connection.cursor() as cursor:
-                for statement in statements:
-                    if statement:
-                        cursor.execute(statement)
+            if migration['file_type'] == '.py':
+                # Python migration - import and run
+                import importlib.util
+                spec = importlib.util.spec_from_file_location(migration['version'], migration['file_path'])
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                
+                # Call migrate function
+                module.migrate(self.connection)
                 
                 # Record migration as applied
-                cursor.execute(
-                    "INSERT INTO schema_migrations (version) VALUES (%s)",
-                    (migration['version'],)
-                )
+                with self.connection.cursor() as cursor:
+                    cursor.execute(
+                        "INSERT INTO schema_migrations (version) VALUES (%s)",
+                        (migration['version'],)
+                    )
+                self.connection.commit()
+                
+            else:  # .sql file
+                # Read SQL file
+                with open(migration['file_path'], 'r', encoding='utf-8') as f:
+                    sql_content = f.read()
+                
+                # Split by semicolon and execute each statement
+                statements = [stmt.strip() for stmt in sql_content.split(';') if stmt.strip()]
+                
+                with self.connection.cursor() as cursor:
+                    for statement in statements:
+                        if statement:
+                            cursor.execute(statement)
+                    
+                    # Record migration as applied
+                    cursor.execute(
+                        "INSERT INTO schema_migrations (version) VALUES (%s)",
+                        (migration['version'],)
+                    )
+                
+                self.connection.commit()
             
-            self.connection.commit()
             logger.info(f"✅ Migration {migration['version']} applied successfully")
             return True
             

@@ -2531,3 +2531,279 @@ def sync_payment_to_studio_task(self, payment_id: str):
         logger.error(f"Failed to sync payment {payment_id} to Studio: {e}")
         # Retry with exponential backoff
         raise self.retry(countdown=60 * (2 ** self.request.retries))
+
+
+# ============================================================================
+# POSITION MONITORING & PERFORMANCE TRACKING TASKS
+# ============================================================================
+
+@app.task(bind=True)
+def monitor_open_positions_task(self):
+    """
+    Celery task to monitor all open positions
+    - Check TP/SL hit
+    - Update unrealized P&L
+    - Close positions when needed
+    
+    Schedule: Run every 1-5 minutes
+    """
+    try:
+        from core.database import SessionLocal
+        from services.position_monitor import PositionMonitor
+        from binance.client import Client
+        import os
+        
+        logger.info("📊 Starting position monitoring task...")
+        
+        # Get database session
+        db = SessionLocal()
+        
+        try:
+            # Initialize Binance client (use mainnet for monitoring)
+            api_key = os.getenv('BINANCE_MAINNET_API_KEY')
+            api_secret = os.getenv('BINANCE_MAINNET_API_SECRET')
+            
+            if not api_key or not api_secret:
+                logger.warning("No Binance mainnet credentials, skipping monitoring")
+                return {"status": "skipped", "reason": "No mainnet credentials"}
+            
+            futures_client = Client(api_key, api_secret)
+            
+            # Run monitoring
+            monitor = PositionMonitor(db, futures_client)
+            results = monitor.monitor_open_positions()
+            
+            logger.info(f"✅ Position monitoring complete: {results}")
+            return results
+            
+        finally:
+            db.close()
+            
+    except Exception as e:
+        logger.error(f"❌ Position monitoring task failed: {e}")
+        logger.error(traceback.format_exc())
+        # Retry with backoff
+        raise self.retry(exc=e, countdown=300)  # Retry after 5 minutes
+
+
+@app.task(bind=True)
+def update_bot_performance_metrics(self, bot_id: int):
+    """
+    Calculate and update performance metrics for a bot
+    - Win rate
+    - Average P&L
+    - Risk-reward achievement
+    - Total trades
+    
+    Triggered when a position closes
+    """
+    try:
+        from core.database import SessionLocal
+        from core import models
+        from sqlalchemy import func
+        
+        logger.info(f"📈 Calculating performance metrics for bot {bot_id}...")
+        
+        db = SessionLocal()
+        
+        try:
+            # Get all closed transactions for this bot
+            transactions = db.query(models.Transaction).filter(
+                models.Transaction.bot_id == bot_id,
+                models.Transaction.status == 'CLOSED'
+            ).all()
+            
+            if not transactions:
+                logger.info(f"No closed transactions for bot {bot_id}")
+                return {"status": "no_data"}
+            
+            # Calculate metrics
+            total_trades = len(transactions)
+            winning_trades = len([t for t in transactions if t.is_winning])
+            losing_trades = total_trades - winning_trades
+            
+            win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
+            
+            total_pnl = sum([float(t.pnl_usd or 0) for t in transactions])
+            avg_pnl = total_pnl / total_trades if total_trades > 0 else 0
+            
+            avg_win = sum([float(t.pnl_usd or 0) for t in transactions if t.is_winning]) / winning_trades if winning_trades > 0 else 0
+            avg_loss = sum([float(t.pnl_usd or 0) for t in transactions if not t.is_winning]) / losing_trades if losing_trades > 0 else 0
+            
+            profit_factor = abs(avg_win * winning_trades / (avg_loss * losing_trades)) if losing_trades > 0 and avg_loss != 0 else 0
+            
+            # Update bot metadata with performance stats
+            bot = db.query(models.Bot).filter(models.Bot.id == bot_id).first()
+            if bot:
+                # Store in metadata JSON
+                if not bot.metadata:
+                    bot.metadata = {}
+                
+                bot.metadata['performance'] = {
+                    'total_trades': total_trades,
+                    'winning_trades': winning_trades,
+                    'losing_trades': losing_trades,
+                    'win_rate': round(win_rate, 2),
+                    'total_pnl': round(total_pnl, 2),
+                    'avg_pnl': round(avg_pnl, 2),
+                    'avg_win': round(avg_win, 2),
+                    'avg_loss': round(avg_loss, 2),
+                    'profit_factor': round(profit_factor, 2),
+                    'last_updated': datetime.now().isoformat()
+                }
+                
+                db.commit()
+            
+            metrics = {
+                'bot_id': bot_id,
+                'total_trades': total_trades,
+                'win_rate': round(win_rate, 2),
+                'total_pnl': round(total_pnl, 2),
+                'profit_factor': round(profit_factor, 2)
+            }
+            
+            logger.info(f"✅ Bot {bot_id} performance updated: {metrics}")
+            return metrics
+            
+        finally:
+            db.close()
+            
+    except Exception as e:
+        logger.error(f"❌ Failed to update bot performance for {bot_id}: {e}")
+        logger.error(traceback.format_exc())
+        raise self.retry(exc=e, countdown=60)
+
+
+@app.task(bind=True)
+def update_prompt_performance_metrics(self, prompt_id: int):
+    """
+    Calculate and update performance metrics for a prompt template
+    - Win rate across all bots using this prompt
+    - Average P&L
+    - Total trades
+    
+    Triggered when a position closes
+    """
+    try:
+        from core.database import SessionLocal
+        from core import models
+        
+        logger.info(f"📈 Calculating performance metrics for prompt {prompt_id}...")
+        
+        db = SessionLocal()
+        
+        try:
+            # Get all closed transactions using this prompt
+            transactions = db.query(models.Transaction).filter(
+                models.Transaction.prompt_id == prompt_id,
+                models.Transaction.status == 'CLOSED'
+            ).all()
+            
+            if not transactions:
+                logger.info(f"No closed transactions for prompt {prompt_id}")
+                return {"status": "no_data"}
+            
+            # Calculate metrics
+            total_trades = len(transactions)
+            winning_trades = len([t for t in transactions if t.is_winning])
+            
+            win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
+            total_pnl = sum([float(t.pnl_usd or 0) for t in transactions])
+            avg_pnl = total_pnl / total_trades if total_trades > 0 else 0
+            
+            # Update prompt usage stats
+            usage_stat = db.query(models.PromptUsageStats).filter(
+                models.PromptUsageStats.prompt_id == prompt_id
+            ).first()
+            
+            if usage_stat:
+                usage_stat.success_count = winning_trades
+                usage_stat.total_uses = total_trades
+                usage_stat.updated_at = datetime.now()
+                db.commit()
+            
+            metrics = {
+                'prompt_id': prompt_id,
+                'total_trades': total_trades,
+                'win_rate': round(win_rate, 2),
+                'total_pnl': round(total_pnl, 2),
+                'avg_pnl': round(avg_pnl, 2)
+            }
+            
+            logger.info(f"✅ Prompt {prompt_id} performance updated: {metrics}")
+            return metrics
+            
+        finally:
+            db.close()
+            
+    except Exception as e:
+        logger.error(f"❌ Failed to update prompt performance for {prompt_id}: {e}")
+        logger.error(traceback.format_exc())
+        raise self.retry(exc=e, countdown=60)
+
+
+@app.task(bind=True)
+def update_risk_management_performance(self, bot_id: int):
+    """
+    Analyze risk management effectiveness for a bot
+    - TP hit rate vs SL hit rate
+    - Average RR achievement
+    - Slippage analysis
+    
+    Triggered when a position closes
+    """
+    try:
+        from core.database import SessionLocal
+        from core import models
+        
+        logger.info(f"📊 Analyzing risk management for bot {bot_id}...")
+        
+        db = SessionLocal()
+        
+        try:
+            # Get all closed transactions
+            transactions = db.query(models.Transaction).filter(
+                models.Transaction.bot_id == bot_id,
+                models.Transaction.status == 'CLOSED'
+            ).all()
+            
+            if not transactions:
+                return {"status": "no_data"}
+            
+            # Analyze exit reasons
+            tp_hits = len([t for t in transactions if t.exit_reason == 'TP_HIT'])
+            sl_hits = len([t for t in transactions if t.exit_reason == 'SL_HIT'])
+            manual_exits = len([t for t in transactions if t.exit_reason == 'MANUAL'])
+            
+            # Calculate RR achievement
+            avg_planned_rr = sum([float(t.risk_reward_ratio or 0) for t in transactions]) / len(transactions)
+            avg_actual_rr = sum([float(t.actual_rr_ratio or 0) for t in transactions]) / len(transactions)
+            
+            rr_achievement_rate = (avg_actual_rr / avg_planned_rr * 100) if avg_planned_rr > 0 else 0
+            
+            # Analyze slippage
+            transactions_with_slippage = [t for t in transactions if t.slippage]
+            avg_slippage = sum([float(t.slippage) for t in transactions_with_slippage]) / len(transactions_with_slippage) if transactions_with_slippage else 0
+            
+            risk_metrics = {
+                'bot_id': bot_id,
+                'total_trades': len(transactions),
+                'tp_hit_rate': round(tp_hits / len(transactions) * 100, 2),
+                'sl_hit_rate': round(sl_hits / len(transactions) * 100, 2),
+                'manual_exit_rate': round(manual_exits / len(transactions) * 100, 2),
+                'avg_planned_rr': round(avg_planned_rr, 2),
+                'avg_actual_rr': round(avg_actual_rr, 2),
+                'rr_achievement_rate': round(rr_achievement_rate, 2),
+                'avg_slippage': round(avg_slippage, 4)
+            }
+            
+            logger.info(f"✅ Risk management analysis for bot {bot_id}: {risk_metrics}")
+            return risk_metrics
+            
+        finally:
+            db.close()
+            
+    except Exception as e:
+        logger.error(f"❌ Failed to analyze risk management for {bot_id}: {e}")
+        logger.error(traceback.format_exc())
+        raise self.retry(exc=e, countdown=60)
