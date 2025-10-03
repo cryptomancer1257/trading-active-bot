@@ -848,26 +848,59 @@ class PromptUsageStats(Base):
 
 
 class Transaction(Base):
-    """Transaction records for trading activities"""
+    """Enhanced transaction records for comprehensive trade performance tracking"""
     __tablename__ = "transactions"
     
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # Nullable for marketplace users
+    user_principal_id = Column(String(255), nullable=True, index=True)  # For marketplace users
     bot_id = Column(Integer, ForeignKey("bots.id"), nullable=True)
     subscription_id = Column(Integer, ForeignKey("subscriptions.id"), nullable=True)
+    prompt_id = Column(Integer, ForeignKey("llm_prompt_templates.id"), nullable=True)  # Track prompt used
     
     # Transaction details
     action = Column(String(20), nullable=False)  # BUY, SELL, etc.
+    position_side = Column(String(10), nullable=True)  # LONG, SHORT for futures
     symbol = Column(String(20), nullable=False)  # BTC/USDT
     quantity = Column(Float, nullable=False)
     entry_price = Column(Float, nullable=False)
+    entry_time = Column(DateTime, nullable=True)  # When position was opened
     leverage = Column(Integer, default=1)
     stop_loss = Column(Float, nullable=True)
     take_profit = Column(Float, nullable=True)
+    
+    # Exit information
+    exit_price = Column(Float, nullable=True)
+    exit_time = Column(DateTime, nullable=True)
+    exit_reason = Column(String(20), nullable=True)  # TP_HIT, SL_HIT, MANUAL, TIMEOUT, LIQUIDATION
+    
+    # P&L tracking
+    pnl_usd = Column(Float, nullable=True)  # Realized P&L in USD
+    pnl_percentage = Column(Float, nullable=True)  # P&L as percentage
+    is_winning = Column(Boolean, nullable=True)  # Quick flag for win/loss
+    realized_pnl = Column(Float, nullable=True)  # Final realized profit
+    unrealized_pnl = Column(Float, nullable=True)  # Current unrealized P&L (for open positions)
+    
+    # Performance metrics
+    risk_reward_ratio = Column(Float, nullable=True)  # Planned RR (e.g., 3.0 for 1:3)
+    actual_rr_ratio = Column(Float, nullable=True)  # Actual RR achieved
+    strategy_used = Column(String(100), nullable=True)  # From LLM recommendation
+    
+    # Trading costs
+    fees_paid = Column(Float, nullable=True, default=0)  # Trading fees in USD
+    slippage = Column(Float, nullable=True)  # Price slippage percentage
+    
+    # Trade duration
+    trade_duration_minutes = Column(Integer, nullable=True)  # How long position held
+    
+    # Monitoring
+    last_updated_price = Column(Float, nullable=True)  # Last known market price for open positions
+    
+    # Order details
     order_id = Column(String(100), nullable=True)
-    confidence = Column(Float, nullable=True)
-    reason = Column(Text, nullable=True)
-    status = Column(String(20), default='PENDING')  # PENDING, EXECUTED, FAILED
+    confidence = Column(Float, nullable=True)  # LLM confidence score
+    reason = Column(Text, nullable=True)  # Trade reason
+    status = Column(String(20), default='PENDING')  # PENDING, EXECUTED, OPEN, CLOSED, STOPPED_OUT, FAILED
     
     # Timestamps
     created_at = Column(DateTime, server_default=func.now())
@@ -877,13 +910,21 @@ class Transaction(Base):
     user = relationship("User")
     bot = relationship("Bot")
     subscription = relationship("Subscription")
+    llm_prompt_template = relationship("LLMPromptTemplate")
     
     # Indexes for faster queries
     __table_args__ = (
         Index('idx_transactions_user_id', 'user_id'),
+        Index('idx_transactions_user_principal_id', 'user_principal_id'),
         Index('idx_transactions_bot_id', 'bot_id'),
         Index('idx_transactions_subscription_id', 'subscription_id'),
+        Index('idx_transactions_prompt_id', 'prompt_id'),
         Index('idx_transactions_symbol', 'symbol'),
+        Index('idx_transactions_status', 'status'),
+        Index('idx_transactions_entry_time', 'entry_time'),
+        Index('idx_transactions_exit_time', 'exit_time'),
+        Index('idx_transactions_is_winning', 'is_winning'),
+        Index('idx_transactions_bot_status', 'bot_id', 'status'),
         Index('idx_transactions_created_at', 'created_at'),
     )
 

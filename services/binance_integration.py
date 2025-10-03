@@ -137,11 +137,56 @@ class BinanceIntegration:
             if response.status_code == 400:
                 try:
                     error_data = response.json()
-                    logger.error(f"Binance API error: {error_data}")
-                    raise Exception(f"Binance API error: {error_data.get('msg', 'Unknown error')}")
+                    logger.error(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                    logger.error(f"🚨 BINANCE API 400 ERROR")
+                    logger.error(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                    logger.error(f"URL: {url}")
+                    logger.error(f"Method: {method}")
+                    logger.error(f"Params sent: {params}")
+                    logger.error(f"Query string: {final_query}")
+                    logger.error(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                    logger.error(f"Binance Error Response: {error_data}")
+                    logger.error(f"Error Code: {error_data.get('code', 'N/A')}")
+                    logger.error(f"Error Message: {error_data.get('msg', 'Unknown error')}")
+                    logger.error(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                    
+                    # Additional debugging for timestamp issues
+                    if error_data.get('code') == -1021:
+                        import time
+                        current_time = int(time.time() * 1000)
+                        sent_time = params.get('timestamp') if params else None
+                        logger.error(f"⏰ TIMESTAMP DEBUG:")
+                        logger.error(f"   Current server time: {current_time}")
+                        logger.error(f"   Sent timestamp: {sent_time}")
+                        if sent_time:
+                            drift = abs(current_time - int(sent_time))
+                            logger.error(f"   Time drift: {drift}ms ({drift/1000:.1f}s)")
+                        logger.error(f"   RecvWindow: {params.get('recvWindow', 'N/A')}")
+                    
+                    raise Exception(f"Binance API error {error_data.get('code', '')}: {error_data.get('msg', 'Unknown error')}")
                 except ValueError:
-                    logger.error(f"Binance API error - raw response: {response.text}")
+                    logger.error(f"Binance API 400 error - raw response: {response.text}")
                     raise Exception(f"Binance API error: {response.text}")
+            
+            # Check for 500 errors (Binance internal errors)
+            if response.status_code >= 500:
+                logger.error(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                logger.error(f"🚨 BINANCE API 500 ERROR")
+                logger.error(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                logger.error(f"URL: {url}")
+                logger.error(f"Method: {method}")
+                logger.error(f"Params sent: {params}")
+                logger.error(f"Query string: {final_query}")
+                logger.error(f"Status Code: {response.status_code}")
+                logger.error(f"Response body: {response.text[:500]}")
+                logger.error(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                logger.error(f"💡 Possible causes:")
+                logger.error(f"   - Binance testnet unstable/down")
+                logger.error(f"   - Invalid API credentials for testnet")
+                logger.error(f"   - Insufficient testnet balance")
+                logger.error(f"   - Position limit reached")
+                logger.error(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                raise Exception(f"Binance server error (500): Check testnet status or switch to mainnet")
             
             response.raise_for_status()
             return response.json()
