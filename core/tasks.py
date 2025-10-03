@@ -151,10 +151,15 @@ def initialize_bot(subscription):
                     trading_pair = subscription.trading_pair
                 else:
                     trading_pair = subscription.bot.trading_pair.replace("/", "")
+                
+                # Get exchange type from bot
+                exchange_type = subscription.bot.exchange_type.value if subscription.bot.exchange_type else 'BINANCE'
+                
                 bot_config = {
                     'bot_id': subscription.bot.id,  # ✅ CRITICAL: Pass bot_id for custom prompt loading
                     'subscription_id': subscription.id,  # ✅ Pass subscription_id for tracking
                     'trading_pair': trading_pair,
+                    'exchange_type': exchange_type,  # ✅ CRITICAL: Pass exchange type for multi-exchange support
                     'testnet': subscription.is_testnet if subscription.is_testnet else True,
                     'leverage': 5,
                     'stop_loss_pct': 0.02,  # 2%
@@ -183,8 +188,8 @@ def initialize_bot(subscription):
                     'require_confirmation': False,  # No confirmation for Celery
                     'auto_confirm': True  # Auto-confirm trades (for Celery/automated execution)
                 }
-                logger.info(f"🎯 Config with bot_id={subscription.bot.id}, subscription_id={subscription.id}")
-                logger.info(f"🚀 Applied RICH FUTURES CONFIG: {len(bot_config['timeframes'])} timeframes, {bot_config['leverage']}x leverage")
+                logger.info(f"🎯 Config with bot_id={subscription.bot.id}, subscription_id={subscription.id}, exchange={exchange_type}")
+                logger.info(f"🚀 Applied RICH FUTURES CONFIG: {len(bot_config['timeframes'])} timeframes, {bot_config['leverage']}x leverage, exchange={exchange_type}")
             else:
                 # Standard configuration for other bots
                 bot_config = {
@@ -230,23 +235,20 @@ def initialize_bot(subscription):
                 'testnet': subscription_context['is_testnet']
             }
             
-            # Method 1: Try BinanceFuturesBot direct initialization (for Futures bots)
-            if hasattr(subscription.bot, 'bot_type') and subscription.bot.bot_type and subscription.bot.bot_type.upper() == 'FUTURES':
+            # ✅ ALWAYS use bot code downloaded from S3 (supports multi-exchange)
+            # Try different initialization signatures for compatibility
+            logger.info(f"Initializing bot from S3 code: {bot_class.__name__}")
+            
+            # Method 1: Try with 4 arguments (config, api_keys, user_principal_id, subscription_id) - for Universal Bot
+            if not init_success:
                 try:
-                    logger.info(f"Attempting FUTURES BOT direct initialization...")
-                    # Import BinanceFuturesBot directly for futures bots
-                    import sys
-                    import os
-                    bot_files_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'bot_files')
-                    if bot_files_path not in sys.path:
-                        sys.path.insert(0, bot_files_path)
-                    
-                    from binance_futures_bot import BinanceFuturesBot
-                    bot_instance = BinanceFuturesBot(bot_config, api_keys, subscription.user_principal_id, subscription.id)
+                    bot_instance = bot_class(bot_config, api_keys, subscription.user_principal_id, subscription.id)
                     init_success = True
-                    logger.info(f"✅ FUTURES BOT initialized successfully with principal ID")
-                except Exception as e:
-                    logger.warning(f"FUTURES BOT direct init failed: {e}")
+                    logger.info(f"✅ Downloaded bot initialized with 4 args (Universal Futures Bot): {bot_class.__name__}")
+                except TypeError as e:
+                    logger.warning(f"4-arg constructor failed: {e}")
+            
+            # Method 2: Try with 3 arguments (config, api_keys, user_principal_id)
             if not init_success:
                 try:
                     bot_instance = bot_class(bot_config, api_keys, subscription.user_principal_id)

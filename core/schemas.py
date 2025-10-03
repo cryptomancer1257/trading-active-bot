@@ -38,11 +38,13 @@ class FileType(str, Enum):
     DATA = "DATA"
 
 class ExchangeType(str, Enum):
+    MULTI = "MULTI"  # Multi-exchange support (Universal Bot)
     BINANCE = "BINANCE"
-    COINBASE = "COINBASE"
-    KRAKEN = "KRAKEN"
     BYBIT = "BYBIT"
+    OKX = "OKX"
+    BITGET = "BITGET"
     HUOBI = "HUOBI"
+    KRAKEN = "KRAKEN"
 
 class SubscriptionStatus(str, Enum):
     ACTIVE = "ACTIVE"
