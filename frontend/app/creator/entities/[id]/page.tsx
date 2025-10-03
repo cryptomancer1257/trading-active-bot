@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { 
   ArrowLeftIcon,
@@ -18,6 +18,7 @@ import RiskManagementTab from '@/components/RiskManagementTab'
 import toast from 'react-hot-toast'
 import config from '@/lib/config'
 import { useAuth } from '@/contexts/AuthContext'
+import { useGetBot } from '@/hooks/useBots'
 
 type TabType = 'overview' | 'prompts' | 'risk-management' | 'settings' | 'analytics'
 
@@ -36,19 +37,67 @@ export default function BotDetailPage() {
   const [botLogs, setBotLogs] = useState<any[]>([])
   const [isLoadingLogs, setIsLoadingLogs] = useState(false)
 
-  // Mock bot data for testing
-  const bot = {
-    id: parseInt(botId || '48'),
-    name: '🚀 Futures Quantum Entity',
-    description: 'Advanced futures trading with LLM AI analysis, leverage, and quantum risk management',
-    bot_type: 'FUTURES',
-    version: '1.0.0',
-    status: 'APPROVED',
-    exchange_type: 'BINANCE',
-    trading_pair: 'BTC/USDT',
-    timeframe: '1h',
-    leverage: 10,
-    created_at: '2025-09-27T08:39:45'
+  // Fetch real bot data from API
+  const { data: bot, isLoading: isBotLoading, error: botError } = useGetBot(botId)
+
+  // Define fetchBotLogs with useCallback to prevent infinite loop
+  const fetchBotLogs = useCallback(async () => {
+    if (!bot?.id) return
+    
+    setIsLoadingLogs(true)
+    try {
+      const response = await fetch(`${config.studioBaseUrl}/api/futures-bot/logs/${bot.id}`)
+      if (response.ok) {
+        const data = await response.json()
+        setBotLogs(data.logs || [])
+      } else {
+        console.error('Failed to fetch bot logs')
+      }
+    } catch (error) {
+      console.error('Error fetching bot logs:', error)
+    } finally {
+      setIsLoadingLogs(false)
+    }
+  }, [bot?.id])
+
+  // Fetch logs on component mount - MUST be called before early returns
+  useEffect(() => {
+    if (bot?.id) {
+      fetchBotLogs()
+      // Auto-refresh logs every 5 seconds
+      const interval = setInterval(fetchBotLogs, 5000)
+      return () => clearInterval(interval)
+    }
+  }, [bot?.id, fetchBotLogs])
+
+  // Show loading state AFTER all hooks
+  if (isBotLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500 mx-auto"></div>
+          <p className="mt-4 text-gray-400">Loading bot details...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Show error state
+  if (botError || !bot) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <ExclamationTriangleIcon className="h-12 w-12 text-red-500 mx-auto" />
+          <p className="mt-4 text-gray-400">Failed to load bot details</p>
+          <button 
+            onClick={() => router.push('/creator/entities')}
+            className="mt-4 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+          >
+            Back to Entities
+          </button>
+        </div>
+      </div>
+    )
   }
 
   const handleStartFreeTrial = async () => {
@@ -107,31 +156,6 @@ export default function BotDetailPage() {
       setIsStartingTrial(false)
     }
   }
-
-  const fetchBotLogs = async () => {
-    setIsLoadingLogs(true)
-    try {
-      const response = await fetch(`${config.studioBaseUrl}/api/futures-bot/logs/${bot.id}`)
-      if (response.ok) {
-        const data = await response.json()
-        setBotLogs(data.logs || [])
-      } else {
-        console.error('Failed to fetch bot logs')
-      }
-    } catch (error) {
-      console.error('Error fetching bot logs:', error)
-    } finally {
-      setIsLoadingLogs(false)
-    }
-  }
-
-  // Fetch logs on component mount
-  useEffect(() => {
-    fetchBotLogs()
-    // Auto-refresh logs every 5 seconds
-    const interval = setInterval(fetchBotLogs, 5000)
-    return () => clearInterval(interval)
-  }, [bot.id])
 
   const renderContent = () => {
     switch (activeTab) {
