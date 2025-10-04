@@ -190,9 +190,29 @@ def create_bot(db: Session, bot: schemas.BotCreate, developer_id: int, status: s
         'name', 'description', 'category_id', 'version', 'bot_type', 'price_per_month', 
         'is_free', 'config_schema', 'default_config', 'model_metadata', 'timeframes', 
         'timeframe', 'bot_mode', 'trading_pair', 'exchange_type', 'strategy_config', 
-        'image_url', 'code_path_rpa', 'version_rpa'
+        'image_url', 'code_path', 'code_path_rpa', 'version_rpa'
     }
     filtered_bot_dict = {k: v for k, v in bot_dict.items() if k in valid_fields and v is not None}
+    
+    # 🎯 AUTO-SET CODE_PATH for template bots (local files)
+    template = bot_dict.get('template') or bot_dict.get('templateFile')
+    if template:
+        # Map template name to local file path
+        TEMPLATE_FILE_MAPPING = {
+            'universal_futures_bot': 'bot_files/universal_futures_bot.py',
+            'universal_futures_bot.py': 'bot_files/universal_futures_bot.py',
+            'binance_futures_bot': 'bot_files/binance_futures_bot.py',
+            'binance_futures_bot.py': 'bot_files/binance_futures_bot.py',
+            'binance_futures_rpa_bot': 'bot_files/binance_futures_rpa_bot.py',
+            'binance_futures_rpa_bot.py': 'bot_files/binance_futures_rpa_bot.py',
+            'binance_signals_bot': 'bot_files/binance_signals_bot.py',
+            'binance_signals_bot.py': 'bot_files/binance_signals_bot.py',
+        }
+        
+        code_path = TEMPLATE_FILE_MAPPING.get(template)
+        if code_path:
+            filtered_bot_dict['code_path'] = code_path
+            logger.info(f"✅ Auto-set code_path for template '{template}' → {code_path}")
     
     db_bot = models.Bot(
         **filtered_bot_dict,

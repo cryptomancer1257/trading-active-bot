@@ -68,13 +68,145 @@ def format_notification_message(
     msg += f"\nReason: {reason}"
     return msg
 
+def format_trade_log_details(trade_result, signal, trading_pair):
+    """
+    Format comprehensive trade execution log details for UI display
+    Returns formatted string with all trade information
+    """
+    try:
+        # Extract trade details
+        quantity = trade_result.get('quantity', 0)
+        entry_price = trade_result.get('entry_price', 0)
+        leverage = trade_result.get('leverage', 1)
+        stop_loss_data = trade_result.get('stop_loss', {})
+        take_profit_data = trade_result.get('take_profit', {})
+        confidence = signal.value * 100 if hasattr(signal, 'value') else 0
+        action = signal.action if hasattr(signal, 'action') else trade_result.get('action', 'UNKNOWN')
+        
+        # Extract SL/TP prices
+        if isinstance(stop_loss_data, dict):
+            stop_loss_price = stop_loss_data.get('price', 0)
+        else:
+            stop_loss_price = stop_loss_data if stop_loss_data else 0
+            
+        if isinstance(take_profit_data, dict):
+            take_profit_price = take_profit_data.get('price', 0)
+        else:
+            take_profit_price = take_profit_data if take_profit_data else 0
+        
+        # Format message with emoji
+        action_emoji = "💰" if action == "BUY" else "🔴" if action == "SELL" else "⏸️"
+        
+        # Build comprehensive message
+        details = (
+            f"{action_emoji} {action} {quantity} {trading_pair} at ${entry_price:,.2f} ({leverage}x) "
+            f"(Confidence: {confidence:.1f}%)"
+        )
+        
+        # Add SL/TP to signal_data for display
+        if stop_loss_price > 0 or take_profit_price > 0:
+            sl_tp_info = []
+            if stop_loss_price > 0:
+                sl_tp_info.append(f"SL: ${stop_loss_price:,.2f}")
+            if take_profit_price > 0:
+                sl_tp_info.append(f"TP: ${take_profit_price:,.2f}")
+            if sl_tp_info:
+                details += f" | {' | '.join(sl_tp_info)}"
+        
+        return details
+        
+    except Exception as e:
+        logger.error(f"Error formatting trade log details: {e}")
+        return f"{trade_result.get('action', 'TRADE')} executed"
+
 # Helper to push DM to Redis queue
 def queue_discord_dm(user_id, message):
     r = redis.Redis(host=os.getenv('REDIS_HOST', 'redis_db'), port=int(os.getenv('REDIS_PORT', 6379)), db=0)
     payload = {'user_id': user_id, 'message': message}
     r.rpush('discord_dm_queue', json.dumps(payload))
+
+def initialize_bot_from_local_file(subscription, local_file_path):
+    """📂 Load bot from local file system (for template bots)"""
+    try:
+        import importlib.util
+        
+        bot_id = subscription.bot.id
+        
+        # Handle bot_type - can be enum or string
+        bot_type = subscription.bot.bot_type
+        if hasattr(bot_type, 'value'):
+            bot_type = bot_type.value
+        
+        # Handle exchange_type - can be enum or string
+        exchange_type = subscription.bot.exchange_type
+        if hasattr(exchange_type, 'value'):
+            exchange_type = exchange_type.value
+        elif not exchange_type:
+            exchange_type = 'BINANCE'
+        
+        logger.info(f"📂 Loading bot from local file: {local_file_path}")
+        
+        # Load module from file
+        module_name = f"bot_module_{bot_id}_{int(time.time())}"  # Unique name to avoid cache
+        spec = importlib.util.spec_from_file_location(module_name, local_file_path)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        spec.loader.exec_module(module)
+        
+        # Find bot class by looking for classes with execute_algorithm method
+        bot_class = None
+        
+        for name, obj in inspect.getmembers(module, inspect.isclass):
+            # Look for custom bot class (has execute_algorithm and not a base class)
+            if (hasattr(obj, 'execute_algorithm') and 
+                name not in ['CustomBot', 'Action', 'BaseBot'] and
+                not name.startswith('_')):
+                bot_class = obj
+                logger.info(f"🔧 [DEV MODE] Found bot class: {name}")
+                break
+        
+        if not bot_class:
+            raise Exception(f"No bot class found in local file: {local_path}")
+        
+        # Prepare config
+        execution_config = subscription.execution_config or {}
+        
+        bot_config = {
+            'bot_id': bot_id,
+            'subscription_id': subscription.id,
+            'trading_pair': subscription.trading_pair or execution_config.get('trading_pair', 'BTC/USDT'),
+            'leverage': execution_config.get('leverage', 5),
+            'testnet': subscription.is_testnet if subscription.is_testnet is not None else False,
+            'exchange_type': exchange_type,
+            'timeframes': execution_config.get('timeframes', ['1h']),
+            'bot_type': bot_type,
+        }
+        
+        # Get API keys
+        from core.api_key_manager import get_bot_api_keys
+        api_keys = get_bot_api_keys(subscription.user_principal_id, exchange_type)
+        
+        # Initialize bot (try 4-arg constructor first)
+        try:
+            bot_instance = bot_class(bot_config, api_keys, subscription.user_principal_id, subscription.id)
+            logger.info(f"🔧 [DEV MODE] Bot initialized with 4 args")
+        except TypeError as e:
+            try:
+                bot_instance = bot_class(bot_config, api_keys)
+                logger.info(f"🔧 [DEV MODE] Bot initialized with 2 args")
+            except Exception as e2:
+                raise Exception(f"Failed to initialize bot: {e}, {e2}")
+        
+        return bot_instance
+        
+    except Exception as e:
+        logger.error(f"📂 Failed to load bot from local file: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
+
 def initialize_bot(subscription):
-    """Initialize bot from subscription - Load from S3"""
+    """Initialize bot from subscription - Load from local file if exists, else S3"""
     try:
         # Import here to avoid circular imports
         from core import models
@@ -83,12 +215,28 @@ def initialize_bot(subscription):
         from services.s3_manager import S3Manager
         from core.bot_base_classes import get_base_classes
         
-        # Initialize S3 manager
-        s3_manager = S3Manager()
-        
         # Get bot information
         bot_id = subscription.bot.id
-        logger.info(f"Initializing bot {bot_id} from S3...")
+        code_path = subscription.bot.code_path
+        
+        # 🎯 STRATEGY: Try local file first (for templates), fallback to S3 (for uploaded bots)
+        
+        # Check if code_path points to a local file
+        if code_path and not code_path.startswith('bots/'):
+            # This is a template bot (e.g., "bot_files/universal_futures_bot.py")
+            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            local_file_path = os.path.join(project_root, code_path)
+            
+            if os.path.exists(local_file_path):
+                logger.info(f"📂 [LOCAL FILE] Loading bot {bot_id} from: {code_path}")
+                return initialize_bot_from_local_file(subscription, local_file_path)
+            else:
+                logger.warning(f"⚠️ Local file not found: {local_file_path}, falling back to S3")
+        
+        # Fallback to S3 for marketplace/uploaded bots
+        # Initialize S3 manager
+        s3_manager = S3Manager()
+        logger.info(f"☁️ [S3] Loading bot {bot_id} from S3...")
         
         # Get latest version from S3
         try:
@@ -107,8 +255,7 @@ def initialize_bot(subscription):
             return None
         
         # Create temporary file to execute the code
-        import tempfile
-        import os
+        # (tempfile and os already imported globally)
         
         # Load base classes from bot_sdk folder
         base_classes = get_base_classes()
@@ -151,10 +298,15 @@ def initialize_bot(subscription):
                     trading_pair = subscription.trading_pair
                 else:
                     trading_pair = subscription.bot.trading_pair.replace("/", "")
+                
+                # Get exchange type from bot
+                exchange_type = subscription.bot.exchange_type.value if subscription.bot.exchange_type else 'BINANCE'
+                
                 bot_config = {
                     'bot_id': subscription.bot.id,  # ✅ CRITICAL: Pass bot_id for custom prompt loading
                     'subscription_id': subscription.id,  # ✅ Pass subscription_id for tracking
                     'trading_pair': trading_pair,
+                    'exchange_type': exchange_type,  # ✅ CRITICAL: Pass exchange type for multi-exchange support
                     'testnet': subscription.is_testnet if subscription.is_testnet else True,
                     'leverage': 5,
                     'stop_loss_pct': 0.02,  # 2%
@@ -183,8 +335,8 @@ def initialize_bot(subscription):
                     'require_confirmation': False,  # No confirmation for Celery
                     'auto_confirm': True  # Auto-confirm trades (for Celery/automated execution)
                 }
-                logger.info(f"🎯 Config with bot_id={subscription.bot.id}, subscription_id={subscription.id}")
-                logger.info(f"🚀 Applied RICH FUTURES CONFIG: {len(bot_config['timeframes'])} timeframes, {bot_config['leverage']}x leverage")
+                logger.info(f"🎯 Config with bot_id={subscription.bot.id}, subscription_id={subscription.id}, exchange={exchange_type}")
+                logger.info(f"🚀 Applied RICH FUTURES CONFIG: {len(bot_config['timeframes'])} timeframes, {bot_config['leverage']}x leverage, exchange={exchange_type}")
             else:
                 # Standard configuration for other bots
                 bot_config = {
@@ -230,23 +382,20 @@ def initialize_bot(subscription):
                 'testnet': subscription_context['is_testnet']
             }
             
-            # Method 1: Try BinanceFuturesBot direct initialization (for Futures bots)
-            if hasattr(subscription.bot, 'bot_type') and subscription.bot.bot_type and subscription.bot.bot_type.upper() == 'FUTURES':
+            # ✅ ALWAYS use bot code downloaded from S3 (supports multi-exchange)
+            # Try different initialization signatures for compatibility
+            logger.info(f"Initializing bot from S3 code: {bot_class.__name__}")
+            
+            # Method 1: Try with 4 arguments (config, api_keys, user_principal_id, subscription_id) - for Universal Bot
+            if not init_success:
                 try:
-                    logger.info(f"Attempting FUTURES BOT direct initialization...")
-                    # Import BinanceFuturesBot directly for futures bots
-                    import sys
-                    import os
-                    bot_files_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'bot_files')
-                    if bot_files_path not in sys.path:
-                        sys.path.insert(0, bot_files_path)
-                    
-                    from binance_futures_bot import BinanceFuturesBot
-                    bot_instance = BinanceFuturesBot(bot_config, api_keys, subscription.user_principal_id, subscription.id)
+                    bot_instance = bot_class(bot_config, api_keys, subscription.user_principal_id, subscription.id)
                     init_success = True
-                    logger.info(f"✅ FUTURES BOT initialized successfully with principal ID")
-                except Exception as e:
-                    logger.warning(f"FUTURES BOT direct init failed: {e}")
+                    logger.info(f"✅ Downloaded bot initialized with 4 args (Universal Futures Bot): {bot_class.__name__}")
+                except TypeError as e:
+                    logger.warning(f"4-arg constructor failed: {e}")
+            
+            # Method 2: Try with 3 arguments (config, api_keys, user_principal_id)
             if not init_success:
                 try:
                     bot_instance = bot_class(bot_config, api_keys, subscription.user_principal_id)
@@ -359,8 +508,7 @@ def initialize_bot_rpa_v1(subscription):
             return None
         
         # Create temporary file to execute the code
-        import tempfile
-        import os
+        # (tempfile and os already imported globally)
         
         # Load base classes from bot_sdk folder
         base_classes = get_base_classes()
@@ -2093,6 +2241,45 @@ def run_futures_bot_trading(self, user_principal_id: str = None, config: Dict[st
                     if trade_result.get('status') == 'success':
                         bot.save_transaction_to_db(trade_result)
                         logger.info(f"✅ Trade executed and saved: {trade_result.get('main_order_id')}")
+                        
+                        # Log detailed execution to database for UI display
+                        try:
+                            # Format comprehensive trade details
+                            log_details = format_trade_log_details(trade_result, signal, bot.trading_pair)
+                            
+                            crud.log_bot_action(
+                                db, subscription_id, signal.action,
+                                details=log_details,
+                                price=trade_result.get('entry_price', 0),
+                                quantity=float(trade_result.get('quantity', 0)),
+                                balance=account_status.get('available_balance', 0) if account_status else 0,
+                                signal_data={
+                                    'confidence': signal.value,
+                                    'reason': signal.reason,
+                                    'timeframe': timeframes[0] if timeframes else '1h',
+                                    'trading_pair': bot.trading_pair,
+                                    'bot_type': 'FUTURES',
+                                    'execution_mode': 'automated',
+                                    'exchange': bot.exchange_name
+                                },
+                                trade_result={
+                                    'entry_price': trade_result.get('entry_price'),
+                                    'quantity': trade_result.get('quantity'),
+                                    'leverage': trade_result.get('leverage'),
+                                    'stop_loss': trade_result.get('stop_loss', {}).get('price') if isinstance(trade_result.get('stop_loss'), dict) else trade_result.get('stop_loss'),
+                                    'take_profit': trade_result.get('take_profit', {}).get('price') if isinstance(trade_result.get('take_profit'), dict) else trade_result.get('take_profit'),
+                                    'position_value': trade_result.get('position_value'),
+                                    'order_id': trade_result.get('main_order_id'),
+                                    'status': 'OPEN',
+                                    'exchange': trade_result.get('exchange')
+                                },
+                                account_status=account_status
+                            )
+                            logger.info("📝 Trade logged to database for UI display")
+                        except Exception as log_error:
+                            logger.error(f"❌ Failed to log trade action: {log_error}")
+                            import traceback
+                            logger.error(traceback.format_exc())
                     else:
                         logger.error(f"❌ Trade failed: {trade_result}")
                 else:

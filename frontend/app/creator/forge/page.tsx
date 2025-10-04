@@ -28,12 +28,12 @@ const botSchema = z.object({
   description: z.string().min(10, 'Description must be at least 10 characters'),
   bot_type: z.enum(['TECHNICAL', 'ML', 'DL', 'LLM', 'FUTURES', 'FUTURES_RPA', 'SPOT']),
   // bot_mode is auto-set based on template type
-  exchange_type: z.enum(['BINANCE', 'COINBASE', 'KRAKEN', 'BYBIT', 'HUOBI']),
+  exchange_type: z.enum(['BINANCE', 'KRAKEN', 'BYBIT', 'HUOBI', 'MULTI', 'OKX', 'BITGET']),
   trading_pair: z.string().default('BTC/USDT'),
   timeframe: z.string().default('1h'),
   timeframes: z.array(z.string()).default(['1h']),
   version: z.string().default('1.0.0'),
-  template: z.enum(['binance_futures_bot', 'binance_futures_rpa_bot', 'binance_signals_bot', 'custom']),
+  template: z.enum(['universal_futures_bot', 'binance_futures_bot', 'binance_futures_rpa_bot', 'binance_signals_bot', 'custom']),
   // Pricing
   price_per_month: z.number().min(0, 'Price must be 0 or higher').default(0),
   is_free: z.boolean().default(false),
@@ -53,6 +53,19 @@ const botSchema = z.object({
 type BotFormData = z.infer<typeof botSchema>
 
 const botTemplates = [
+  {
+    id: 'universal_futures_bot',
+    name: '🌐 Universal Futures Entity',
+    description: 'Multi-exchange futures trading across 6 major platforms (Binance, Bybit, OKX, Bitget, Huobi, Kraken) with unified LLM AI analysis',
+    type: 'FUTURES',
+    exchange: 'MULTI',
+    features: ['6 Exchanges Support', 'Multi-Exchange Portfolio', 'LLM Integration', 'Unified Interface', 'Capital Management', 'Stop Loss/Take Profit'],
+    gradient: 'from-blue-500 via-purple-500 to-pink-500',
+    complexity: 'Advanced',
+    templateFile: 'universal_futures_bot.py',
+    highlighted: true,
+    new: true
+  },
   {
     id: 'binance_futures_bot',
     name: '🚀 Futures Quantum Entity',
@@ -98,17 +111,6 @@ const botTemplates = [
     templateFile: 'binance_signals_bot.py'
   },
   {
-    id: 'coinbase_pro_bot',
-    name: '🏛️ Coinbase Pro Entity',
-    description: 'Professional trading on Coinbase Pro with advanced order management',
-    type: 'SPOT',
-    exchange: 'COINBASE',
-    features: ['Pro Trading', 'Advanced Orders', 'USD Pairs', 'Institutional Grade'],
-    gradient: 'from-blue-500 to-indigo-600',
-    complexity: 'Intermediate',
-    templateFile: 'coinbase_pro_bot.py'
-  },
-  {
     id: 'kraken_futures_bot',
     name: '🐙 Kraken Futures Entity',
     description: 'Derivatives trading on Kraken with risk management and leverage control',
@@ -144,11 +146,13 @@ const botTemplates = [
 ]
 
 const exchangeTypes = [
+  { value: 'MULTI', label: '🌐 Multi-Exchange', description: 'Trade across 6 major exchanges with unified interface' },
   { value: 'BINANCE', label: '🟡 Binance', description: 'World\'s largest crypto exchange' },
   { value: 'BYBIT', label: '🟠 Bybit', description: 'Advanced derivatives platform' },
-  { value: 'COINBASE', label: '🔵 Coinbase', description: 'US-based secure exchange' },
+  { value: 'OKX', label: '⚫ OKX', description: 'Unified trading account' },
+  { value: 'BITGET', label: '🟢 Bitget', description: 'Copy trading leader' },
   { value: 'KRAKEN', label: '🟣 Kraken', description: 'European regulated exchange' },
-  { value: 'HUOBI', label: '🔴 Huobi', description: 'Global digital asset exchange' }
+  { value: 'HUOBI', label: '🔴 Huobi/HTX', description: 'Global digital asset exchange' }
 ]
 
 const timeframeOptions = [
@@ -840,9 +844,16 @@ export default function ForgePage() {
                 <div
                   key={template.id}
                   onClick={() => handleTemplateSelect(template)}
-                  className="card-quantum p-6 cursor-pointer hover:shadow-2xl hover:shadow-quantum-500/20 transition-all duration-300 transform hover:-translate-y-2 animate-fade-in"
+                  className={`card-quantum p-6 cursor-pointer hover:shadow-2xl hover:shadow-quantum-500/20 transition-all duration-300 transform hover:-translate-y-2 animate-fade-in ${
+                    template.highlighted ? 'ring-2 ring-gradient-to-r ring-blue-500/50 ring-offset-2 ring-offset-dark-900' : ''
+                  } ${template.new ? 'relative' : ''}`}
                   style={{ animationDelay: `${index * 0.1}s` }}
                 >
+                  {template.new && (
+                    <div className="absolute -top-2 -right-2 px-3 py-1 bg-gradient-to-r from-blue-500 to-purple-500 text-white text-xs font-bold rounded-full shadow-lg animate-pulse">
+                      NEW
+                    </div>
+                  )}
                   <div className="flex items-start justify-between mb-4">
                     <div className={`p-3 rounded-lg bg-gradient-to-r ${template.gradient} shadow-lg`}>
                       <CpuChipIcon className="h-8 w-8 text-white" />

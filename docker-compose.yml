@@ -48,12 +48,17 @@ services:
     environment:
       - DATABASE_URL=mysql+pymysql://botuser:botpassword123@db/bot_marketplace
       - REDIS_URL=redis://redis:6379/0
+      # 🔧 DEVELOPMENT MODE: Load bots from local files instead of S3
+      - DEVELOPMENT_MODE=true
+      - DEV_BOT_IDS=55  # Comma-separated list of bot IDs to load from local
     depends_on:
       - db
       - redis
       - migration  # Wait for migration to complete
     volumes:
       - ./logs:/app/logs
+      - ./bot_files:/app/bot_files  # Mount local bot files for development
+      - ./services:/app/services  # Mount services for exchange integrations
     restart: unless-stopped
 
   beat:

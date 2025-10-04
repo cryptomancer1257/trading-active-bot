@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { 
   ArrowLeftIcon,
@@ -18,6 +18,33 @@ import RiskManagementTab from '@/components/RiskManagementTab'
 import toast from 'react-hot-toast'
 import config from '@/lib/config'
 import { useAuth } from '@/contexts/AuthContext'
+import { useGetBot } from '@/hooks/useBots'
+
+// Bot Log Interface
+interface BotLog {
+  timestamp: string
+  execution_time: string
+  type: string
+  message: string
+  level: string
+  action?: string
+  symbol?: string
+  quantity?: number
+  entry_price?: number
+  leverage?: number
+  status?: string
+  order_id?: string
+  stop_loss?: number
+  take_profit?: number
+  unrealized_pnl?: number | null
+  unrealized_pnl_pct?: number | null
+  funding_fees?: number
+  needs_price_update?: boolean
+  confidence?: number
+  reason?: string
+  details?: string
+  signal_data?: any
+}
 
 type TabType = 'overview' | 'prompts' | 'risk-management' | 'settings' | 'analytics'
 
@@ -33,22 +60,71 @@ export default function BotDetailPage() {
     tradingPair: 'BTC/USDT',
     networkType: 'TESTNET'
   })
-  const [botLogs, setBotLogs] = useState<any[]>([])
+  const [botLogs, setBotLogs] = useState<BotLog[]>([])
   const [isLoadingLogs, setIsLoadingLogs] = useState(false)
 
-  // Mock bot data for testing
-  const bot = {
-    id: parseInt(botId || '48'),
-    name: '🚀 Futures Quantum Entity',
-    description: 'Advanced futures trading with LLM AI analysis, leverage, and quantum risk management',
-    bot_type: 'FUTURES',
-    version: '1.0.0',
-    status: 'APPROVED',
-    exchange_type: 'BINANCE',
-    trading_pair: 'BTC/USDT',
-    timeframe: '1h',
-    leverage: 10,
-    created_at: '2025-09-27T08:39:45'
+  // Fetch real bot data from API
+  const { data: bot, isLoading: isBotLoading, error: botError } = useGetBot(botId)
+
+  // Define fetchBotLogs with useCallback to prevent infinite loop
+  const fetchBotLogs = useCallback(async () => {
+    if (!bot?.id) return
+    
+    setIsLoadingLogs(true)
+    try {
+      const response = await fetch(`${config.studioBaseUrl}/api/futures-bot/logs/${bot.id}`)
+      if (response.ok) {
+        const data = await response.json()
+        console.log('🔍 Bot Logs Data:', data.logs?.slice(0, 2)) // Debug: show first 2 logs
+        setBotLogs(data.logs || [])
+      } else {
+        console.error('Failed to fetch bot logs')
+      }
+    } catch (error) {
+      console.error('Error fetching bot logs:', error)
+    } finally {
+      setIsLoadingLogs(false)
+    }
+  }, [bot?.id])
+
+  // Fetch logs on component mount - MUST be called before early returns
+  useEffect(() => {
+    if (bot?.id) {
+      fetchBotLogs()
+      // Auto-refresh logs every 5 seconds
+      const interval = setInterval(fetchBotLogs, 5000)
+      return () => clearInterval(interval)
+    }
+  }, [bot?.id, fetchBotLogs])
+
+  // Show loading state AFTER all hooks
+  if (isBotLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500 mx-auto"></div>
+          <p className="mt-4 text-gray-400">Loading bot details...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Show error state
+  if (botError || !bot) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <ExclamationTriangleIcon className="h-12 w-12 text-red-500 mx-auto" />
+          <p className="mt-4 text-gray-400">Failed to load bot details</p>
+          <button 
+            onClick={() => router.push('/creator/entities')}
+            className="mt-4 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+          >
+            Back to Entities
+          </button>
+        </div>
+      </div>
+    )
   }
 
   const handleStartFreeTrial = async () => {
@@ -107,31 +183,6 @@ export default function BotDetailPage() {
       setIsStartingTrial(false)
     }
   }
-
-  const fetchBotLogs = async () => {
-    setIsLoadingLogs(true)
-    try {
-      const response = await fetch(`${config.studioBaseUrl}/api/futures-bot/logs/${bot.id}`)
-      if (response.ok) {
-        const data = await response.json()
-        setBotLogs(data.logs || [])
-      } else {
-        console.error('Failed to fetch bot logs')
-      }
-    } catch (error) {
-      console.error('Error fetching bot logs:', error)
-    } finally {
-      setIsLoadingLogs(false)
-    }
-  }
-
-  // Fetch logs on component mount
-  useEffect(() => {
-    fetchBotLogs()
-    // Auto-refresh logs every 5 seconds
-    const interval = setInterval(fetchBotLogs, 5000)
-    return () => clearInterval(interval)
-  }, [bot.id])
 
   const renderContent = () => {
     switch (activeTab) {
@@ -348,16 +399,76 @@ export default function BotDetailPage() {
                         }
                       }
                       
+                      // Extract detailed trade info - API returns fields directly on log object
+                      const confidence = log.confidence
+                      const stopLoss = log.stop_loss
+                      const takeProfit = log.take_profit
+                      const leverage = log.leverage
+                      const quantity = log.quantity
+                      const entryPrice = log.entry_price
+                      const tradingPair = log.symbol
+                      const status = log.status
+                      const unrealizedPnl = log.unrealized_pnl
+                      const unrealizedPnlPct = log.unrealized_pnl_pct
+                      const fundingFees = log.funding_fees
+                      
+                      // Status badge color
+                      const getStatusBadge = (status: string) => {
+                        if (status === 'OPEN') return <span className="px-2 py-0.5 text-xs bg-green-900/50 text-green-400 rounded ml-2">OPEN</span>
+                        if (status === 'CLOSED') return <span className="px-2 py-0.5 text-xs bg-gray-700 text-gray-400 rounded ml-2">CLOSED</span>
+                        return null
+                      }
+                      
+                      // P&L color
+                      const getPnlColor = (pnl: number | null) => {
+                        if (!pnl) return 'text-gray-400'
+                        return pnl >= 0 ? 'text-green-400' : 'text-red-400'
+                      }
+                      
                       return (
                         <div key={index} className={getLogColor(log.type)}>
                           <span className="text-gray-500">[{timestamp}]</span> {getLogIcon(log.type)} {
-                            log.type === 'transaction' 
-                              ? `${log.action} ${log.quantity} ${log.symbol} at $${log.entry_price} (${log.leverage}x)`
-                              : log.message || `${log.action} ${log.symbol}`
+                            log.type === 'transaction' || log.action === 'BUY' || log.action === 'SELL'
+                              ? (
+                                  <>
+                                    <span className="font-semibold">{log.action}</span> {quantity} {tradingPair} at ${typeof entryPrice === 'number' ? entryPrice.toFixed(2) : entryPrice} 
+                                    {leverage && <span className="text-purple-400"> ({leverage}x)</span>}
+                                    {status && getStatusBadge(status)}
+                                    {confidence && (
+                                      <span className="text-gray-500 ml-2">(Confidence: {(confidence * 100).toFixed(1)}%)</span>
+                                    )}
+                                    
+                                    {/* Risk Management + P&L Info */}
+                                    {(stopLoss || takeProfit || unrealizedPnl !== undefined) && (
+                                      <div className="ml-8 mt-1 text-sm space-y-1">
+                                        {(stopLoss || takeProfit) && (
+                                          <div className="text-gray-400">
+                                            {stopLoss && <span className="mr-4">🛑 SL: ${typeof stopLoss === 'number' ? stopLoss.toFixed(2) : stopLoss}</span>}
+                                            {takeProfit && <span>🎯 TP: ${typeof takeProfit === 'number' ? takeProfit.toFixed(2) : takeProfit}</span>}
+                                          </div>
+                                        )}
+                                        
+                                        {/* Realtime P&L for OPEN positions */}
+                                        {status === 'OPEN' && (
+                                          <div className={getPnlColor(unrealizedPnl)}>
+                                            {unrealizedPnl !== null && unrealizedPnlPct !== null ? (
+                                              <>
+                                                💹 P&L: ${unrealizedPnl.toFixed(2)} ({unrealizedPnlPct >= 0 ? '+' : ''}{unrealizedPnlPct.toFixed(2)}%)
+                                                {fundingFees !== undefined && fundingFees !== 0 && (
+                                                  <span className="ml-4 text-yellow-400">💸 Fees: ${fundingFees.toFixed(2)}</span>
+                                                )}
+                                              </>
+                                            ) : (
+                                              <span className="text-gray-500">💹 P&L: Calculating...</span>
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+                                  </>
+                                )
+                              : (log.details || log.message || `${log.action} ${log.symbol}`)
                           }
-                          {log.confidence && (
-                            <span className="text-gray-500 ml-2">(Confidence: {(log.confidence * 100).toFixed(1)}%)</span>
-                          )}
                         </div>
                       )
                     })

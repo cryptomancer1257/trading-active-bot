@@ -38,11 +38,13 @@ class FileType(str, Enum):
     DATA = "DATA"
 
 class ExchangeType(str, Enum):
+    MULTI = "MULTI"  # Multi-exchange support (Universal Bot)
     BINANCE = "BINANCE"
-    COINBASE = "COINBASE"
-    KRAKEN = "KRAKEN"
     BYBIT = "BYBIT"
+    OKX = "OKX"
+    BITGET = "BITGET"
     HUOBI = "HUOBI"
+    KRAKEN = "KRAKEN"
 
 class SubscriptionStatus(str, Enum):
     ACTIVE = "ACTIVE"
@@ -104,6 +106,7 @@ class UserInDB(UserBase):
     
     class Config:
         from_attributes = True
+        use_enum_values = True  # Serialize enums as their values
 
 class UserProfile(UserInDB):
     total_subscriptions: int = 0
