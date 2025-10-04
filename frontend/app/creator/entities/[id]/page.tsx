@@ -20,6 +20,32 @@ import config from '@/lib/config'
 import { useAuth } from '@/contexts/AuthContext'
 import { useGetBot } from '@/hooks/useBots'
 
+// Bot Log Interface
+interface BotLog {
+  timestamp: string
+  execution_time: string
+  type: string
+  message: string
+  level: string
+  action?: string
+  symbol?: string
+  quantity?: number
+  entry_price?: number
+  leverage?: number
+  status?: string
+  order_id?: string
+  stop_loss?: number
+  take_profit?: number
+  unrealized_pnl?: number | null
+  unrealized_pnl_pct?: number | null
+  funding_fees?: number
+  needs_price_update?: boolean
+  confidence?: number
+  reason?: string
+  details?: string
+  signal_data?: any
+}
+
 type TabType = 'overview' | 'prompts' | 'risk-management' | 'settings' | 'analytics'
 
 export default function BotDetailPage() {
@@ -34,7 +60,7 @@ export default function BotDetailPage() {
     tradingPair: 'BTC/USDT',
     networkType: 'TESTNET'
   })
-  const [botLogs, setBotLogs] = useState<any[]>([])
+  const [botLogs, setBotLogs] = useState<BotLog[]>([])
   const [isLoadingLogs, setIsLoadingLogs] = useState(false)
 
   // Fetch real bot data from API
@@ -49,6 +75,7 @@ export default function BotDetailPage() {
       const response = await fetch(`${config.studioBaseUrl}/api/futures-bot/logs/${bot.id}`)
       if (response.ok) {
         const data = await response.json()
+        console.log('🔍 Bot Logs Data:', data.logs?.slice(0, 2)) // Debug: show first 2 logs
         setBotLogs(data.logs || [])
       } else {
         console.error('Failed to fetch bot logs')
@@ -380,6 +407,23 @@ export default function BotDetailPage() {
                       const quantity = log.quantity
                       const entryPrice = log.entry_price
                       const tradingPair = log.symbol
+                      const status = log.status
+                      const unrealizedPnl = log.unrealized_pnl
+                      const unrealizedPnlPct = log.unrealized_pnl_pct
+                      const fundingFees = log.funding_fees
+                      
+                      // Status badge color
+                      const getStatusBadge = (status: string) => {
+                        if (status === 'OPEN') return <span className="px-2 py-0.5 text-xs bg-green-900/50 text-green-400 rounded ml-2">OPEN</span>
+                        if (status === 'CLOSED') return <span className="px-2 py-0.5 text-xs bg-gray-700 text-gray-400 rounded ml-2">CLOSED</span>
+                        return null
+                      }
+                      
+                      // P&L color
+                      const getPnlColor = (pnl: number | null) => {
+                        if (!pnl) return 'text-gray-400'
+                        return pnl >= 0 ? 'text-green-400' : 'text-red-400'
+                      }
                       
                       return (
                         <div key={index} className={getLogColor(log.type)}>
@@ -389,13 +433,36 @@ export default function BotDetailPage() {
                                   <>
                                     <span className="font-semibold">{log.action}</span> {quantity} {tradingPair} at ${typeof entryPrice === 'number' ? entryPrice.toFixed(2) : entryPrice} 
                                     {leverage && <span className="text-purple-400"> ({leverage}x)</span>}
+                                    {status && getStatusBadge(status)}
                                     {confidence && (
                                       <span className="text-gray-500 ml-2">(Confidence: {(confidence * 100).toFixed(1)}%)</span>
                                     )}
-                                    {(stopLoss || takeProfit) && (
-                                      <div className="ml-8 mt-1 text-sm text-gray-400">
-                                        {stopLoss && <span className="mr-4">🛑 SL: ${typeof stopLoss === 'number' ? stopLoss.toFixed(2) : stopLoss}</span>}
-                                        {takeProfit && <span>🎯 TP: ${typeof takeProfit === 'number' ? takeProfit.toFixed(2) : takeProfit}</span>}
+                                    
+                                    {/* Risk Management + P&L Info */}
+                                    {(stopLoss || takeProfit || unrealizedPnl !== undefined) && (
+                                      <div className="ml-8 mt-1 text-sm space-y-1">
+                                        {(stopLoss || takeProfit) && (
+                                          <div className="text-gray-400">
+                                            {stopLoss && <span className="mr-4">🛑 SL: ${typeof stopLoss === 'number' ? stopLoss.toFixed(2) : stopLoss}</span>}
+                                            {takeProfit && <span>🎯 TP: ${typeof takeProfit === 'number' ? takeProfit.toFixed(2) : takeProfit}</span>}
+                                          </div>
+                                        )}
+                                        
+                                        {/* Realtime P&L for OPEN positions */}
+                                        {status === 'OPEN' && (
+                                          <div className={getPnlColor(unrealizedPnl)}>
+                                            {unrealizedPnl !== null && unrealizedPnlPct !== null ? (
+                                              <>
+                                                💹 P&L: ${unrealizedPnl.toFixed(2)} ({unrealizedPnlPct >= 0 ? '+' : ''}{unrealizedPnlPct.toFixed(2)}%)
+                                                {fundingFees !== undefined && fundingFees !== 0 && (
+                                                  <span className="ml-4 text-yellow-400">💸 Fees: ${fundingFees.toFixed(2)}</span>
+                                                )}
+                                              </>
+                                            ) : (
+                                              <span className="text-gray-500">💹 P&L: Calculating...</span>
+                                            )}
+                                          </div>
+                                        )}
                                       </div>
                                     )}
                                   </>
