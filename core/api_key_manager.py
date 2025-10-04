@@ -426,8 +426,15 @@ def get_bot_api_keys(user_principal_id: str, exchange: str = "BINANCE",
                 if not exchange_enum:
                     logger.error(f"Invalid exchange type: {exchange}")
                     return None
-                    
-                network_type = models.NetworkType.TESTNET if is_testnet else models.NetworkType.MAINNET
+                
+                # Special handling for exchanges without testnet
+                # Bitget doesn't have testnet - always use mainnet
+                if exchange == 'BITGET' and is_testnet:
+                    logger.warning(f"⚠️ {exchange} does not have testnet! Using MAINNET credentials instead.")
+                    logger.warning(f"   All trades will be REAL (real money). Use small amounts!")
+                    network_type = models.NetworkType.MAINNET  # Force mainnet for Bitget
+                else:
+                    network_type = models.NetworkType.TESTNET if is_testnet else models.NetworkType.MAINNET
                 dev_credentials = db.query(models.DeveloperExchangeCredentials).filter(
                     models.DeveloperExchangeCredentials.user_id == developer_id,
                     models.DeveloperExchangeCredentials.exchange_type == exchange_enum,
@@ -465,11 +472,16 @@ def get_bot_api_keys(user_principal_id: str, exchange: str = "BINANCE",
                     else:
                         logger.warning(f"❌ No passphrase found in database for {exchange} (required for OKX, Bitget)")
                     
+                    # For Bitget, always return testnet=False since they don't have testnet
+                    actual_testnet = dev_credentials.network_type == models.NetworkType.TESTNET
+                    if exchange == 'BITGET':
+                        actual_testnet = False  # Bitget always uses mainnet
+                    
                     return {
                         'api_key': decrypted_key,
                         'api_secret': decrypted_secret,
                         'passphrase': passphrase,
-                        'testnet': dev_credentials.network_type == models.NetworkType.TESTNET
+                        'testnet': actual_testnet
                     }
                 else:
                     logger.warning(f"No developer credentials found for developer {developer_id}, exchange: {exchange}, network: {'TESTNET' if is_testnet else 'MAINNET'}")
