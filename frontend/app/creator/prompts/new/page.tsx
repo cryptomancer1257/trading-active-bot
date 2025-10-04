@@ -36,13 +36,19 @@ export default function NewPromptPage() {
 
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showTemplates, setShowTemplates] = useState(false)
+  const [activeCategory, setActiveCategory] = useState<string>('all')
 
   const createMutation = useCreatePrompt()
   
-  // Get trading strategy templates from library (17 pre-seeded strategies)
+  // Get trading strategy templates from library (17+ pre-seeded strategies)
   const { data: templatePrompts, isLoading: templatesLoading } = useTradingStrategyTemplates({
     limit: 100
   })
+  
+  // Filter templates by active category (exact match)
+  const filteredTemplates = templatePrompts?.filter(template => 
+    activeCategory === 'all' || template.category === activeCategory
+  ) || []
 
   const handleInputChange = (field: keyof PromptFormData, value: string | boolean) => {
     console.log('Input change:', field, value)
@@ -57,17 +63,21 @@ export default function NewPromptPage() {
   }
 
   const handleUseTemplate = (strategy: TradingStrategyTemplate) => {
-    console.log('Using trading strategy:', strategy)
-    console.log('Strategy prompt:', strategy.prompt)
+    console.log('Using template:', strategy)
+    console.log('Template prompt:', strategy.prompt)
+    
+    // Map template category to form category
+    const formCategory = strategy.category === 'Risk Management' ? 'RISK_MANAGEMENT' : 'TRADING'
+    
     setFormData(prev => ({
       ...prev,
       name: strategy.title,
       description: `${strategy.category} | ${strategy.timeframe || 'Any'} | Win Rate: ${strategy.win_rate_estimate || 'N/A'}`,
       content: strategy.prompt,
-      category: 'TRADING'
+      category: formCategory
     }))
     setShowTemplates(false)
-    toast.success(`Strategy "${strategy.title}" applied!`)
+    toast.success(`Template "${strategy.title}" applied!`)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -150,14 +160,57 @@ export default function NewPromptPage() {
                 <DocumentTextIcon className="h-5 w-5 mr-2" />
                 Choose from Template Prompts
               </h3>
+              
+              {/* Category Tabs - Trading vs Risk Management */}
+              {!templatesLoading && templatePrompts && templatePrompts.length > 0 && (
+                <div className="mb-4 flex flex-wrap gap-2">
+                  <button
+                    onClick={() => setActiveCategory('all')}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      activeCategory === 'all'
+                        ? 'bg-purple-600 text-white'
+                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                    }`}
+                  >
+                    🌟 All ({templatePrompts.length})
+                  </button>
+                  
+                  <button
+                    onClick={() => setActiveCategory('Trading')}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      activeCategory === 'Trading'
+                        ? 'bg-purple-600 text-white'
+                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                    }`}
+                  >
+                    📈 Trading Strategies ({templatePrompts.filter(t => t.category === 'Trading').length})
+                  </button>
+                  
+                  <button
+                    onClick={() => setActiveCategory('Risk Management')}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      activeCategory === 'Risk Management'
+                        ? 'bg-purple-600 text-white'
+                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                    }`}
+                  >
+                    🛡️ Risk Management ({templatePrompts.filter(t => t.category === 'Risk Management').length})
+                  </button>
+                </div>
+              )}
+              
               {templatesLoading ? (
                 <div className="text-center py-4">
                   <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-purple-500 mx-auto"></div>
                   <p className="text-gray-400 mt-2">Loading templates...</p>
                 </div>
-              ) : templatePrompts && templatePrompts.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {templatePrompts.map((template) => (
+              ) : filteredTemplates.length > 0 ? (
+                <>
+                  <div className="mb-2 text-sm text-gray-400">
+                    Showing {filteredTemplates.length} template{filteredTemplates.length !== 1 ? 's' : ''}
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {filteredTemplates.map((template) => (
                     <div key={template.id} className="bg-gray-700 p-4 rounded-lg border border-gray-600 hover:border-purple-500 transition-colors">
                       <h4 className="text-white font-medium mb-2">{template.title}</h4>
                       <p className="text-gray-300 text-sm mb-3 line-clamp-2">
@@ -179,7 +232,12 @@ export default function NewPromptPage() {
                       </div>
                     </div>
                   ))}
-                </div>
+                  </div>
+                </>
+              ) : templatePrompts && templatePrompts.length > 0 ? (
+                <p className="text-gray-400 text-center py-4">
+                  No templates found in "{activeCategory}" category.
+                </p>
               ) : (
                 <p className="text-gray-400 text-center py-4">No template prompts available.</p>
               )}
