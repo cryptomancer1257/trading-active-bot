@@ -235,12 +235,12 @@ class Bot(Base):
 
     #timeframe
     timeframe = Column(String(10), default="1h")
-    timeframes = Column(JSON, default=func.jsonb_build_array("1h"))
+    timeframes = Column(JSON, default=list)  # MySQL-compatible JSON array default
 
     #exchange
     exchange_type = Column(Enum(ExchangeType), default=ExchangeType.BINANCE)
     trading_pair = Column(String(10), default="BTC/USDT")
-    strategy_config = Column(JSON, default={})  # Strategy configuration overrides
+    strategy_config = Column(JSON, default=dict)  # Strategy configuration overrides
 
     # Legacy pricing (keep for backward compatibility)
     price_per_month = Column(DECIMAL(10, 2), default=0.00)
