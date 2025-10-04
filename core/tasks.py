@@ -73,8 +73,89 @@ def queue_discord_dm(user_id, message):
     r = redis.Redis(host=os.getenv('REDIS_HOST', 'redis_db'), port=int(os.getenv('REDIS_PORT', 6379)), db=0)
     payload = {'user_id': user_id, 'message': message}
     r.rpush('discord_dm_queue', json.dumps(payload))
+
+def initialize_bot_from_local_file(subscription, local_file_path):
+    """📂 Load bot from local file system (for template bots)"""
+    try:
+        import importlib.util
+        
+        bot_id = subscription.bot.id
+        
+        # Handle bot_type - can be enum or string
+        bot_type = subscription.bot.bot_type
+        if hasattr(bot_type, 'value'):
+            bot_type = bot_type.value
+        
+        # Handle exchange_type - can be enum or string
+        exchange_type = subscription.bot.exchange_type
+        if hasattr(exchange_type, 'value'):
+            exchange_type = exchange_type.value
+        elif not exchange_type:
+            exchange_type = 'BINANCE'
+        
+        logger.info(f"📂 Loading bot from local file: {local_file_path}")
+        
+        # Load module from file
+        module_name = f"bot_module_{bot_id}_{int(time.time())}"  # Unique name to avoid cache
+        spec = importlib.util.spec_from_file_location(module_name, local_file_path)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        spec.loader.exec_module(module)
+        
+        # Find bot class by looking for classes with execute_algorithm method
+        bot_class = None
+        
+        for name, obj in inspect.getmembers(module, inspect.isclass):
+            # Look for custom bot class (has execute_algorithm and not a base class)
+            if (hasattr(obj, 'execute_algorithm') and 
+                name not in ['CustomBot', 'Action', 'BaseBot'] and
+                not name.startswith('_')):
+                bot_class = obj
+                logger.info(f"🔧 [DEV MODE] Found bot class: {name}")
+                break
+        
+        if not bot_class:
+            raise Exception(f"No bot class found in local file: {local_path}")
+        
+        # Prepare config
+        execution_config = subscription.execution_config or {}
+        
+        bot_config = {
+            'bot_id': bot_id,
+            'subscription_id': subscription.id,
+            'trading_pair': subscription.trading_pair or execution_config.get('trading_pair', 'BTC/USDT'),
+            'leverage': execution_config.get('leverage', 5),
+            'testnet': subscription.is_testnet if subscription.is_testnet is not None else False,
+            'exchange_type': exchange_type,
+            'timeframes': execution_config.get('timeframes', ['1h']),
+            'bot_type': bot_type,
+        }
+        
+        # Get API keys
+        from core.api_key_manager import get_bot_api_keys
+        api_keys = get_bot_api_keys(subscription.user_principal_id, exchange_type)
+        
+        # Initialize bot (try 4-arg constructor first)
+        try:
+            bot_instance = bot_class(bot_config, api_keys, subscription.user_principal_id, subscription.id)
+            logger.info(f"🔧 [DEV MODE] Bot initialized with 4 args")
+        except TypeError as e:
+            try:
+                bot_instance = bot_class(bot_config, api_keys)
+                logger.info(f"🔧 [DEV MODE] Bot initialized with 2 args")
+            except Exception as e2:
+                raise Exception(f"Failed to initialize bot: {e}, {e2}")
+        
+        return bot_instance
+        
+    except Exception as e:
+        logger.error(f"📂 Failed to load bot from local file: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
+
 def initialize_bot(subscription):
-    """Initialize bot from subscription - Load from S3"""
+    """Initialize bot from subscription - Load from local file if exists, else S3"""
     try:
         # Import here to avoid circular imports
         from core import models
@@ -83,12 +164,28 @@ def initialize_bot(subscription):
         from services.s3_manager import S3Manager
         from core.bot_base_classes import get_base_classes
         
-        # Initialize S3 manager
-        s3_manager = S3Manager()
-        
         # Get bot information
         bot_id = subscription.bot.id
-        logger.info(f"Initializing bot {bot_id} from S3...")
+        code_path = subscription.bot.code_path
+        
+        # 🎯 STRATEGY: Try local file first (for templates), fallback to S3 (for uploaded bots)
+        
+        # Check if code_path points to a local file
+        if code_path and not code_path.startswith('bots/'):
+            # This is a template bot (e.g., "bot_files/universal_futures_bot.py")
+            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            local_file_path = os.path.join(project_root, code_path)
+            
+            if os.path.exists(local_file_path):
+                logger.info(f"📂 [LOCAL FILE] Loading bot {bot_id} from: {code_path}")
+                return initialize_bot_from_local_file(subscription, local_file_path)
+            else:
+                logger.warning(f"⚠️ Local file not found: {local_file_path}, falling back to S3")
+        
+        # Fallback to S3 for marketplace/uploaded bots
+        # Initialize S3 manager
+        s3_manager = S3Manager()
+        logger.info(f"☁️ [S3] Loading bot {bot_id} from S3...")
         
         # Get latest version from S3
         try:
@@ -107,8 +204,7 @@ def initialize_bot(subscription):
             return None
         
         # Create temporary file to execute the code
-        import tempfile
-        import os
+        # (tempfile and os already imported globally)
         
         # Load base classes from bot_sdk folder
         base_classes = get_base_classes()
@@ -361,8 +457,7 @@ def initialize_bot_rpa_v1(subscription):
             return None
         
         # Create temporary file to execute the code
-        import tempfile
-        import os
+        # (tempfile and os already imported globally)
         
         # Load base classes from bot_sdk folder
         base_classes = get_base_classes()

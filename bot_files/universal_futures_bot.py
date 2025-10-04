@@ -350,6 +350,384 @@ class UniversalFuturesBot(CustomBot):
             traceback.print_exc()
             return None
     
+    async def setup_position(self, action: Action, analysis: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Setup futures position with intelligent capital management and stop loss/take profit
+        Works across all supported exchanges (Binance, Bybit, OKX, Bitget, Huobi, Kraken)
+        """
+        try:
+            if action.action == "HOLD":
+                return {
+                    'status': 'success',
+                    'action': 'HOLD',
+                    'reason': action.reason,
+                    'exchange': self.exchange_name
+                }
+            
+            # Ensure trading pair format (no slash)
+            symbol = self.trading_pair.replace('/', '')
+            
+            # Get account information for capital management
+            account_info = self.futures_client.get_account_info()
+            available_balance = float(account_info.get('availableBalance', 0))
+            
+            if available_balance <= 0:
+                return {
+                    'status': 'error',
+                    'message': 'No available balance for trading',
+                    'exchange': self.exchange_name
+                }
+            
+            # Calculate risk metrics for position sizing
+            risk_metrics = self.capital_manager.calculate_risk_metrics(account_info)
+            
+            # Prepare market data for capital management
+            market_data = {
+                'current_price': analysis.get('current_price', 0),
+                'atr': analysis.get('primary_analysis', {}).get('atr', 0),
+                'volatility': risk_metrics.volatility
+            }
+            
+            # Get optimal position size using capital management system
+            logger.info("🧠 Calculating optimal position size using capital management...")
+            position_recommendation = self.capital_manager.calculate_position_size(
+                signal_confidence=action.value,
+                risk_metrics=risk_metrics,
+                market_data=market_data,
+                llm_service=self.llm_service
+            )
+            
+            logger.info(f"💰 Capital Management Recommendation:")
+            logger.info(f"   Recommended Size: {position_recommendation.recommended_size_pct*100:.2f}%")
+            logger.info(f"   Risk Level: {position_recommendation.risk_level}")
+            logger.info(f"   Method: {position_recommendation.sizing_method}")
+            
+            # Use recommended position size
+            optimal_position_size_pct = position_recommendation.recommended_size_pct
+            
+            if optimal_position_size_pct <= 0:
+                return {
+                    'status': 'info',
+                    'action': 'HOLD',
+                    'reason': f'Capital management recommends no position: {position_recommendation.reasoning}',
+                    'exchange': self.exchange_name
+                }
+            
+            # Get entry price and targets from LLM recommendation
+            entry_price = None
+            take_profit_target = None
+            stop_loss_target = None
+            
+            if action.recommendation:
+                rec = action.recommendation
+                try:
+                    # Parse entry price
+                    entry_str = str(rec.get('entry_price', '')).replace(',', '').strip()
+                    if entry_str and entry_str not in ['Market', 'N/A', '']:
+                        entry_price = float(entry_str)
+                    
+                    # Parse take profit
+                    tp_str = str(rec.get('take_profit', '')).replace(',', '').strip()
+                    if tp_str and tp_str != 'N/A':
+                        import re
+                        numbers = re.findall(r'\d+\.\d+', tp_str)
+                        if numbers:
+                            take_profit_target = float(numbers[0])
+                    
+                    # Parse stop loss
+                    sl_str = str(rec.get('stop_loss', '')).replace(',', '').strip()
+                    if sl_str and sl_str != 'N/A':
+                        import re
+                        numbers = re.findall(r'\d+\.\d+', sl_str)
+                        if numbers:
+                            stop_loss_target = float(numbers[0])
+                            
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"Failed to parse recommendation prices: {e}")
+            
+            # Fallback to current market price
+            if not entry_price:
+                current_price = analysis.get('current_price', 0)
+                if current_price <= 0:
+                    return {
+                        'status': 'error',
+                        'message': 'Invalid current price',
+                        'exchange': self.exchange_name
+                    }
+                entry_price = current_price
+            
+            # Setup leverage - ignore if already set (common with Bybit)
+            try:
+                self.futures_client.set_leverage(symbol, self.leverage)
+                logger.info(f"✅ Set leverage to {self.leverage}x on {self.exchange_name}")
+            except Exception as e:
+                error_msg = str(e).lower()
+                # Bybit returns "leverage not modified" if already set - this is OK
+                if 'leverage not modified' in error_msg or 'leverage is already set' in error_msg:
+                    logger.info(f"✅ Leverage already at {self.leverage}x on {self.exchange_name}")
+                else:
+                    # Log but continue - leverage might already be correct
+                    logger.warning(f"⚠️ Leverage setup warning on {self.exchange_name}: {e} (continuing anyway)")
+            
+            # Get REALTIME market price right before placing order (prevent stale price errors)
+            try:
+                realtime_ticker = self.futures_client.get_ticker(symbol)
+                realtime_price = float(realtime_ticker['price'])
+                logger.info(f"📊 Realtime market price: ${realtime_price:.2f} (analysis price was ${entry_price:.2f})")
+                
+                # Use realtime price for quantity calculation to ensure accuracy
+                actual_entry_price = realtime_price
+            except Exception as e:
+                logger.warning(f"Failed to get realtime price, using analysis price: {e}")
+                actual_entry_price = entry_price
+            
+            # Calculate position size with realtime price
+            position_value = available_balance * optimal_position_size_pct * self.leverage
+            quantity = position_value / actual_entry_price
+            
+            # Round to proper precision
+            quantity = round(quantity, 3)
+            quantity_str = f"{quantity:.3f}"
+            
+            logger.info(f"🚀 Opening {action.action} position on {self.exchange_name}:")
+            logger.info(f"   Symbol: {symbol}")
+            logger.info(f"   Quantity: {quantity_str}")
+            logger.info(f"   Entry (Realtime): ${actual_entry_price:.2f}")
+            logger.info(f"   Leverage: {self.leverage}x")
+            
+            # Place market order (NO PRICE for market orders!)
+            try:
+                order = self.futures_client.create_market_order(symbol, action.action, quantity_str)
+            except Exception as e:
+                logger.error(f"Failed to create market order: {e}")
+                return {
+                    'status': 'error',
+                    'message': f'Position setup error: {e}',
+                    'exchange': self.exchange_name
+                }
+            
+            # Check order status
+            if not hasattr(order, 'status') or order.status not in ['FILLED', 'NEW']:
+                return {
+                    'status': 'error',
+                    'message': f'Order failed with status: {getattr(order, "status", "UNKNOWN")}',
+                    'exchange': self.exchange_name
+                }
+            
+            logger.info(f"✅ Market order placed successfully: {order.status}")
+            
+            # Calculate stop loss and take profit prices using actual entry price
+            if action.action == "BUY":
+                stop_loss_price = stop_loss_target or (actual_entry_price * (1 - self.stop_loss_pct))
+                take_profit_price = take_profit_target or (actual_entry_price * (1 + self.take_profit_pct))
+                sl_side = "SELL"
+                tp_side = "SELL"
+            else:  # SELL
+                stop_loss_price = stop_loss_target or (actual_entry_price * (1 + self.stop_loss_pct))
+                take_profit_price = take_profit_target or (actual_entry_price * (1 - self.take_profit_pct))
+                sl_side = "BUY"
+                tp_side = "BUY"
+            
+            # Place managed orders (stop loss + take profit)
+            sl_order = None
+            tp_orders = None
+            try:
+                # Get current market price for validation
+                current_ticker = self.futures_client.get_ticker(symbol)
+                current_market_price = float(current_ticker['price'])
+                
+                # Validate and adjust prices
+                min_distance = current_market_price * 0.001  # 0.1% minimum distance
+                adjusted_stop_price = stop_loss_price
+                adjusted_tp_price = take_profit_price
+                
+                if action.action == "BUY":  # Long position
+                    # Stop loss should be BELOW market price
+                    if stop_loss_price >= current_market_price:
+                        adjusted_stop_price = current_market_price * (1 - max(self.stop_loss_pct, 0.005))
+                        logger.warning(f"⚠️ Stop loss adjusted: {stop_loss_price:.2f} → {adjusted_stop_price:.2f}")
+                    
+                    # Take profit should be ABOVE market price
+                    if take_profit_price <= current_market_price:
+                        adjusted_tp_price = current_market_price * (1 + max(self.take_profit_pct, 0.01))
+                        logger.warning(f"⚠️ Take profit adjusted: {take_profit_price:.2f} → {adjusted_tp_price:.2f}")
+                else:  # SELL - Short position
+                    # Stop loss should be ABOVE market price
+                    if stop_loss_price <= current_market_price:
+                        adjusted_stop_price = current_market_price * (1 + max(self.stop_loss_pct, 0.005))
+                        logger.warning(f"⚠️ Stop loss adjusted: {stop_loss_price:.2f} → {adjusted_stop_price:.2f}")
+                    
+                    # Take profit should be BELOW market price
+                    if take_profit_price >= current_market_price:
+                        adjusted_tp_price = current_market_price * (1 - max(self.take_profit_pct, 0.01))
+                        logger.warning(f"⚠️ Take profit adjusted: {take_profit_price:.2f} → {adjusted_tp_price:.2f}")
+                
+                # Create managed orders
+                managed_orders = self.futures_client.create_managed_orders(
+                    symbol=symbol,
+                    side=sl_side,
+                    quantity=quantity_str,
+                    stop_price=f"{adjusted_stop_price:.2f}",
+                    take_profit_price=f"{adjusted_tp_price:.2f}",
+                    reduce_only=True
+                )
+                
+                sl_order = managed_orders.get('stop_loss_order')
+                tp_orders = managed_orders.get('take_profit_orders', [])
+                
+                logger.info(f"✅ Managed Orders placed on {self.exchange_name}")
+                if sl_order:
+                    logger.info(f"🛡️ Stop Loss: ${adjusted_stop_price:.2f}")
+                if tp_orders:
+                    logger.info(f"🎯 Take Profit: ${adjusted_tp_price:.2f}")
+                    
+            except Exception as e:
+                logger.error(f"Failed to place managed orders: {e}")
+                sl_order = None
+                tp_orders = None
+            
+            # Return trade result
+            result = {
+                'status': 'success',
+                'action': action.action,
+                'exchange': self.exchange_name,
+                'symbol': symbol,
+                'quantity': quantity_str,
+                'entry_price': actual_entry_price,  # Use actual realtime entry price
+                'leverage': self.leverage,
+                'position_value': position_value,
+                'main_order_id': getattr(order, 'order_id', 'N/A'),
+                'stop_loss': {
+                    'price': stop_loss_price,
+                    'order_id': sl_order.get('order_id') if sl_order else None,
+                    'source': 'recommendation' if stop_loss_target else 'percentage'
+                },
+                'take_profit': {
+                    'price': take_profit_price,
+                    'order_ids': [tp.get('order_id') for tp in tp_orders] if tp_orders else [None],
+                    'source': 'recommendation' if take_profit_target else 'percentage'
+                },
+                'confidence': action.value,
+                'reason': action.reason,
+                'timestamp': datetime.now().isoformat(),
+                'capital_management': {
+                    'recommended_size_pct': position_recommendation.recommended_size_pct * 100,
+                    'risk_level': position_recommendation.risk_level,
+                    'sizing_method': position_recommendation.sizing_method,
+                    'reasoning': position_recommendation.reasoning
+                }
+            }
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error setting up position on {self.exchange_name}: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                'status': 'error',
+                'message': f'Position setup error: {e}',
+                'exchange': self.exchange_name
+            }
+    
+    def save_transaction_to_db(self, trade_result: Dict[str, Any]):
+        """
+        Save trade transaction to MySQL database with enhanced tracking
+        
+        Args:
+            trade_result: Dict containing trade execution details
+        """
+        try:
+            from core.database import get_db
+            from core import models
+            from datetime import datetime
+            from decimal import Decimal
+            
+            # Get database session
+            db = next(get_db())
+            
+            # Determine position side
+            action = trade_result.get('action', '').upper()
+            position_side = 'LONG' if action == 'BUY' else 'SHORT' if action == 'SELL' else None
+            
+            # Calculate planned risk-reward ratio
+            # Helper function to safely extract float from dict or value
+            def safe_float(value, default=0):
+                if value is None:
+                    return None
+                if isinstance(value, dict):
+                    # If it's a dict, try to get 'price' or other common keys
+                    value = value.get('price') or value.get('stopPrice') or value.get('triggerPrice') or default
+                try:
+                    return float(value) if value else default
+                except (ValueError, TypeError):
+                    return default
+            
+            entry_price = safe_float(trade_result.get('entry_price'), 0) or 0
+            stop_loss_value = trade_result.get('stop_loss')
+            stop_loss = safe_float(stop_loss_value) if stop_loss_value else None
+            take_profit_value = trade_result.get('take_profit')
+            take_profit = safe_float(take_profit_value) if take_profit_value else None
+            
+            risk_reward_ratio = None
+            if stop_loss and take_profit and entry_price > 0:
+                risk = abs(entry_price - stop_loss)
+                reward = abs(take_profit - entry_price)
+                if risk > 0:
+                    risk_reward_ratio = Decimal(str(round(reward / risk, 4)))
+            
+            # Create transaction record with enhanced fields
+            transaction = models.Transaction(
+                # Identity & Ownership
+                user_id=trade_result.get('user_id'),
+                user_principal_id=trade_result.get('user_principal_id'),
+                bot_id=trade_result.get('bot_id', self.bot_id),
+                subscription_id=trade_result.get('subscription_id', self.subscription_id),
+                prompt_id=trade_result.get('prompt_id'),
+                
+                # Trade Details
+                action=action,
+                position_side=position_side,
+                symbol=trade_result.get('symbol', self.trading_pair),
+                quantity=Decimal(str(trade_result.get('quantity', 0))),
+                entry_price=Decimal(str(entry_price)),
+                entry_time=datetime.now(),
+                leverage=int(trade_result.get('leverage', self.leverage)),
+                
+                # Risk Management
+                stop_loss=Decimal(str(stop_loss)) if stop_loss else None,
+                take_profit=Decimal(str(take_profit)) if take_profit else None,
+                risk_reward_ratio=risk_reward_ratio,
+                
+                # Order Info
+                order_id=trade_result.get('main_order_id'),
+                
+                # LLM Strategy
+                strategy_used=trade_result.get('strategy_name'),
+                confidence=Decimal(str(trade_result.get('confidence', 0))) if trade_result.get('confidence') else None,
+                reason=trade_result.get('reason'),
+                
+                # Status
+                status='OPEN',
+                
+                # Timestamps
+                created_at=datetime.now(),
+                updated_at=datetime.now()
+            )
+            
+            # Add to database
+            db.add(transaction)
+            db.commit()
+            db.refresh(transaction)
+            
+            logger.info(f"✅ Transaction saved to database with ID: {transaction.id} (Status: OPEN)")
+            logger.info(f"   Position: {position_side}, Entry: ${entry_price:.2f}, RR: {risk_reward_ratio or 'N/A'}")
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to save transaction to database: {e}")
+            import traceback
+            traceback.print_exc()
+    
     # ==================== LLM CACHING & LOCKING ====================
     
     def _get_llm_cache_key(self, symbol: str, timeframes: List[str]) -> str:
