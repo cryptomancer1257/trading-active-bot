@@ -170,13 +170,11 @@ class APIKeyManager:
             result = {
                 'api_key': decrypted_key,
                 'api_secret': decrypted_secret,
+                'passphrase': decrypted_passphrase or '',  # Consistent key name for OKX/Bitget
                 'is_testnet': credentials.is_testnet
             }
             
-            if decrypted_passphrase:
-                result['api_passphrase'] = decrypted_passphrase
-                
-            logger.info(f"Found credentials for principal ID: {user_principal_id}")
+            logger.info(f"Found credentials for principal ID: {user_principal_id} (passphrase: {'✅' if decrypted_passphrase else '❌'})")
             return result
             
         except Exception as e:
@@ -454,9 +452,23 @@ def get_bot_api_keys(user_principal_id: str, exchange: str = "BINANCE",
                         logger.info("Double decryption completed")
                     
                     logger.info(f"Using developer credentials for TRIAL subscription {subscription_id}")
+                    
+                    # Decrypt passphrase if exists (required for OKX, Bitget)
+                    passphrase = ""
+                    if dev_credentials.passphrase:
+                        logger.info(f"🔐 Decrypting passphrase for {exchange} (length: {len(dev_credentials.passphrase)})")
+                        passphrase = decrypt_sensitive_data(dev_credentials.passphrase)
+                        if passphrase.startswith('Z0FBQUFBQm8z') and len(passphrase) > 200:
+                            logger.info("   Double encryption detected, decrypting again...")
+                            passphrase = decrypt_sensitive_data(passphrase)
+                        logger.info(f"✅ Passphrase decrypted for {exchange} (length: {len(passphrase)})")
+                    else:
+                        logger.warning(f"❌ No passphrase found in database for {exchange} (required for OKX, Bitget)")
+                    
                     return {
                         'api_key': decrypted_key,
                         'api_secret': decrypted_secret,
+                        'passphrase': passphrase,
                         'testnet': dev_credentials.network_type == models.NetworkType.TESTNET
                     }
                 else:
@@ -479,6 +491,7 @@ def get_bot_api_keys(user_principal_id: str, exchange: str = "BINANCE",
             return {
                 'api_key': credentials['api_key'],
                 'api_secret': credentials['api_secret'],
+                'passphrase': credentials.get('passphrase', ''),  # Include passphrase for OKX, Bitget
                 'testnet': credentials['is_testnet']
             }
         
