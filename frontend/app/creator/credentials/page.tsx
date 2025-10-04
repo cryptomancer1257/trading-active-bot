@@ -21,7 +21,7 @@ import { z } from 'zod'
 
 // Form schemas
 const credentialsSchema = z.object({
-  exchange_type: z.enum(['BINANCE', 'COINBASE', 'KRAKEN', 'BYBIT', 'HUOBI']),
+  exchange_type: z.enum(['BINANCE', 'BYBIT', 'OKX', 'BITGET', 'KRAKEN', 'HUOBI']),
   credential_type: z.enum(['SPOT', 'FUTURES', 'MARGIN']),
   network_type: z.enum(['TESTNET', 'MAINNET']),
   name: z.string().min(1, 'Name is required').max(100, 'Name too long'),
@@ -270,10 +270,11 @@ export default function CredentialsPage() {
                     >
                       <option value="">Select Exchange</option>
                       <option value="BINANCE">🟡 Binance</option>
-                      <option value="COINBASE">🔵 Coinbase</option>
-                      <option value="KRAKEN">🟣 Kraken</option>
                       <option value="BYBIT">🟠 Bybit</option>
-                      <option value="HUOBI">🔴 Huobi</option>
+                      <option value="OKX">⚫ OKX</option>
+                      <option value="BITGET">🟢 Bitget</option>
+                      <option value="KRAKEN">🟣 Kraken</option>
+                      <option value="HUOBI">🔴 Huobi/HTX</option>
                     </select>
                     {errors.exchange_type && (
                       <p className="text-red-400 text-sm mt-1">{errors.exchange_type.message}</p>
