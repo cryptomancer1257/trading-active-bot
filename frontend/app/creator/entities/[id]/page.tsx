@@ -372,16 +372,14 @@ export default function BotDetailPage() {
                         }
                       }
                       
-                      // Extract detailed trade info from signal_data
-                      const signalData = log.signal_data || {}
-                      const tradeResult = signalData.trade_result || {}
-                      const confidence = signalData.confidence || log.confidence
-                      const stopLoss = tradeResult.stop_loss
-                      const takeProfit = tradeResult.take_profit
-                      const leverage = tradeResult.leverage || log.leverage
-                      const quantity = log.quantity || tradeResult.quantity
-                      const entryPrice = log.price || tradeResult.entry_price
-                      const tradingPair = signalData.trading_pair || log.symbol
+                      // Extract detailed trade info - API returns fields directly on log object
+                      const confidence = log.confidence
+                      const stopLoss = log.stop_loss
+                      const takeProfit = log.take_profit
+                      const leverage = log.leverage
+                      const quantity = log.quantity
+                      const entryPrice = log.entry_price
+                      const tradingPair = log.symbol
                       
                       return (
                         <div key={index} className={getLogColor(log.type)}>
