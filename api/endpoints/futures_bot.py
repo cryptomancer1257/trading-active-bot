@@ -318,6 +318,7 @@ async def get_api_examples():
 @router.get("/logs/{bot_id}")
 async def get_bot_logs(bot_id: int, limit: int = 50):
     """Get comprehensive execution logs for a specific bot with detailed trading information"""
+    db = None
     try:
         from core.database import get_db
         from core import models
@@ -380,6 +381,9 @@ async def get_bot_logs(bot_id: int, limit: int = 50):
                 except:
                     signal_data = {"raw": log.signal_data}
             
+            # Extract trade_result from signal_data if available
+            trade_result = signal_data.get("trade_result", {})
+            
             log_entry = {
                 "timestamp": log.timestamp.isoformat(),
                 "execution_time": log.timestamp.strftime("%Y-%m-%d %H:%M:%S UTC"),
@@ -388,21 +392,26 @@ async def get_bot_logs(bot_id: int, limit: int = 50):
                 "level": "info",
                 "subscription_id": log.subscription_id,
                 
-                # Trading Information
+                # Trading Information (prefer log fields, fallback to trade_result)
                 "action": log.action,
-                "price": float(log.price) if log.price else None,
-                "quantity": float(log.quantity) if log.quantity else None,
+                "price": float(log.price) if log.price else (trade_result.get("entry_price") or None),
+                "quantity": float(log.quantity) if log.quantity else (trade_result.get("quantity") or None),
                 "balance": float(log.balance) if log.balance else None,
+                "leverage": trade_result.get("leverage"),
+                "symbol": signal_data.get("trading_pair", "N/A"),
                 
-                # Signal Details
+                # Signal Details (include full signal_data for frontend)
                 "signal_data": signal_data,
                 "reason": signal_data.get("reason", "N/A"),
                 "confidence": signal_data.get("confidence", "N/A"),
                 
-                # Risk Management
-                "stop_loss": signal_data.get("stop_loss", "N/A"),
-                "take_profit": signal_data.get("take_profit", "N/A"),
+                # Risk Management (from trade_result or top-level)
+                "stop_loss": trade_result.get("stop_loss") or signal_data.get("stop_loss", "N/A"),
+                "take_profit": trade_result.get("take_profit") or signal_data.get("take_profit", "N/A"),
                 "risk_reward_ratio": signal_data.get("risk_reward_ratio", "N/A"),
+                "position_value": trade_result.get("position_value"),
+                "order_id": trade_result.get("order_id"),
+                "exchange": trade_result.get("exchange") or signal_data.get("exchange"),
                 
                 # Account Information
                 "account_balance": {
@@ -532,3 +541,7 @@ async def get_bot_logs(bot_id: int, limit: int = 50):
             "message": f"Failed to get logs for bot {bot_id}",
             "error": str(e)
         }
+    finally:
+        # Always close database connection
+        if db:
+            db.close()

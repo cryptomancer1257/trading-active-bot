@@ -106,6 +106,7 @@ class UserInDB(UserBase):
     
     class Config:
         from_attributes = True
+        use_enum_values = True  # Serialize enums as their values
 
 class UserProfile(UserInDB):
     total_subscriptions: int = 0

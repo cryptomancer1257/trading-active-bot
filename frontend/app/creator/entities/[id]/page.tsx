@@ -372,16 +372,38 @@ export default function BotDetailPage() {
                         }
                       }
                       
+                      // Extract detailed trade info from signal_data
+                      const signalData = log.signal_data || {}
+                      const tradeResult = signalData.trade_result || {}
+                      const confidence = signalData.confidence || log.confidence
+                      const stopLoss = tradeResult.stop_loss
+                      const takeProfit = tradeResult.take_profit
+                      const leverage = tradeResult.leverage || log.leverage
+                      const quantity = log.quantity || tradeResult.quantity
+                      const entryPrice = log.price || tradeResult.entry_price
+                      const tradingPair = signalData.trading_pair || log.symbol
+                      
                       return (
                         <div key={index} className={getLogColor(log.type)}>
                           <span className="text-gray-500">[{timestamp}]</span> {getLogIcon(log.type)} {
-                            log.type === 'transaction' 
-                              ? `${log.action} ${log.quantity} ${log.symbol} at $${log.entry_price} (${log.leverage}x)`
-                              : log.message || `${log.action} ${log.symbol}`
+                            log.type === 'transaction' || log.action === 'BUY' || log.action === 'SELL'
+                              ? (
+                                  <>
+                                    <span className="font-semibold">{log.action}</span> {quantity} {tradingPair} at ${typeof entryPrice === 'number' ? entryPrice.toFixed(2) : entryPrice} 
+                                    {leverage && <span className="text-purple-400"> ({leverage}x)</span>}
+                                    {confidence && (
+                                      <span className="text-gray-500 ml-2">(Confidence: {(confidence * 100).toFixed(1)}%)</span>
+                                    )}
+                                    {(stopLoss || takeProfit) && (
+                                      <div className="ml-8 mt-1 text-sm text-gray-400">
+                                        {stopLoss && <span className="mr-4">🛑 SL: ${typeof stopLoss === 'number' ? stopLoss.toFixed(2) : stopLoss}</span>}
+                                        {takeProfit && <span>🎯 TP: ${typeof takeProfit === 'number' ? takeProfit.toFixed(2) : takeProfit}</span>}
+                                      </div>
+                                    )}
+                                  </>
+                                )
+                              : (log.details || log.message || `${log.action} ${log.symbol}`)
                           }
-                          {log.confidence && (
-                            <span className="text-gray-500 ml-2">(Confidence: {(log.confidence * 100).toFixed(1)}%)</span>
-                          )}
                         </div>
                       )
                     })

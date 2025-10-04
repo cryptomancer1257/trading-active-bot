@@ -68,6 +68,57 @@ def format_notification_message(
     msg += f"\nReason: {reason}"
     return msg
 
+def format_trade_log_details(trade_result, signal, trading_pair):
+    """
+    Format comprehensive trade execution log details for UI display
+    Returns formatted string with all trade information
+    """
+    try:
+        # Extract trade details
+        quantity = trade_result.get('quantity', 0)
+        entry_price = trade_result.get('entry_price', 0)
+        leverage = trade_result.get('leverage', 1)
+        stop_loss_data = trade_result.get('stop_loss', {})
+        take_profit_data = trade_result.get('take_profit', {})
+        confidence = signal.value * 100 if hasattr(signal, 'value') else 0
+        action = signal.action if hasattr(signal, 'action') else trade_result.get('action', 'UNKNOWN')
+        
+        # Extract SL/TP prices
+        if isinstance(stop_loss_data, dict):
+            stop_loss_price = stop_loss_data.get('price', 0)
+        else:
+            stop_loss_price = stop_loss_data if stop_loss_data else 0
+            
+        if isinstance(take_profit_data, dict):
+            take_profit_price = take_profit_data.get('price', 0)
+        else:
+            take_profit_price = take_profit_data if take_profit_data else 0
+        
+        # Format message with emoji
+        action_emoji = "💰" if action == "BUY" else "🔴" if action == "SELL" else "⏸️"
+        
+        # Build comprehensive message
+        details = (
+            f"{action_emoji} {action} {quantity} {trading_pair} at ${entry_price:,.2f} ({leverage}x) "
+            f"(Confidence: {confidence:.1f}%)"
+        )
+        
+        # Add SL/TP to signal_data for display
+        if stop_loss_price > 0 or take_profit_price > 0:
+            sl_tp_info = []
+            if stop_loss_price > 0:
+                sl_tp_info.append(f"SL: ${stop_loss_price:,.2f}")
+            if take_profit_price > 0:
+                sl_tp_info.append(f"TP: ${take_profit_price:,.2f}")
+            if sl_tp_info:
+                details += f" | {' | '.join(sl_tp_info)}"
+        
+        return details
+        
+    except Exception as e:
+        logger.error(f"Error formatting trade log details: {e}")
+        return f"{trade_result.get('action', 'TRADE')} executed"
+
 # Helper to push DM to Redis queue
 def queue_discord_dm(user_id, message):
     r = redis.Redis(host=os.getenv('REDIS_HOST', 'redis_db'), port=int(os.getenv('REDIS_PORT', 6379)), db=0)
@@ -2190,6 +2241,45 @@ def run_futures_bot_trading(self, user_principal_id: str = None, config: Dict[st
                     if trade_result.get('status') == 'success':
                         bot.save_transaction_to_db(trade_result)
                         logger.info(f"✅ Trade executed and saved: {trade_result.get('main_order_id')}")
+                        
+                        # Log detailed execution to database for UI display
+                        try:
+                            # Format comprehensive trade details
+                            log_details = format_trade_log_details(trade_result, signal, bot.trading_pair)
+                            
+                            crud.log_bot_action(
+                                db, subscription_id, signal.action,
+                                details=log_details,
+                                price=trade_result.get('entry_price', 0),
+                                quantity=float(trade_result.get('quantity', 0)),
+                                balance=account_status.get('available_balance', 0) if account_status else 0,
+                                signal_data={
+                                    'confidence': signal.value,
+                                    'reason': signal.reason,
+                                    'timeframe': timeframes[0] if timeframes else '1h',
+                                    'trading_pair': bot.trading_pair,
+                                    'bot_type': 'FUTURES',
+                                    'execution_mode': 'automated',
+                                    'exchange': bot.exchange_name
+                                },
+                                trade_result={
+                                    'entry_price': trade_result.get('entry_price'),
+                                    'quantity': trade_result.get('quantity'),
+                                    'leverage': trade_result.get('leverage'),
+                                    'stop_loss': trade_result.get('stop_loss', {}).get('price') if isinstance(trade_result.get('stop_loss'), dict) else trade_result.get('stop_loss'),
+                                    'take_profit': trade_result.get('take_profit', {}).get('price') if isinstance(trade_result.get('take_profit'), dict) else trade_result.get('take_profit'),
+                                    'position_value': trade_result.get('position_value'),
+                                    'order_id': trade_result.get('main_order_id'),
+                                    'status': 'OPEN',
+                                    'exchange': trade_result.get('exchange')
+                                },
+                                account_status=account_status
+                            )
+                            logger.info("📝 Trade logged to database for UI display")
+                        except Exception as log_error:
+                            logger.error(f"❌ Failed to log trade action: {log_error}")
+                            import traceback
+                            logger.error(traceback.format_exc())
                     else:
                         logger.error(f"❌ Trade failed: {trade_result}")
                 else:
