@@ -255,6 +255,11 @@ class BybitFuturesIntegration(BaseFuturesExchange):
                               stop_price: str, reduce_only: bool = True) -> FuturesOrderInfo:
         """Create stop loss order"""
         try:
+            # triggerDirection: 1=rise to trigger, 2=fall to trigger
+            # For SL closing LONG (side=SELL): price falls → triggerDirection=2
+            # For SL closing SHORT (side=BUY): price rises → triggerDirection=1
+            trigger_direction = 2 if side == 'SELL' else 1
+            
             params = {
                 'category': 'linear',
                 'symbol': symbol,
@@ -262,6 +267,7 @@ class BybitFuturesIntegration(BaseFuturesExchange):
                 'orderType': 'Market',
                 'qty': quantity,
                 'triggerPrice': stop_price,
+                'triggerDirection': trigger_direction,
                 'triggerBy': 'MarkPrice',
                 'reduceOnly': reduce_only,
                 'timeInForce': 'GTC'
@@ -288,6 +294,11 @@ class BybitFuturesIntegration(BaseFuturesExchange):
                                 stop_price: str, reduce_only: bool = True) -> FuturesOrderInfo:
         """Create take profit order"""
         try:
+            # triggerDirection: 1=rise to trigger, 2=fall to trigger
+            # For TP closing LONG (side=SELL): price rises → triggerDirection=1
+            # For TP closing SHORT (side=BUY): price falls → triggerDirection=2
+            trigger_direction = 1 if side == 'SELL' else 2
+            
             params = {
                 'category': 'linear',
                 'symbol': symbol,
@@ -295,6 +306,7 @@ class BybitFuturesIntegration(BaseFuturesExchange):
                 'orderType': 'Market',
                 'qty': quantity,
                 'triggerPrice': stop_price,
+                'triggerDirection': trigger_direction,
                 'triggerBy': 'MarkPrice',
                 'reduceOnly': reduce_only,
                 'timeInForce': 'GTC'
