@@ -106,48 +106,10 @@ def submit_new_bot(
     current_user: models.User = Depends(security.get_current_active_developer)
 ):
     """Developer submit a new bot, bot will be in PENDING status"""
-    from core.template_manager import get_template_manager
     
-    # Check if template file is specified
-    template_file = getattr(bot_in, 'templateFile', None)
-    
-    if template_file:
-        # Get template content and customize it
-        template_manager = get_template_manager()
-        template_content = template_manager.get_template_content(template_file)
-        
-        if template_content:
-            # Customize template with bot configuration
-            bot_config = {
-                'name': bot_in.name,
-                'description': bot_in.description,
-                'trading_pair': bot_in.trading_pair,
-                'timeframe': bot_in.timeframe,
-                'exchange_type': bot_in.exchange_type,
-                'leverage': getattr(bot_in, 'leverage', None),
-                'risk_percentage': getattr(bot_in, 'risk_percentage', None),
-                'stop_loss_percentage': getattr(bot_in, 'stop_loss_percentage', None),
-                'take_profit_percentage': getattr(bot_in, 'take_profit_percentage', None),
-                'llm_provider': getattr(bot_in, 'llm_provider', None),
-                'enable_image_analysis': getattr(bot_in, 'enable_image_analysis', False),
-                'enable_sentiment_analysis': getattr(bot_in, 'enable_sentiment_analysis', False),
-            }
-            
-            customized_content = template_manager.customize_template(template_content, bot_config)
-            
-            # Create bot with S3 upload (auto-approve for developers)
-            return crud.save_bot_with_s3(
-                db=db,
-                bot_data=bot_in,
-                developer_id=current_user.id,
-                file_content=customized_content,
-                file_name=template_file,
-                version=bot_in.version,
-                status=schemas.BotStatus.APPROVED,  # Auto-approve for developers
-                approved_by=current_user.id
-            )
-    
-    # Fallback to simple bot creation without file (auto-approve for developers)
+    # For template bots, just create bot record pointing to local template file
+    # create_bot will auto-set code_path based on template field
+    # NO S3 upload needed - template files are local
     return crud.create_bot(
         db=db, 
         bot=bot_in, 
