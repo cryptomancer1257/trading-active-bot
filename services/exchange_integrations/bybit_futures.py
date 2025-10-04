@@ -175,10 +175,16 @@ class BybitFuturesIntegration(BaseFuturesExchange):
                 'sellLeverage': str(leverage)
             }
             self._make_request("POST", "/v5/position/set-leverage", params, signed=True)
-            logger.info(f"Set leverage {leverage}x for {symbol}")
+            logger.info(f"✅ Set leverage {leverage}x for {symbol}")
             return True
         except Exception as e:
-            logger.error(f"Failed to set leverage: {e}")
+            error_msg = str(e).lower()
+            # "leverage not modified" means leverage is already at desired level - this is OK
+            if 'leverage not modified' in error_msg:
+                logger.info(f"✅ Leverage already at {leverage}x for {symbol}")
+                return True
+            # Other errors
+            logger.error(f"❌ Failed to set leverage: {e}")
             return False
     
     def get_symbol_precision(self, symbol: str) -> dict:
