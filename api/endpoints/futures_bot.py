@@ -428,9 +428,17 @@ async def get_bot_logs(bot_id: int, limit: int = 50):
             }
             logs.append(log_entry)
         
-        # Helper function to fetch current price from exchange
+        # Cache for current prices (avoid duplicate API calls)
+        price_cache = {}
+        
+        # Helper function to fetch current price from exchange (with caching)
         def get_current_price(symbol: str, exchange: str = "BYBIT") -> float:
-            """Fetch current market price from exchange API"""
+            """Fetch current market price from exchange API (cached per request)"""
+            # Check cache first
+            cache_key = f"{exchange}:{symbol}"
+            if cache_key in price_cache:
+                return price_cache[cache_key]
+            
             try:
                 if exchange == "BYBIT":
                     import requests
@@ -442,7 +450,10 @@ async def get_bot_logs(bot_id: int, limit: int = 50):
                         data = response.json()
                         if data.get("result") and data["result"].get("list"):
                             price = float(data["result"]["list"][0]["lastPrice"])
-                            logger.info(f"💰 Fetched current price for {symbol}: ${price:.2f}")
+                            # Cache the price
+                            price_cache[cache_key] = price
+                            # Only log once per symbol (first fetch)
+                            logger.debug(f"💰 Fetched current price for {symbol}: ${price:.2f}")
                             return price
                 else:
                     # Add other exchanges here
@@ -464,7 +475,7 @@ async def get_bot_logs(bot_id: int, limit: int = 50):
                 leverage = transaction.leverage or 1
                 symbol = transaction.symbol or "BTCUSDT"
                 
-                # Fetch current market price from exchange
+                # Fetch current market price from exchange (cached)
                 current_price = get_current_price(symbol, "BYBIT")
                 
                 # Calculate unrealized P&L if we have current price
@@ -546,6 +557,11 @@ async def get_bot_logs(bot_id: int, limit: int = 50):
                 "bot_id": transaction.bot_id
             }
             logs.append(log_entry)
+        
+        # Log price fetch summary (only once, not for each transaction)
+        if price_cache:
+            symbols_fetched = list(price_cache.keys())
+            logger.info(f"💰 Fetched current prices for {len(symbols_fetched)} symbols: {', '.join([k.split(':')[1] for k in symbols_fetched])}")
         
         # Add trade logs with P&L information
         for trade in trades:
