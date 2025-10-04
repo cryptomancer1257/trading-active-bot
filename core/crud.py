@@ -11,6 +11,9 @@ import hashlib
 import json
 import logging
 
+# Initialize logger
+logger = logging.getLogger(__name__)
+
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -357,7 +360,15 @@ def save_bot_with_s3(db: Session, bot_data: schemas.BotCreate, developer_id: int
         # Create bot record first
         db_bot = create_bot(db, bot_data, developer_id, status=status, approved_by=approved_by)
         
-        # Upload code to S3 if provided
+        # Check if this is a template bot (code_path already set to local file)
+        is_template_bot = db_bot.code_path and not db_bot.code_path.startswith('bots/')
+        
+        if is_template_bot:
+            logger.info(f"✅ Template bot created - using local file: {db_bot.code_path}")
+            # Template bots use local files, no S3 upload needed
+            return db_bot
+        
+        # Upload code to S3 if provided (for user-uploaded bots only)
         if file_content:
             upload_result = get_s3_manager().upload_bot_code(
                 bot_id=db_bot.id,
@@ -372,6 +383,7 @@ def save_bot_with_s3(db: Session, bot_data: schemas.BotCreate, developer_id: int
             db_bot.version = upload_result['version']
             db.commit()
             db.refresh(db_bot)
+            logger.info(f"✅ User bot created - uploaded to S3: {db_bot.code_path}")
 
         if file_content_rpa_robot:
             upload_result = get_s3_manager().upload_bot_code(
