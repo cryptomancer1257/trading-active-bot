@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, JSON, ForeignKey, DateTime, func, Float, Boolean, Enum, DECIMAL, Index
+from sqlalchemy import Column, Integer, BigInteger, String, Text, JSON, ForeignKey, DateTime, func, Float, Boolean, Enum, DECIMAL, Index
 from sqlalchemy.orm import relationship
 from core.database import Base
 import enum
@@ -108,6 +108,9 @@ class User(Base):
     exchange_credentials = relationship("ExchangeCredentials", back_populates="user", cascade="all, delete-orphan")
     llm_prompt_templates = relationship("LLMPromptTemplate", back_populates="creator")
     principals = relationship("UserPrincipal", back_populates="user", cascade="all, delete-orphan")
+    llm_providers = relationship("LLMProvider", back_populates="user")
+    llm_subscriptions = relationship("DeveloperLLMSubscription", back_populates="developer")
+    llm_usage_logs = relationship("LLMUsageLog", back_populates="developer")
 
 class UserPrincipal(Base):
     """Mapping between users and their principal IDs"""
@@ -287,6 +290,7 @@ class Bot(Base):
     pricing_plans = relationship("BotPricingPlan", back_populates="bot", cascade="all, delete-orphan")
     promotions = relationship("BotPromotion", back_populates="bot", cascade="all, delete-orphan")
     marketplace_registrations = relationship("BotRegistration", back_populates="bot", cascade="all, delete-orphan")
+    llm_usage_logs = relationship("LLMUsageLog", back_populates="bot")
 
 class BotFile(Base):
     """Storage for bot files including ML models, weights, etc."""
@@ -973,6 +977,7 @@ class LLMProvider(Base):
     base_url = Column(String(500), nullable=True)
     is_active = Column(Boolean, default=True)
     is_default = Column(Boolean, default=False)
+    display_order = Column(Integer, default=0)  # Priority order (lower = higher priority)
     
     # Timestamps
     created_at = Column(DateTime, server_default=func.now())
@@ -981,6 +986,7 @@ class LLMProvider(Base):
     # Relationships
     user = relationship("User")
     models = relationship("LLMModel", back_populates="provider", cascade="all, delete-orphan")
+    usage_logs = relationship("LLMUsageLog", back_populates="user_provider")
     
     # Indexes for faster queries
     __table_args__ = (
@@ -1014,4 +1020,122 @@ class LLMModel(Base):
         Index('idx_llm_models_provider_id', 'provider_id'),
         Index('idx_llm_models_model_name', 'model_name'),
         Index('idx_llm_models_is_active', 'is_active'),
+    )
+
+
+# =====================================================
+# LLM Subscription and Billing Models
+# =====================================================
+
+class LLMSubscriptionPlan(Base):
+    """Platform LLM subscription plans"""
+    __tablename__ = "llm_subscription_plans"
+    
+    id = Column(Integer, primary_key=True)
+    name = Column(String(100), nullable=False)
+    description = Column(Text)
+    
+    # Pricing
+    price_per_month = Column(DECIMAL(10, 2), nullable=False)
+    currency = Column(String(3), default='USD')
+    
+    # Limits
+    max_requests_per_month = Column(Integer)
+    max_tokens_per_month = Column(BigInteger)
+    
+    # Features (JSON)
+    available_providers = Column(JSON)  # ["openai", "claude", "gemini"]
+    available_models = Column(JSON)     # {"openai": ["gpt-4o-mini"], ...}
+    
+    # Status
+    is_active = Column(Boolean, default=True)
+    display_order = Column(Integer, default=0)
+    
+    # Timestamps
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    
+    # Relationships
+    subscriptions = relationship("DeveloperLLMSubscription", back_populates="plan")
+
+
+class DeveloperLLMSubscription(Base):
+    """Developer LLM subscription records"""
+    __tablename__ = "developer_llm_subscriptions"
+    
+    id = Column(Integer, primary_key=True)
+    developer_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    plan_id = Column(Integer, ForeignKey("llm_subscription_plans.id"), nullable=False)
+    
+    # Subscription status
+    status = Column(Enum('ACTIVE', 'EXPIRED', 'CANCELLED', name='subscription_status'), default='ACTIVE')
+    start_date = Column(DateTime, nullable=False)
+    end_date = Column(DateTime, nullable=False)
+    auto_renew = Column(Boolean, default=True)
+    
+    # Usage tracking
+    requests_used = Column(Integer, default=0)
+    tokens_used = Column(BigInteger, default=0)
+    last_reset_at = Column(DateTime)
+    
+    # Payment
+    payment_status = Column(Enum('PENDING', 'PAID', 'FAILED', name='payment_status'), default='PENDING')
+    payment_id = Column(String(255))
+    payment_method = Column(String(50))
+    
+    # Timestamps
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    
+    # Relationships
+    developer = relationship("User", back_populates="llm_subscriptions")
+    plan = relationship("LLMSubscriptionPlan", back_populates="subscriptions")
+    usage_logs = relationship("LLMUsageLog", back_populates="subscription")
+
+
+class LLMUsageLog(Base):
+    """LLM usage logs for billing and analytics"""
+    __tablename__ = "llm_usage_logs"
+    
+    id = Column(BigInteger, primary_key=True)
+    developer_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    subscription_id = Column(Integer, ForeignKey("developer_llm_subscriptions.id"))
+    bot_id = Column(Integer, ForeignKey("bots.id"))
+    
+    # Request details
+    provider = Column(String(50))
+    model = Column(String(100))
+    request_type = Column(String(50))
+    
+    # Usage metrics
+    input_tokens = Column(Integer)
+    output_tokens = Column(Integer)
+    total_tokens = Column(Integer)
+    cost_usd = Column(DECIMAL(10, 6))
+    
+    # Source
+    source_type = Column(Enum('PLATFORM', 'USER_CONFIGURED', name='llm_source_type'))
+    user_provider_id = Column(Integer, ForeignKey("llm_providers.id"))
+    
+    # Metadata
+    request_duration_ms = Column(Integer)
+    success = Column(Boolean, default=True)
+    error_message = Column(Text)
+    
+    # Timestamp
+    request_at = Column(DateTime, server_default=func.now())
+    
+    # Relationships
+    developer = relationship("User", back_populates="llm_usage_logs")
+    subscription = relationship("DeveloperLLMSubscription", back_populates="usage_logs")
+    bot = relationship("Bot", back_populates="llm_usage_logs")
+    user_provider = relationship("LLMProvider", back_populates="usage_logs")
+    
+    # Indexes
+    __table_args__ = (
+        Index('idx_llm_usage_developer_date', 'developer_id', 'request_at'),
+        Index('idx_llm_usage_subscription', 'subscription_id'),
+        Index('idx_llm_usage_bot', 'bot_id'),
+        Index('idx_llm_usage_provider', 'provider'),
+        Index('idx_llm_usage_source', 'source_type'),
     )
