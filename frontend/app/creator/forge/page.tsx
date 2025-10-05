@@ -1259,15 +1259,68 @@ export default function ForgePage() {
                 
                 <div className="space-y-4">
                   {(watchedBotType === 'LLM' || watchedBotType === 'FUTURES' || watchedBotType === 'FUTURES_RPA') && (
-                    <div>
-                      <label className="form-label">LLM Provider</label>
-                      <select {...register('llm_provider')} className="form-input">
-                        <option value="">Select AI Provider</option>
-                        <option value="openai">🤖 OpenAI (GPT-4)</option>
-                        <option value="anthropic">🧠 Anthropic (Claude)</option>
-                        <option value="gemini">💎 Google (Gemini)</option>
-                      </select>
-                    </div>
+                    <>
+                      <div>
+                        <label className="form-label">LLM Provider</label>
+                        <select {...register('llm_provider')} className="form-input">
+                          <option value="">Select AI Provider</option>
+                          <option value="openai">🤖 OpenAI (GPT-4)</option>
+                          <option value="anthropic">🧠 Anthropic (Claude)</option>
+                          <option value="gemini">💎 Google (Gemini)</option>
+                        </select>
+                      </div>
+                      
+                      <div>
+                        <label className="form-label">Specific Model (Optional)</label>
+                        <select 
+                          {...register('llm_model')} 
+                          className="form-input"
+                          disabled={!watch('llm_provider')}
+                        >
+                          <option value="">Default (Auto-select)</option>
+                          
+                          {/* OpenAI Models */}
+                          {watch('llm_provider') === 'openai' && (
+                            <>
+                              <option value="gpt-4o">GPT-4o (Best, Multimodal)</option>
+                              <option value="gpt-4o-mini">GPT-4o Mini (Fast, Cheap) ⭐</option>
+                              <option value="o1-preview">O1 Preview (Reasoning)</option>
+                              <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                              <option value="gpt-3.5-turbo">GPT-3.5 Turbo (Budget)</option>
+                            </>
+                          )}
+                          
+                          {/* Claude Models */}
+                          {watch('llm_provider') === 'anthropic' && (
+                            <>
+                              <option value="claude-3-7-sonnet-latest">Claude 3.7 Sonnet (Newest) ⭐</option>
+                              <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet Oct 2024</option>
+                              <option value="claude-3-5-sonnet-20240620">Claude 3.5 Sonnet Jun 2024</option>
+                              <option value="claude-3-5-haiku-20241022">Claude 3.5 Haiku (Fast) ⚡</option>
+                              <option value="claude-3-opus-20240229">Claude 3 Opus (Most Capable)</option>
+                              <option value="claude-3-haiku-20240307">Claude 3 Haiku (Cheapest) 💰</option>
+                            </>
+                          )}
+                          
+                          {/* Gemini Models */}
+                          {watch('llm_provider') === 'gemini' && (
+                            <>
+                              <option value="gemini-1.5-pro">Gemini 1.5 Pro (Best)</option>
+                              <option value="gemini-1.5-flash">Gemini 1.5 Flash (Fast)</option>
+                              <option value="gemini-2.0-flash-exp">Gemini 2.0 Flash (Experimental)</option>
+                              <option value="gemini-pro">Gemini Pro (Legacy)</option>
+                            </>
+                          )}
+                        </select>
+                        {watch('llm_provider') && (
+                          <p className="text-xs text-gray-400 mt-1">
+                            {watch('llm_provider') === 'openai' && 'OpenAI models - balance speed & quality'}
+                            {watch('llm_provider') === 'anthropic' && 'Claude models - advanced reasoning'}
+                            {watch('llm_provider') === 'gemini' && 'Gemini models - long context window'}
+                          </p>
+                        )}
+                      </div>
+                    </>
                   )}
                   
                   {watchedBotType === 'FUTURES_RPA' && (

@@ -125,7 +125,7 @@ def queue_discord_dm(user_id, message):
     payload = {'user_id': user_id, 'message': message}
     r.rpush('discord_dm_queue', json.dumps(payload))
 
-def initialize_bot_from_local_file(subscription, local_file_path):
+def initialize_bot_from_local_file(subscription, local_file_path, db):
     """📂 Load bot from local file system (for template bots)"""
     try:
         import importlib.util
@@ -180,7 +180,16 @@ def initialize_bot_from_local_file(subscription, local_file_path):
             'exchange_type': exchange_type,
             'timeframes': execution_config.get('timeframes', ['1h']),
             'bot_type': bot_type,
+            'developer_id': subscription.bot.developer_id if subscription.bot else None,  # For LLM provider selection
+            'db': db  # For LLM provider selection
         }
+        
+        # Merge bot's strategy_config (includes llm_provider preference)
+        if subscription.bot and subscription.bot.strategy_config:
+            logger.info(f"🎯 [LOCAL] Merging bot's strategy config: {subscription.bot.strategy_config}")
+            bot_config.update(subscription.bot.strategy_config)
+            if bot_config.get('llm_provider'):
+                logger.info(f"🤖 [LOCAL] Bot LLM Provider: {bot_config['llm_provider']}")
         
         # Get API keys
         from core.api_key_manager import get_bot_api_keys
@@ -189,11 +198,11 @@ def initialize_bot_from_local_file(subscription, local_file_path):
         # Initialize bot (try 4-arg constructor first)
         try:
             bot_instance = bot_class(bot_config, api_keys, subscription.user_principal_id, subscription.id)
-            logger.info(f"🔧 [DEV MODE] Bot initialized with 4 args")
+            logger.info(f"🔧 [LOCAL] Bot initialized with 4 args (developer_id={bot_config.get('developer_id')})")
         except TypeError as e:
             try:
                 bot_instance = bot_class(bot_config, api_keys)
-                logger.info(f"🔧 [DEV MODE] Bot initialized with 2 args")
+                logger.info(f"🔧 [LOCAL] Bot initialized with 2 args")
             except Exception as e2:
                 raise Exception(f"Failed to initialize bot: {e}, {e2}")
         
@@ -219,6 +228,9 @@ def initialize_bot(subscription):
         bot_id = subscription.bot.id
         code_path = subscription.bot.code_path
         
+        # Create database session for LLM provider loading
+        db = SessionLocal()
+        
         # 🎯 STRATEGY: Try local file first (for templates), fallback to S3 (for uploaded bots)
         
         # Check if code_path points to a local file
@@ -229,7 +241,7 @@ def initialize_bot(subscription):
             
             if os.path.exists(local_file_path):
                 logger.info(f"📂 [LOCAL FILE] Loading bot {bot_id} from: {code_path}")
-                return initialize_bot_from_local_file(subscription, local_file_path)
+                return initialize_bot_from_local_file(subscription, local_file_path, db)
             else:
                 logger.warning(f"⚠️ Local file not found: {local_file_path}, falling back to S3")
         
@@ -331,12 +343,23 @@ def initialize_bot(subscription):
                     'max_portfolio_exposure': 0.30,    # 30% total exposure limit
                     'max_drawdown_threshold': 0.15,    # 15% stop-loss threshold
                     
+                    # LLM Provider Selection (BYOK)
+                    'developer_id': subscription.bot.developer_id if subscription.bot else None,  # For LLM provider selection
+                    'db': db,  # For LLM provider selection
+                    
                     # Celery execution
                     'require_confirmation': False,  # No confirmation for Celery
                     'auto_confirm': True  # Auto-confirm trades (for Celery/automated execution)
                 }
+                # Merge bot's strategy_config (includes llm_provider preference)
+                if subscription.bot.strategy_config:
+                    logger.info(f"🎯 Merging bot's strategy config: {subscription.bot.strategy_config}")
+                    bot_config.update(subscription.bot.strategy_config)
+                
                 logger.info(f"🎯 Config with bot_id={subscription.bot.id}, subscription_id={subscription.id}, exchange={exchange_type}")
                 logger.info(f"🚀 Applied RICH FUTURES CONFIG: {len(bot_config['timeframes'])} timeframes, {bot_config['leverage']}x leverage, exchange={exchange_type}")
+                if bot_config.get('llm_provider'):
+                    logger.info(f"🤖 Bot LLM Provider: {bot_config['llm_provider']}")
             else:
                 # Standard configuration for other bots
                 bot_config = {
@@ -344,7 +367,10 @@ def initialize_bot(subscription):
                     'long_window': 200,
                     'position_size': 0.3,
                     'min_volume_threshold': 1000000,
-                    'volatility_threshold': 0.05
+                    'volatility_threshold': 0.05,
+                    # LLM Provider Selection (BYOK)
+                    'developer_id': subscription.bot.developer_id if subscription.bot else None,
+                    'db': db
                 }
                 logger.info("📊 Applied STANDARD CONFIG for non-futures bot")
             
