@@ -289,6 +289,7 @@ class BotBase(BaseModel):
     stop_loss_percentage: Optional[float] = None
     take_profit_percentage: Optional[float] = None
     llm_provider: Optional[str] = None
+    llm_model: Optional[str] = None  # Specific model to use (e.g., "claude-3-5-sonnet-20241022")
     enable_image_analysis: Optional[bool] = False
     enable_sentiment_analysis: Optional[bool] = False
 
@@ -334,6 +335,7 @@ class BotUpdate(BaseModel):
     stop_loss_percentage: Optional[float] = None
     take_profit_percentage: Optional[float] = None
     llm_provider: Optional[str] = None
+    llm_model: Optional[str] = None  # Specific model to use (e.g., "claude-3-5-sonnet-20241022")
     enable_image_analysis: Optional[bool] = None
     enable_sentiment_analysis: Optional[bool] = None
     prompt_template_id: Optional[int] = None
@@ -345,6 +347,8 @@ class BotInDB(BotBase):
     code_path: Optional[str] = None
     model_path: Optional[str] = None
     total_subscribers: int = 0
+    subscribers_count: int = 0  # Real-time count from subscriptions
+    transactions_count: int = 0  # Total transactions count
     average_rating: float = 0.0
     total_reviews: int = 0
     created_at: datetime

@@ -44,16 +44,71 @@ class LLMIntegrationService:
     Supports multiple AI models for advanced trading insights with Fibonacci analysis
     """
     
-    def __init__(self, config: Dict[str, Any] = None):
+    def __init__(self, config: Dict[str, Any] = None, developer_id: int = None, db = None, 
+                 preferred_provider: str = None, bot_id: int = None):
         """
         Initialize LLM Integration Service
         
         Args:
             config: Configuration with API keys and model settings
+            developer_id: Developer ID to load their configured LLM providers (BYOK)
+            db: Database session for loading provider configs
+            preferred_provider: Preferred provider ("openai", "claude", "gemini") - from bot config
+            bot_id: Bot ID for logging
         """
         self.config = config or {}
+        self.developer_id = developer_id
+        self.db = db
+        self.bot_id = bot_id
         
-        # API Keys - prioritize config, fallback to environment
+        # Try to load developer's LLM provider configuration first (BYOK - Priority!)
+        provider_config = None
+        if developer_id and db:
+            try:
+                from services.llm_provider_selector import LLMProviderSelector
+                selector = LLMProviderSelector(db)
+                
+                # Get developer's configured provider (with bot's preference!)
+                source_type, provider_config = selector.get_provider_for_developer(
+                    developer_id=developer_id,
+                    bot_id=bot_id,
+                    preferred_provider=preferred_provider  # ✅ Use bot's preference!
+                )
+                
+                if source_type == "USER_CONFIGURED":
+                    logger.info(f"✅ Using developer's LLM provider: {provider_config['provider']} ({provider_config['model']})")
+                    
+                    # Override config with developer's provider
+                    provider_type = str(provider_config['provider']).lower().replace('llmprovidertype.', '')
+                    
+                    if provider_type == 'openai':
+                        self.config['openai_api_key'] = provider_config['api_key']
+                        self.config['openai_model'] = provider_config['model']
+                    elif provider_type in ['anthropic', 'claude']:
+                        self.config['claude_api_key'] = provider_config['api_key']
+                        self.config['claude_model'] = provider_config['model']
+                    elif provider_type == 'gemini':
+                        self.config['gemini_api_key'] = provider_config['api_key']
+                        self.config['gemini_model'] = provider_config['model']
+                    
+                    # Store for usage logging later
+                    self._provider_config = provider_config
+                    self._provider_selector = selector
+                else:
+                    logger.warning(f"⚠️ Developer {developer_id} is using platform provider (not implemented yet)")
+                    self._provider_config = None
+                    self._provider_selector = None
+                    
+            except Exception as e:
+                logger.warning(f"⚠️ Could not load developer's LLM provider: {e}")
+                logger.info("   Falling back to environment variables")
+                self._provider_config = None
+                self._provider_selector = None
+        else:
+            self._provider_config = None
+            self._provider_selector = None
+        
+        # API Keys - prioritize config (from developer), fallback to environment
         self.openai_api_key = self.config.get('openai_api_key', os.getenv('OPENAI_API_KEY'))
         self.claude_api_key = self.config.get('claude_api_key', os.getenv('CLAUDE_API_KEY'))
         self.gemini_api_key = self.config.get('gemini_api_key', os.getenv('GEMINI_API_KEY'))
@@ -78,7 +133,10 @@ class LLMIntegrationService:
         # Note: analysis_prompt is now generated dynamically based on timeframes
         # in each analyze_with_* method
         
-        logger.info("LLM Integration Service initialized")
+        if self._provider_config:
+            logger.info(f"✅ LLM Integration initialized with developer's {self._provider_config['provider']} provider (FREE)")
+        else:
+            logger.info("ℹ️  LLM Integration initialized with environment variables")
     
     def _generate_cache_key(self, symbol: str, timeframes_data: Dict[str, List[Dict]], model: str) -> str:
         """Generate cache key for analysis results"""
@@ -659,11 +717,13 @@ Please respond in JSON format:
                 return {"error": "Failed to prepare market data"}
             
             # Analyze with specified model using retry mechanism
-            if model.lower() == "openai":
+            # Support both provider type ("openai") and full model name ("gpt-4o-mini")
+            model_lower = model.lower()
+            if model_lower == "openai" or model_lower.startswith("gpt"):
                 analysis = await self._retry_with_backoff(self.analyze_with_openai, market_data, bot_id)
-            elif model.lower() == "claude":
+            elif model_lower == "claude" or model_lower.startswith("claude") or model_lower == "anthropic":
                 analysis = await self._retry_with_backoff(self.analyze_with_claude, market_data, bot_id)
-            elif model.lower() == "gemini":
+            elif model_lower == "gemini" or model_lower.startswith("gemini"):
                 analysis = await self._retry_with_backoff(self.analyze_with_gemini, market_data, bot_id)
             else:
                 return {"error": f"Unsupported model: {model}"}
@@ -734,15 +794,17 @@ Please provide sentiment analysis in JSON format:
             prompt = sentiment_prompt.format(news_data=json.dumps(formatted_news, indent=2))
             
             # Get LLM analysis
-            if model.lower() == "openai":
+            # Support both provider type ("openai") and full model name ("gpt-4o-mini")
+            model_lower = model.lower()
+            if model_lower == "openai" or model_lower.startswith("gpt"):
                 response = await self._retry_with_backoff(
                     self._get_sentiment_analysis_openai, prompt
                 )
-            elif model.lower() == "claude":
+            elif model_lower == "claude" or model_lower.startswith("claude") or model_lower == "anthropic":
                 response = await self._retry_with_backoff(
                     self._get_sentiment_analysis_claude, prompt
                 )
-            elif model.lower() == "gemini":
+            elif model_lower == "gemini" or model_lower.startswith("gemini"):
                 response = await self._retry_with_backoff(
                     self._get_sentiment_analysis_gemini, prompt
                 )
@@ -962,11 +1024,13 @@ Please analyze this information and provide specific capital management recommen
             }
             
             # Get LLM analysis
-            if model.lower() == "openai":
+            # Support both provider type ("openai") and full model name ("gpt-4o-mini")
+            model_lower = model.lower()
+            if model_lower == "openai" or model_lower.startswith("gpt"):
                 response = await self._get_capital_advice_openai(request_data)
-            elif model.lower() == "claude":
+            elif model_lower == "claude" or model_lower.startswith("claude") or model_lower == "anthropic":
                 response = await self._get_capital_advice_claude(request_data)
-            elif model.lower() == "gemini":
+            elif model_lower == "gemini" or model_lower.startswith("gemini"):
                 response = await self._get_capital_advice_gemini(request_data)
             else:
                 return {"error": f"Unsupported model: {model}"}
@@ -1105,17 +1169,23 @@ Please analyze this information and provide specific capital management recommen
             }
 
 # Factory function to create service instance
-def create_llm_service(config: Dict[str, Any] = None) -> LLMIntegrationService:
+def create_llm_service(config: Dict[str, Any] = None, developer_id: int = None, db = None,
+                       preferred_provider: str = None, bot_id: int = None) -> LLMIntegrationService:
     """
     Factory function to create LLM Integration Service
     
     Args:
         config: Optional configuration dict
+        developer_id: Developer ID to load their configured LLM providers (BYOK)
+        db: Database session for loading provider configs
+        preferred_provider: Preferred provider ("openai", "claude", "gemini") - from bot config
+        bot_id: Bot ID for logging
         
     Returns:
         LLMIntegrationService instance
     """
-    return LLMIntegrationService(config)
+    return LLMIntegrationService(config=config, developer_id=developer_id, db=db,
+                                 preferred_provider=preferred_provider, bot_id=bot_id)
 
 # Test function
 def test_llm_integration():

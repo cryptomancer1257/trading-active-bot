@@ -26,11 +26,16 @@ class BitgetFuturesIntegration(BaseFuturesExchange):
         super().__init__(api_key, api_secret, testnet)
         self.passphrase = passphrase
         
-        # Bitget API endpoints
+        # IMPORTANT: Bitget does NOT have a separate testnet/demo environment!
+        # Unlike Binance/Bybit/OKX, Bitget only has mainnet (production)
+        # The 'testnet' parameter is ignored - always uses mainnet
+        self.base_url = "https://api.bitget.com"
+        
+        # Warn user if testnet is requested
         if testnet:
-            self.base_url = "https://api.bitget.com"  # Bitget doesn't have separate testnet URL
-        else:
-            self.base_url = "https://api.bitget.com"
+            logger.warning("⚠️ Bitget does NOT have a testnet/demo environment!")
+            logger.warning("   All trades will be executed on MAINNET (real money)!")
+            logger.warning("   Use small amounts for testing!")
     
     def _generate_signature(self, timestamp: str, method: str, request_path: str, body: str = "") -> str:
         """Generate Bitget signature"""
@@ -81,16 +86,37 @@ class BitgetFuturesIntegration(BaseFuturesExchange):
             else:
                 raise ValueError(f"Unsupported method: {method}")
             
+            # Log response for debugging
+            logger.info(f"🔍 Bitget API Response Status: {response.status_code}")
+            
+            # Check HTTP status first
+            if response.status_code != 200:
+                # Log response body for debugging
+                try:
+                    error_body = response.json()
+                    logger.error(f"❌ Bitget API Error Response: {error_body}")
+                except:
+                    logger.error(f"❌ Bitget API Error Text: {response.text}")
+            
             response.raise_for_status()
             data = response.json()
             
+            # Log successful response structure
+            logger.debug(f"📦 Bitget API Response: {data}")
+            
             if data.get('code') != '00000':
-                raise Exception(f"Bitget API error: {data.get('msg', 'Unknown error')}")
+                error_code = data.get('code')
+                error_msg = data.get('msg', 'Unknown error')
+                logger.error(f"❌ Bitget API Error [{error_code}]: {error_msg}")
+                raise Exception(f"Bitget API error [{error_code}]: {error_msg}")
             
             return data.get('data', {})
             
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"❌ Bitget HTTP Error: {e}")
+            raise
         except Exception as e:
-            logger.error(f"Bitget API request failed: {e}")
+            logger.error(f"❌ Bitget API request failed: {e}")
             raise
     
     def test_connectivity(self) -> bool:
@@ -103,16 +129,38 @@ class BitgetFuturesIntegration(BaseFuturesExchange):
             return False
     
     def get_account_info(self) -> Dict[str, Any]:
-        """Get Bitget account information"""
+        """
+        Get Bitget account information
+        
+        Bitget V2 API: /api/v2/mix/account/account (singular)
+        Requires: productType and optional marginCoin parameter
+        """
         try:
-            params = {'productType': 'USDT-FUTURES'}
-            result = self._make_request("GET", "/api/v2/mix/account/accounts", params, signed=True)
+            # Try with marginCoin parameter (USDT for USDT-FUTURES)
+            params = {
+                'productType': 'USDT-FUTURES',
+                'marginCoin': 'USDT'
+            }
+            
+            logger.info(f"🔍 Calling Bitget account API with params: {params}")
+            
+            # Bitget V2 uses 'account' (singular) not 'accounts'
+            result = self._make_request("GET", "/api/v2/mix/account/account", params, signed=True)
             
             if result:
-                total_balance = float(result.get('crossedAvailable', 0))
+                # Handle both list and dict responses
+                account = result[0] if isinstance(result, list) else result
+                
+                total_balance = float(account.get('crossedAvailable', 0))
+                available_balance = float(account.get('available', total_balance))
+                
+                logger.info(f"💰 Bitget Account:")
+                logger.info(f"   Total: ${total_balance:,.2f}")
+                logger.info(f"   Available: ${available_balance:,.2f}")
+                
                 return {
                     'totalWalletBalance': total_balance,
-                    'availableBalance': total_balance,
+                    'availableBalance': available_balance,
                     'raw_response': result
                 }
             return {}
@@ -149,15 +197,36 @@ class BitgetFuturesIntegration(BaseFuturesExchange):
             raise
     
     def get_ticker(self, symbol: str) -> Dict[str, Any]:
-        """Get current price for symbol"""
+        """
+        Get current price for symbol
+        
+        Note: Bitget API returns a list (array), not a single object!
+        Bitget V2 API field name: 'lastPr' (not 'last')
+        """
         try:
             params = {'symbol': symbol, 'productType': 'USDT-FUTURES'}
             result = self._make_request("GET", "/api/v2/mix/market/ticker", params)
             
-            if result:
+            # Debug: Log response structure
+            logger.info(f"🔍 Bitget ticker response type: {type(result)}")
+            logger.info(f"🔍 Bitget ticker response: {result}")
+            
+            # Bitget returns list, get first element
+            if result and len(result) > 0:
+                ticker = result[0] if isinstance(result, list) else result
+                
+                logger.info(f"🔍 Ticker keys available: {ticker.keys()}")
+                
+                # Bitget V2 API uses 'lastPr' not 'last'
+                price = ticker.get('lastPr') or ticker.get('last') or ticker.get('close')
+                
+                if not price:
+                    logger.error(f"❌ No price field found in ticker: {ticker}")
+                    raise Exception(f"No price field in ticker response")
+                
                 return {
-                    'symbol': result['symbol'],
-                    'price': result['last']
+                    'symbol': ticker.get('symbol', symbol),
+                    'price': price
                 }
             raise Exception(f"No ticker data for {symbol}")
         except Exception as e:
