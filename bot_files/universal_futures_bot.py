@@ -217,6 +217,16 @@ class UniversalFuturesBot(CustomBot):
         self.llm_service = None
         if self.use_llm_analysis:
             try:
+                # Get developer_id and db from config (passed by tasks.py)
+                developer_id = config.get('developer_id')
+                db = config.get('db')
+                bot_id = config.get('bot_id')
+                
+                # Get bot's preferred LLM provider from config (set in UI)
+                preferred_provider = config.get('llm_provider')  # "openai", "claude", "gemini"
+                if preferred_provider:
+                    logger.info(f"🎯 Bot configured to use LLM provider: {preferred_provider}")
+                
                 llm_config = {
                     'openai_api_key': os.getenv('OPENAI_API_KEY'),
                     'claude_api_key': os.getenv('CLAUDE_API_KEY'),
@@ -225,12 +235,27 @@ class UniversalFuturesBot(CustomBot):
                     'claude_model': config.get('claude_model', 'claude-3-5-sonnet-20241022'),
                     'gemini_model': config.get('gemini_model', 'gemini-1.5-pro')
                 }
-                self.llm_service = create_llm_service(llm_config)
-                logger.info(f"LLM service initialized with model: {self.llm_model}")
+                
+                # Create LLM service with developer's API keys (BYOK - Priority!)
+                self.llm_service = create_llm_service(
+                    config=llm_config,
+                    developer_id=developer_id,
+                    db=db,
+                    preferred_provider=preferred_provider,  # ✅ Pass bot's preference!
+                    bot_id=bot_id
+                )
+                
+                if developer_id:
+                    logger.info(f"✅ LLM service initialized for developer {developer_id} (using their API keys - FREE)")
+                else:
+                    logger.info(f"ℹ️  LLM service initialized with environment variables")
+                    
             except Exception as e:
-                logger.error(f"Failed to initialize LLM service: {e}")
+                logger.error(f"❌ Failed to initialize LLM service: {e}")
+                import traceback
+                traceback.print_exc()
                 self.use_llm_analysis = False
-                logger.warning("Falling back to traditional technical analysis")
+                logger.warning("⚠️  Falling back to traditional technical analysis")
         
         # Initialize Capital Management System
         capital_config = {

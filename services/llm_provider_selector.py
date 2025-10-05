@@ -41,7 +41,7 @@ class LLMProviderSelector:
         preferred_provider: Optional[str] = None
     ) -> Tuple[str, Dict[str, Any]]:
         """
-        Get best LLM provider for developer
+        Get LLM provider for developer (BYOK only - Platform subscriptions disabled for now)
         
         Args:
             developer_id: Developer/user ID
@@ -50,7 +50,7 @@ class LLMProviderSelector:
         
         Returns:
             Tuple of:
-            - Source type: "USER_CONFIGURED" or "PLATFORM"
+            - Source type: "USER_CONFIGURED"
             - Provider config dict with API keys and settings
         
         Raises:
@@ -58,37 +58,24 @@ class LLMProviderSelector:
         """
         logger.info(f"🔍 Selecting LLM provider for developer {developer_id}")
         
-        # 1️⃣ Priority: Check User-Configured Providers (BYOK - FREE)
+        # Check User-Configured Providers (BYOK - FREE)
         user_provider = self._get_user_configured_provider(developer_id, preferred_provider)
         if user_provider:
             logger.info(
-                f"✅ Using BYOK provider: {user_provider['provider']} "
+                f"✅ Using developer's LLM provider: {user_provider['provider']} "
                 f"(model: {user_provider['model']}) - FREE"
             )
             return ("USER_CONFIGURED", user_provider)
         
-        # 2️⃣ Fallback: Check Platform Subscription (PAID)
-        platform_provider = self._get_platform_provider(developer_id, preferred_provider)
-        if platform_provider:
-            logger.info(
-                f"✅ Using Platform provider: {platform_provider['provider']} "
-                f"(plan: {platform_provider['plan_name']}) - PAID"
-            )
-            return ("PLATFORM", platform_provider)
-        
-        # 3️⃣ No provider available - Error
-        logger.error(f"❌ No LLM provider available for developer {developer_id}")
+        # No provider available - Error
+        logger.error(f"❌ No LLM provider configured for developer {developer_id}")
         raise Exception(
             "❌ No LLM provider configured.\n\n"
-            "Please choose one of the following options:\n\n"
-            "Option 1: Use Your Own API Keys (FREE)\n"
-            "  ✅ No platform charges\n"
-            "  ✅ Unlimited usage\n"
-            "  ➡️  Go to /creator/llm-providers to add your API keys\n\n"
-            "Option 2: Subscribe to Platform LLMs (PAID)\n"
-            "  ✅ No setup required\n"
-            "  ✅ Managed by platform\n"
-            "  ➡️  Go to /creator/llm-subscription to choose a plan"
+            "Please add your API keys to use LLM features:\n\n"
+            "✅ Go to /creator/llm-providers\n"
+            "✅ Add OpenAI, Claude, or Gemini API key\n"
+            "✅ Set one as default (optional)\n"
+            "✅ Your bots will use your own API keys (FREE - no platform charges!)"
         )
     
     def _get_user_configured_provider(

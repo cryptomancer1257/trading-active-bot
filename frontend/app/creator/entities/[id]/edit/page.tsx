@@ -39,7 +39,8 @@ const botEditSchema = z.object({
   stop_loss_percentage: z.number().min(0.1).max(20).default(5),
   take_profit_percentage: z.number().min(0.5).max(50).default(10),
   // LLM Configuration
-  llm_provider: z.enum(['openai', 'anthropic', 'gemini']).optional(),
+  llm_provider: z.enum(['openai', 'anthropic', 'claude', 'gemini']).optional(),
+  llm_model: z.string().optional(),  // Specific model to use
   enable_image_analysis: z.boolean().default(false),
   enable_sentiment_analysis: z.boolean().default(false),
 })
@@ -128,15 +129,22 @@ export default function EditBotPage() {
       setValue('risk_percentage', (bot as any).risk_percentage || 2)
       setValue('stop_loss_percentage', (bot as any).stop_loss_percentage || 5)
       setValue('take_profit_percentage', (bot as any).take_profit_percentage || 10)
-      setValue('llm_provider', (bot as any).llm_provider || '')
-      console.log('🔄 Setting llm_provider to:', (bot as any).llm_provider)
-      console.log('🔄 Current watch llm_provider:', watch('llm_provider'))
-      setValue('enable_image_analysis', (bot as any).enable_image_analysis || false)
-      setValue('enable_sentiment_analysis', (bot as any).enable_sentiment_analysis || false)
+      // Load LLM config from strategy_config (stored as JSON)
+      const strategyConfig = (bot as any).strategy_config || {}
+      const llmProvider = strategyConfig.llm_provider || (bot as any).llm_provider || ''
+      const llmModel = strategyConfig.llm_model || (bot as any).llm_model || ''
+      
+      setValue('llm_provider', llmProvider)
+      setValue('llm_model', llmModel)
+      console.log('🔄 Setting llm_provider to:', llmProvider)
+      console.log('🔄 Setting llm_model to:', llmModel)
+      
+      setValue('enable_image_analysis', strategyConfig.enable_image_analysis || (bot as any).enable_image_analysis || false)
+      setValue('enable_sentiment_analysis', strategyConfig.enable_sentiment_analysis || (bot as any).enable_sentiment_analysis || false)
       
       console.log('✅ Form populated successfully')
     }
-  }, [bot, setValue, watch])
+  }, [bot, setValue])  // ❌ Removed 'watch' - it causes form to reset on every change!
 
   // Handle error
   useEffect(() => {
@@ -238,6 +246,8 @@ export default function EditBotPage() {
     console.log('🔄 Form submitted with data:', data)
     console.log('🔄 PRICING DEBUG - price_per_month:', data.price_per_month)
     console.log('🔄 PRICING DEBUG - is_free:', data.is_free)
+    console.log('🔄 LLM DEBUG - llm_provider:', data.llm_provider)
+    console.log('🔄 LLM DEBUG - llm_model:', data.llm_model)
     console.log('🔄 Bot ID:', botId)
     console.log('🔄 Is submitting:', isSubmitting)
     
@@ -664,22 +674,76 @@ export default function EditBotPage() {
             <div className="mt-6 border-t border-gray-700 pt-6">
               <h4 className="text-md font-semibold text-gray-300 mb-4">AI Enhancement</h4>
               
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                 <div>
                   <label className="form-label">LLM Provider</label>
                   <select 
                     {...register('llm_provider')} 
                     className="form-input"
-                    value={watch('llm_provider') || ''}
-                    key={`llm-${watch('llm_provider')}`}
                   >
                     <option value="">None</option>
                     <option value="openai">OpenAI GPT</option>
                     <option value="anthropic">Claude</option>
                     <option value="gemini">Google Gemini</option>
                   </select>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Uses your configured API keys from LLM Providers
+                  </p>
                 </div>
                 
+                <div>
+                  <label className="form-label">Specific Model (Optional)</label>
+                  <select 
+                    {...register('llm_model')} 
+                    className="form-input"
+                    disabled={!watch('llm_provider')}
+                  >
+                    <option value="">Default (Auto-select)</option>
+                    
+                    {/* OpenAI Models */}
+                    {watch('llm_provider') === 'openai' && (
+                      <>
+                        <option value="gpt-4o">GPT-4o (Best, Multimodal)</option>
+                        <option value="gpt-4o-mini">GPT-4o Mini (Fast, Cheap)</option>
+                        <option value="o1-preview">O1 Preview (Reasoning)</option>
+                        <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                        <option value="gpt-3.5-turbo">GPT-3.5 Turbo (Budget)</option>
+                      </>
+                    )}
+                    
+                    {/* Claude Models */}
+                    {(watch('llm_provider') === 'anthropic' || watch('llm_provider') === 'claude') && (
+                      <>
+                        <option value="claude-3-7-sonnet-latest">Claude 3.7 Sonnet (Newest) ⭐</option>
+                        <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet Oct 2024</option>
+                        <option value="claude-3-5-sonnet-20240620">Claude 3.5 Sonnet Jun 2024</option>
+                        <option value="claude-3-5-haiku-20241022">Claude 3.5 Haiku (Fast) ⚡</option>
+                        <option value="claude-3-opus-20240229">Claude 3 Opus (Most Capable)</option>
+                        <option value="claude-3-haiku-20240307">Claude 3 Haiku (Cheapest) 💰</option>
+                      </>
+                    )}
+                    
+                    {/* Gemini Models */}
+                    {watch('llm_provider') === 'gemini' && (
+                      <>
+                        <option value="gemini-1.5-pro">Gemini 1.5 Pro (Best)</option>
+                        <option value="gemini-1.5-flash">Gemini 1.5 Flash (Fast)</option>
+                        <option value="gemini-2.0-flash-exp">Gemini 2.0 Flash (Experimental)</option>
+                        <option value="gemini-pro">Gemini Pro (Legacy)</option>
+                      </>
+                    )}
+                  </select>
+                  {watch('llm_provider') && (
+                    <p className="text-xs text-gray-400 mt-1">
+                      {watch('llm_provider') === 'openai' && 'OpenAI models for different use cases'}
+                      {(watch('llm_provider') === 'anthropic' || watch('llm_provider') === 'claude') && 'Claude models optimized for reasoning'}
+                      {watch('llm_provider') === 'gemini' && 'Google\'s Gemini models with long context'}
+                    </p>
+                  )}
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="flex items-center space-x-3">
                   <input
                     type="checkbox"

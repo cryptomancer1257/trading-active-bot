@@ -198,6 +198,21 @@ def create_bot(db: Session, bot: schemas.BotCreate, developer_id: int, status: s
     }
     filtered_bot_dict = {k: v for k, v in bot_dict.items() if k in valid_fields and v is not None}
     
+    # Handle LLM configuration - merge into strategy_config
+    llm_fields = ['llm_provider', 'llm_model', 'enable_image_analysis', 'enable_sentiment_analysis']
+    llm_config = {}
+    
+    for field in llm_fields:
+        if field in bot_dict and bot_dict[field] is not None:
+            llm_config[field] = bot_dict[field]
+    
+    # Merge LLM config into strategy_config
+    if llm_config:
+        if 'strategy_config' not in filtered_bot_dict or filtered_bot_dict['strategy_config'] is None:
+            filtered_bot_dict['strategy_config'] = {}
+        filtered_bot_dict['strategy_config'].update(llm_config)
+        logger.info(f"Creating bot with LLM config: {llm_config}")
+    
     # 🎯 AUTO-SET CODE_PATH for template bots (local files)
     template = bot_dict.get('template') or bot_dict.get('templateFile')
     if template:
@@ -436,8 +451,26 @@ def update_bot(db: Session, bot_id: int, bot_update: schemas.BotUpdate):
     db_bot = get_bot_by_id(db, bot_id)
     if db_bot:
         update_data = bot_update.dict(exclude_unset=True)
+        
+        # Handle LLM configuration - merge into strategy_config
+        llm_fields = ['llm_provider', 'llm_model', 'enable_image_analysis', 'enable_sentiment_analysis']
+        llm_config = {}
+        
+        for field in llm_fields:
+            if field in update_data:
+                llm_config[field] = update_data.pop(field)
+        
+        # Merge LLM config into strategy_config
+        if llm_config:
+            if db_bot.strategy_config is None:
+                db_bot.strategy_config = {}
+            db_bot.strategy_config.update(llm_config)
+            logger.info(f"Updated bot {bot_id} LLM config: {llm_config}")
+        
+        # Apply remaining updates
         for key, value in update_data.items():
             setattr(db_bot, key, value)
+        
         db.commit()
         db.refresh(db_bot)
     return db_bot
