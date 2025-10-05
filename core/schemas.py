@@ -345,6 +345,8 @@ class BotInDB(BotBase):
     code_path: Optional[str] = None
     model_path: Optional[str] = None
     total_subscribers: int = 0
+    subscribers_count: int = 0  # Real-time count from subscriptions
+    transactions_count: int = 0  # Total transactions count
     average_rating: float = 0.0
     total_reviews: int = 0
     created_at: datetime

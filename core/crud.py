@@ -10,6 +10,7 @@ from decimal import Decimal
 import hashlib
 import json
 import logging
+from fastapi import HTTPException
 
 # Initialize logger
 logger = logging.getLogger(__name__)
@@ -269,7 +270,156 @@ def get_public_bots(db: Session, skip: int = 0, limit: int = 50, category_id: Op
     return bots, total
 
 def get_bots_by_developer(db: Session, developer_id: int):
-    return db.query(models.Bot).filter(models.Bot.developer_id == developer_id).all()
+    """Get all bots by developer with real-time counts"""
+    from sqlalchemy import func
+    
+    # Get bots
+    bots = db.query(models.Bot).filter(models.Bot.developer_id == developer_id).all()
+    
+    # Add real-time counts for each bot
+    for bot in bots:
+        # Count active subscribers
+        bot.subscribers_count = db.query(func.count(models.Subscription.id)).filter(
+            models.Subscription.bot_id == bot.id
+        ).scalar() or 0
+        
+        # Count total transactions for this bot's subscriptions
+        bot.transactions_count = db.query(func.count(models.Transaction.id)).join(
+            models.Subscription,
+            models.Subscription.id == models.Transaction.subscription_id
+        ).filter(
+            models.Subscription.bot_id == bot.id
+        ).scalar() or 0
+    
+    return bots
+
+def get_bot_analytics(db: Session, bot_id: int, developer_id: int, days: int = 30):
+    """Get comprehensive analytics for a bot"""
+    from sqlalchemy import func, and_, case
+    from datetime import datetime, timedelta
+    
+    # Verify bot belongs to developer
+    bot = db.query(models.Bot).filter(
+        models.Bot.id == bot_id,
+        models.Bot.developer_id == developer_id
+    ).first()
+    
+    if not bot:
+        raise HTTPException(status_code=404, detail="Bot not found")
+    
+    # Calculate date range
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=days)
+    
+    # Get subscription stats
+    total_subscriptions = db.query(func.count(models.Subscription.id)).filter(
+        models.Subscription.bot_id == bot_id
+    ).scalar() or 0
+    
+    active_subscriptions = db.query(func.count(models.Subscription.id)).filter(
+        models.Subscription.bot_id == bot_id,
+        models.Subscription.status == models.SubscriptionStatus.ACTIVE
+    ).scalar() or 0
+    
+    # Get transaction stats
+    transactions_query = db.query(models.Transaction).join(
+        models.Subscription,
+        models.Subscription.id == models.Transaction.subscription_id
+    ).filter(
+        models.Subscription.bot_id == bot_id
+    )
+    
+    # Filter by date range
+    transactions_in_period = transactions_query.filter(
+        models.Transaction.created_at >= start_date
+    ).all()
+    
+    total_transactions = len(transactions_in_period)
+    
+    # Calculate P&L and win rate
+    total_pnl = 0.0
+    winning_trades = 0
+    losing_trades = 0
+    
+    for tx in transactions_in_period:
+        pnl = float(tx.realized_pnl or 0)
+        total_pnl += pnl
+        if pnl > 0:
+            winning_trades += 1
+        elif pnl < 0:
+            losing_trades += 1
+    
+    win_rate = (winning_trades / total_transactions * 100) if total_transactions > 0 else 0
+    
+    # Get transactions grouped by date for chart
+    daily_stats = db.query(
+        func.date(models.Transaction.created_at).label('date'),
+        func.count(models.Transaction.id).label('count'),
+        func.sum(models.Transaction.realized_pnl).label('pnl')
+    ).join(
+        models.Subscription,
+        models.Subscription.id == models.Transaction.subscription_id
+    ).filter(
+        models.Subscription.bot_id == bot_id,
+        models.Transaction.created_at >= start_date
+    ).group_by(
+        func.date(models.Transaction.created_at)
+    ).order_by(
+        func.date(models.Transaction.created_at)
+    ).all()
+    
+    # Format daily stats for chart
+    chart_data = []
+    for stat in daily_stats:
+        chart_data.append({
+            'date': stat.date.isoformat() if stat.date else None,
+            'transactions': stat.count,
+            'pnl': float(stat.pnl) if stat.pnl else 0
+        })
+    
+    # Get recent transactions (last 10)
+    recent_transactions = db.query(
+        models.Transaction
+    ).join(
+        models.Subscription,
+        models.Subscription.id == models.Transaction.subscription_id
+    ).filter(
+        models.Subscription.bot_id == bot_id
+    ).order_by(
+        models.Transaction.created_at.desc()
+    ).limit(10).all()
+    
+    # Format recent transactions
+    recent_txs = []
+    for tx in recent_transactions:
+        recent_txs.append({
+            'id': tx.id,
+            'trading_pair': tx.symbol,  # Transaction model uses 'symbol' field
+            'action': tx.action,
+            'quantity': float(tx.quantity) if tx.quantity else 0,
+            'entry_price': float(tx.entry_price) if tx.entry_price else 0,
+            'exit_price': float(tx.exit_price) if tx.exit_price else 0,
+            'realized_pnl': float(tx.realized_pnl) if tx.realized_pnl else 0,
+            'created_at': tx.created_at.isoformat() if tx.created_at else None,
+            'closed_at': tx.exit_time.isoformat() if tx.exit_time else None  # Use exit_time instead of closed_at
+        })
+    
+    return {
+        'bot_id': bot_id,
+        'bot_name': bot.name,
+        'period_days': days,
+        'summary': {
+            'total_subscriptions': total_subscriptions,
+            'active_subscriptions': active_subscriptions,
+            'total_transactions': total_transactions,
+            'winning_trades': winning_trades,
+            'losing_trades': losing_trades,
+            'win_rate': round(win_rate, 2),
+            'total_pnl': round(total_pnl, 2)
+        },
+        'chart_data': chart_data,
+        'recent_transactions': recent_txs
+    }
 
 def get_all_bots(db: Session, skip: int = 0, limit: int = 100, status_filter: Optional[schemas.BotStatus] = None):
     query = db.query(models.Bot)

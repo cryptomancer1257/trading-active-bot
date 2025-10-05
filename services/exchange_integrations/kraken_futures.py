@@ -31,6 +31,36 @@ class KrakenFuturesIntegration(BaseFuturesExchange):
             self.base_url = "https://demo-futures.kraken.com"
         else:
             self.base_url = "https://futures.kraken.com"
+        
+        # Kraken uses different symbol formats
+        # Standard -> Kraken Futures format
+        self._symbol_map = {
+            'BTCUSDT': 'PI_XBTUSD',   # Bitcoin Perpetual Inverse
+            'ETHUSDT': 'PI_ETHUSD',   # Ethereum Perpetual Inverse
+            'BTCUSD': 'PI_XBTUSD',
+            'ETHUSD': 'PI_ETHUSD',
+        }
+    
+    def _to_kraken_symbol(self, symbol: str) -> str:
+        """Convert standard symbol format to Kraken Futures format"""
+        # If already in Kraken format, return as is
+        if symbol.startswith('PI_') or symbol.startswith('PF_'):
+            return symbol
+        
+        # Try direct mapping
+        if symbol in self._symbol_map:
+            kraken_symbol = self._symbol_map[symbol]
+            logger.info(f"📝 Symbol conversion: {symbol} → {kraken_symbol}")
+            return kraken_symbol
+        
+        # Default: try to convert (e.g., BTCUSDT -> PI_XBTUSD)
+        # Most Kraken perpetuals use PI_ prefix and XBT instead of BTC
+        base = symbol.replace('USDT', '').replace('USD', '')
+        if base == 'BTC':
+            base = 'XBT'  # Kraken uses XBT for Bitcoin
+        kraken_symbol = f'PI_{base}USD'
+        logger.warning(f"⚠️ Guessing Kraken symbol: {symbol} → {kraken_symbol}")
+        return kraken_symbol
     
     def _generate_signature(self, endpoint: str, nonce: str, data: str = "") -> str:
         """Generate Kraken Futures signature"""
@@ -116,9 +146,12 @@ class KrakenFuturesIntegration(BaseFuturesExchange):
         try:
             result = self._make_request("GET", "/derivatives/api/v3/openpositions", signed=True)
             
+            # Convert symbol to Kraken format if provided
+            kraken_symbol = self._to_kraken_symbol(symbol) if symbol else None
+            
             positions = []
             for pos in result.get('openPositions', []):
-                if symbol and pos['symbol'] != symbol:
+                if kraken_symbol and pos['symbol'] != kraken_symbol:
                     continue
                 
                 size = float(pos.get('size', 0))
@@ -141,15 +174,22 @@ class KrakenFuturesIntegration(BaseFuturesExchange):
     def get_ticker(self, symbol: str) -> Dict[str, Any]:
         """Get current price for symbol"""
         try:
+            # Convert to Kraken symbol format
+            kraken_symbol = self._to_kraken_symbol(symbol)
+            
             result = self._make_request("GET", "/derivatives/api/v3/tickers")
             
             for ticker in result.get('tickers', []):
-                if ticker['symbol'] == symbol:
+                if ticker['symbol'] == kraken_symbol:
                     return {
-                        'symbol': symbol,
+                        'symbol': symbol,  # Return original symbol
                         'price': str(ticker['last'])
                     }
-            raise Exception(f"No ticker data for {symbol}")
+            
+            # Log available symbols if not found
+            available_symbols = [t['symbol'] for t in result.get('tickers', [])][:10]
+            logger.error(f"Symbol {kraken_symbol} not found. Available symbols (first 10): {available_symbols}")
+            raise Exception(f"No ticker data for {kraken_symbol}")
         except Exception as e:
             logger.error(f"Failed to get ticker: {e}")
             raise
@@ -161,14 +201,17 @@ class KrakenFuturesIntegration(BaseFuturesExchange):
     
     def get_symbol_precision(self, symbol: str) -> dict:
         """Get symbol precision"""
-        if symbol in self._symbol_info_cache:
-            return self._symbol_info_cache[symbol]
+        # Convert to Kraken symbol format
+        kraken_symbol = self._to_kraken_symbol(symbol)
+        
+        if kraken_symbol in self._symbol_info_cache:
+            return self._symbol_info_cache[kraken_symbol]
         
         try:
             result = self._make_request("GET", "/derivatives/api/v3/instruments")
             
             for instrument in result.get('instruments', []):
-                if instrument['symbol'] == symbol:
+                if instrument['symbol'] == kraken_symbol:
                     precision_info = {
                         'quantityPrecision': 0,
                         'pricePrecision': 1,
@@ -176,7 +219,7 @@ class KrakenFuturesIntegration(BaseFuturesExchange):
                         'tickSize': str(instrument.get('tickSize', 0.5))
                     }
                     
-                    self._symbol_info_cache[symbol] = precision_info
+                    self._symbol_info_cache[kraken_symbol] = precision_info
                     return precision_info
             
             return {'quantityPrecision': 0, 'pricePrecision': 1, 'stepSize': '1', 'tickSize': '0.5'}
@@ -191,19 +234,23 @@ class KrakenFuturesIntegration(BaseFuturesExchange):
     def create_market_order(self, symbol: str, side: str, quantity: str) -> FuturesOrderInfo:
         """Create Kraken market order"""
         try:
+            # Convert to Kraken symbol format
+            kraken_symbol = self._to_kraken_symbol(symbol)
+            
             params = {
                 'orderType': 'mkt',
-                'symbol': symbol,
+                'symbol': kraken_symbol,
                 'side': 'buy' if side == 'BUY' else 'sell',
                 'size': int(float(quantity))
             }
             
+            logger.info(f"📤 Creating Kraken market order: {kraken_symbol} {side} {quantity} contracts")
             result = self._make_request("POST", "/derivatives/api/v3/sendorder", params, signed=True)
             
             return FuturesOrderInfo(
                 order_id=result.get('sendStatus', {}).get('order_id', ''),
                 client_order_id='',
-                symbol=symbol,
+                symbol=symbol,  # Return original symbol
                 side=side,
                 type='MARKET',
                 quantity=quantity,
@@ -219,9 +266,12 @@ class KrakenFuturesIntegration(BaseFuturesExchange):
                               stop_price: str, reduce_only: bool = True) -> FuturesOrderInfo:
         """Create stop loss order"""
         try:
+            # Convert to Kraken symbol format
+            kraken_symbol = self._to_kraken_symbol(symbol)
+            
             params = {
                 'orderType': 'stp',
-                'symbol': symbol,
+                'symbol': kraken_symbol,
                 'side': 'buy' if side == 'BUY' else 'sell',
                 'size': int(float(quantity)),
                 'stopPrice': stop_price,
@@ -233,7 +283,7 @@ class KrakenFuturesIntegration(BaseFuturesExchange):
             return FuturesOrderInfo(
                 order_id=result.get('sendStatus', {}).get('order_id', ''),
                 client_order_id='',
-                symbol=symbol,
+                symbol=symbol,  # Return original symbol
                 side=side,
                 type='STOP_MARKET',
                 quantity=quantity,
@@ -249,9 +299,12 @@ class KrakenFuturesIntegration(BaseFuturesExchange):
                                 stop_price: str, reduce_only: bool = True) -> FuturesOrderInfo:
         """Create take profit order"""
         try:
+            # Convert to Kraken symbol format
+            kraken_symbol = self._to_kraken_symbol(symbol)
+            
             params = {
                 'orderType': 'take_profit',
-                'symbol': symbol,
+                'symbol': kraken_symbol,
                 'side': 'buy' if side == 'BUY' else 'sell',
                 'size': int(float(quantity)),
                 'stopPrice': stop_price,
@@ -263,7 +316,7 @@ class KrakenFuturesIntegration(BaseFuturesExchange):
             return FuturesOrderInfo(
                 order_id=result.get('sendStatus', {}).get('order_id', ''),
                 client_order_id='',
-                symbol=symbol,
+                symbol=symbol,  # Return original symbol
                 side=side,
                 type='TAKE_PROFIT_MARKET',
                 quantity=quantity,
@@ -314,30 +367,33 @@ class KrakenFuturesIntegration(BaseFuturesExchange):
                    start_time: int = None, end_time: int = None) -> pd.DataFrame:
         """Get Kraken kline data"""
         try:
-            # Kraken uses resolution in minutes
-            interval_map = {
-                '1m': '1', '5m': '5', '15m': '15', '30m': '30',
-                '1h': '60', '4h': '240', '1d': '1440'
-            }
+            # Convert to Kraken symbol format
+            kraken_symbol = self._to_kraken_symbol(symbol)
             
-            resolution = interval_map.get(interval, '60')
+            # Kraken uses different endpoint for charts: /api/charts/v1/trade/{symbol}/{interval}
+            # Not via _make_request, direct HTTP call
+            url = f"{self.base_url}/api/charts/v1/trade/{kraken_symbol}/{interval}"
             
-            params = {
-                'symbol': symbol,
-                'resolution': resolution
-            }
-            
-            if limit:
-                params['limit'] = str(min(limit, 1000))
-            
-            result = self._make_request("GET", "/api/charts/v1/trade", params)
+            logger.info(f"📊 Fetching Kraken klines: {url}")
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            result = response.json()
             
             if not result or 'candles' not in result:
+                logger.error(f"No kline data returned. Response: {result}")
                 raise Exception("No kline data returned")
             
-            # Kraken returns {time, open, high, low, close, volume}
+            # Kraken returns list of candles: [{time, open, high, low, close, volume}, ...]
+            candles = result['candles']
+            if not candles:
+                logger.warning(f"Empty candles list for {kraken_symbol}")
+                return pd.DataFrame(columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+            
+            logger.info(f"✅ Fetched {len(candles)} candles for {kraken_symbol}")
+            
+            # Convert to our format
             data = []
-            for candle in result['candles']:
+            for candle in candles[-limit:] if limit else candles:  # Take last N candles
                 data.append({
                     'timestamp': int(candle['time']),
                     'open': float(candle['open']),
