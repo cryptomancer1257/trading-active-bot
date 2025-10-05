@@ -470,7 +470,11 @@ def get_bot_api_keys(user_principal_id: str, exchange: str = "BINANCE",
                             passphrase = decrypt_sensitive_data(passphrase)
                         logger.info(f"✅ Passphrase decrypted for {exchange} (length: {len(passphrase)})")
                     else:
-                        logger.warning(f"❌ No passphrase found in database for {exchange} (required for OKX, Bitget)")
+                        # Only warn if passphrase is actually required for this exchange
+                        if exchange in ['OKX', 'BITGET']:
+                            logger.warning(f"❌ No passphrase found in database for {exchange} (REQUIRED!)")
+                        else:
+                            logger.info(f"ℹ️  No passphrase for {exchange} (not required)")
                     
                     # For Bitget, always return testnet=False since they don't have testnet
                     actual_testnet = dev_credentials.network_type == models.NetworkType.TESTNET

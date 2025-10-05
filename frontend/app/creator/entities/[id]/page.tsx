@@ -15,6 +15,7 @@ import { CheckCircleIcon, ClockIcon, XCircleIcon, ArchiveBoxIcon } from '@heroic
 import Link from 'next/link'
 import BotPromptsTab from '@/components/BotPromptsTab'
 import RiskManagementTab from '@/components/RiskManagementTab'
+import BotAnalytics from '@/components/BotAnalytics'
 import toast from 'react-hot-toast'
 import config from '@/lib/config'
 import { useAuth } from '@/contexts/AuthContext'
@@ -516,15 +517,7 @@ export default function BotDetailPage() {
       case 'risk-management':
         return <RiskManagementTab botId={bot.id} />
       case 'analytics':
-        return (
-          <div className="space-y-6">
-            <h2 className="text-2xl font-bold text-white">Analytics</h2>
-            <p className="text-gray-300">Bot performance metrics and analytics.</p>
-            <div className="bg-gray-800 p-6 rounded-lg">
-              <p className="text-gray-400">Analytics coming soon...</p>
-            </div>
-          </div>
-        )
+        return <BotAnalytics botId={bot.id} />
       default:
         return null
     }

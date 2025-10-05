@@ -549,6 +549,16 @@ def get_marketplace_bots_list(
     """Get approved bots available on marketplace"""
     return crud.get_marketplace_bots(db, skip=skip, limit=limit)
 
+@router.get("/{bot_id}/analytics", response_model=dict)
+def get_bot_analytics(
+    bot_id: int,
+    days: int = 30,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(security.get_current_active_developer)
+):
+    """Get bot analytics including transactions, subscribers, and performance metrics"""
+    return crud.get_bot_analytics(db, bot_id=bot_id, developer_id=current_user.id, days=days)
+
 @router.get("/validate-bot-key/{api_key}", response_model=schemas.BotMarketplaceRegistrationInDB)
 def validate_bot_api_key(
     api_key: str,
