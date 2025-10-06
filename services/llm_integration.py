@@ -79,17 +79,25 @@ class LLMIntegrationService:
                     logger.info(f"✅ Using developer's LLM provider: {provider_config['provider']} ({provider_config['model']})")
                     
                     # Override config with developer's provider
-                    provider_type = str(provider_config['provider']).lower().replace('llmprovidertype.', '')
+                    # Extract the enum value and convert to uppercase for comparison
+                    provider_enum = provider_config['provider']
+                    provider_type = str(provider_enum.value).upper() if hasattr(provider_enum, 'value') else str(provider_enum).upper()
                     
-                    if provider_type == 'openai':
+                    if provider_type == 'OPENAI':
                         self.config['openai_api_key'] = provider_config['api_key']
                         self.config['openai_model'] = provider_config['model']
-                    elif provider_type in ['anthropic', 'claude']:
+                    elif provider_type in ['ANTHROPIC']:
                         self.config['claude_api_key'] = provider_config['api_key']
                         self.config['claude_model'] = provider_config['model']
-                    elif provider_type == 'gemini':
+                    elif provider_type == 'GEMINI':
                         self.config['gemini_api_key'] = provider_config['api_key']
                         self.config['gemini_model'] = provider_config['model']
+                    elif provider_type == 'GROQ':
+                        self.config['groq_api_key'] = provider_config['api_key']
+                        self.config['groq_model'] = provider_config['model']
+                    elif provider_type == 'COHERE':
+                        self.config['cohere_api_key'] = provider_config['api_key']
+                        self.config['cohere_model'] = provider_config['model']
                     
                     # Store for usage logging later
                     self._provider_config = provider_config
@@ -116,7 +124,7 @@ class LLMIntegrationService:
         # Model configurations - Updated model names for 2025
         self.openai_model = self.config.get('openai_model', 'gpt-4o-mini')  # More cost-effective with good performance
         self.claude_model = self.config.get('claude_model', 'claude-3-5-sonnet-20241022')  # Latest stable
-        self.gemini_model = self.config.get('gemini_model', 'gemini-1.5-pro')
+        self.gemini_model = self.config.get('gemini_model', 'gemini-2.5-flash')  # Updated: Latest balanced model (Oct 2025)
         
         # Performance and reliability settings
         self.max_retries = self.config.get('max_retries', 3)

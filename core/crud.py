@@ -451,6 +451,8 @@ def update_bot(db: Session, bot_id: int, bot_update: schemas.BotUpdate):
     db_bot = get_bot_by_id(db, bot_id)
     if db_bot:
         update_data = bot_update.dict(exclude_unset=True)
+        logger.info(f"🔧 update_bot called for bot {bot_id}")
+        logger.info(f"📦 Received update_data: {update_data}")
         
         # Handle LLM configuration - merge into strategy_config
         llm_fields = ['llm_provider', 'llm_model', 'enable_image_analysis', 'enable_sentiment_analysis']
@@ -462,17 +464,33 @@ def update_bot(db: Session, bot_id: int, bot_update: schemas.BotUpdate):
         
         # Merge LLM config into strategy_config
         if llm_config:
+            from sqlalchemy.orm.attributes import flag_modified
+            
             if db_bot.strategy_config is None:
                 db_bot.strategy_config = {}
-            db_bot.strategy_config.update(llm_config)
-            logger.info(f"Updated bot {bot_id} LLM config: {llm_config}")
+            
+            logger.info(f"🔹 Old strategy_config: {db_bot.strategy_config}")
+            
+            # Create a new dict to ensure SQLAlchemy detects the change
+            new_strategy_config = dict(db_bot.strategy_config)
+            new_strategy_config.update(llm_config)
+            db_bot.strategy_config = new_strategy_config
+            
+            # Explicitly mark as modified for SQLAlchemy
+            flag_modified(db_bot, 'strategy_config')
+            
+            logger.info(f"🔸 New strategy_config: {db_bot.strategy_config}")
+            logger.info(f"✅ Updated bot {bot_id} LLM config: {llm_config}")
         
         # Apply remaining updates
         for key, value in update_data.items():
             setattr(db_bot, key, value)
         
+        logger.info(f"💾 Committing changes to database...")
         db.commit()
         db.refresh(db_bot)
+        logger.info(f"✅ Bot {bot_id} updated successfully!")
+        logger.info(f"📊 Final strategy_config in DB: {db_bot.strategy_config}")
     return db_bot
 
 def update_bot_status(db: Session, bot_id: int, status: schemas.BotStatus):
