@@ -34,6 +34,51 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # --- Public endpoints ---
+@router.get("/stats")
+def get_public_stats(db: Session = Depends(get_db)):
+    """Get public statistics for landing page"""
+    try:
+        total_bots = db.query(models.Bot).filter(
+            models.Bot.status == models.BotStatus.APPROVED
+        ).count()
+        
+        total_subscriptions = db.query(models.Subscription).filter(
+            models.Subscription.status == models.SubscriptionStatus.ACTIVE
+        ).count()
+        
+        # Calculate average rating from approved bots
+        bots_with_ratings = db.query(models.Bot).filter(
+            models.Bot.status == models.BotStatus.APPROVED,
+            models.Bot.average_rating > 0
+        ).all()
+        
+        avg_rating = 0.0
+        if bots_with_ratings:
+            avg_rating = sum(bot.average_rating or 0 for bot in bots_with_ratings) / len(bots_with_ratings)
+        
+        # Count total developers
+        total_developers = db.query(models.User).filter(
+            models.User.role == models.UserRole.DEVELOPER
+        ).count()
+        
+        return {
+            "total_bots": total_bots,
+            "total_subscriptions": total_subscriptions,
+            "avg_rating": round(avg_rating, 1),
+            "total_developers": total_developers
+        }
+    except Exception as e:
+        logger.error(f"Failed to get public stats: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        # Return default values on error
+        return {
+            "total_bots": 0,
+            "total_subscriptions": 0,
+            "avg_rating": 0.0,
+            "total_developers": 0
+        }
+
 @router.get("/", response_model=schemas.BotListResponse)
 def get_public_bots(
     skip: int = 0,

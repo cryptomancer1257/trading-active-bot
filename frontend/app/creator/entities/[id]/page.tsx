@@ -55,7 +55,19 @@ export default function BotDetailPage() {
   const botId = params?.id as string
   const { user } = useAuth()
 
-  const [activeTab, setActiveTab] = useState<TabType>('overview')
+  // Check localStorage for initial tab
+  const getInitialTab = (): TabType => {
+    if (typeof window !== 'undefined') {
+      const savedTab = localStorage.getItem('bot-detail-tab')
+      if (savedTab) {
+        localStorage.removeItem('bot-detail-tab') // Clear after reading
+        return savedTab as TabType
+      }
+    }
+    return 'overview'
+  }
+
+  const [activeTab, setActiveTab] = useState<TabType>(getInitialTab())
   const [isStartingTrial, setIsStartingTrial] = useState(false)
   const [trialConfig, setTrialConfig] = useState({
     tradingPair: 'BTC/USDT',
