@@ -1,5 +1,9 @@
+'use client'
+
 import Link from 'next/link'
 import { CpuChipIcon, ShieldCheckIcon, RocketLaunchIcon, BoltIcon } from '@heroicons/react/24/outline'
+import { useQuery } from '@tanstack/react-query'
+import { api } from '@/lib/api'
 
 const features = [
   {
@@ -28,14 +32,41 @@ const features = [
   },
 ]
 
-const stats = [
-  { name: 'AI Entities Created', value: '2,847', suffix: '+' },
-  { name: 'Market Dominance', value: '94.7', suffix: '%' },
-  { name: 'Profit Optimization', value: '340', suffix: '%' },
-  { name: 'Neural Networks', value: '∞', suffix: '' },
-]
-
 export default function HomePage() {
+  // Fetch real-time stats from API
+  const { data: statsData, isLoading } = useQuery({
+    queryKey: ['public-stats'],
+    queryFn: async () => {
+      const response = await api.get('/bots/stats')
+      return response.data
+    },
+    refetchInterval: 30000, // Refresh every 30 seconds
+  })
+
+  // Format stats for display
+  const stats = [
+    { 
+      name: 'AI Entities Created', 
+      value: isLoading ? '...' : statsData?.total_bots?.toLocaleString() || '0', 
+      suffix: '+' 
+    },
+    { 
+      name: 'Active Deployments', 
+      value: isLoading ? '...' : statsData?.total_subscriptions?.toLocaleString() || '0', 
+      suffix: '' 
+    },
+    { 
+      name: 'Average Rating', 
+      value: isLoading ? '...' : statsData?.avg_rating || '0', 
+      suffix: '/5 ⭐' 
+    },
+    { 
+      name: 'Neural Architects', 
+      value: isLoading ? '...' : statsData?.total_developers?.toLocaleString() || '∞', 
+      suffix: '' 
+    },
+  ]
+
   return (
     <div className="relative">
       {/* Hero Section */}
