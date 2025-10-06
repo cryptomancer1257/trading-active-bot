@@ -666,6 +666,10 @@ class BinanceFuturesRPABot(CustomBot):
         self.llm_service = None
         if self.use_llm_analysis:
             try:
+                # Get bot's preferred LLM provider and model from config (set in UI)
+                preferred_provider = config.get('llm_provider')
+                llm_model = config.get('llm_model')  # Specific model selected in UI
+                
                 # LLM keys can come from api_keys parameter or environment variables
                 llm_config = {
                     'openai_api_key': os.getenv('OPENAI_API_KEY'),
@@ -673,8 +677,19 @@ class BinanceFuturesRPABot(CustomBot):
                     'gemini_api_key': os.getenv('GEMINI_API_KEY'),
                     'openai_model': config.get('openai_model', 'gpt-4o'),
                     'claude_model': config.get('claude_model', 'claude-3-5-sonnet-20241022'),
-                    'gemini_model': config.get('gemini_model', 'gemini-1.5-pro')
+                    'gemini_model': config.get('gemini_model', 'gemini-2.5-flash')
                 }
+                
+                # Override with specific model if provided (from UI dropdown)
+                if llm_model and preferred_provider:
+                    if preferred_provider == 'openai':
+                        llm_config['openai_model'] = llm_model
+                    elif preferred_provider in ['anthropic', 'claude']:
+                        llm_config['claude_model'] = llm_model
+                    elif preferred_provider == 'gemini':
+                        llm_config['gemini_model'] = llm_model
+                    logger.info(f"✅ Using {preferred_provider} model: {llm_model}")
+                
                 self.llm_service = create_llm_service(llm_config)
                 logger.info(f"LLM service initialized with model: {self.llm_model}")
             except Exception as e:

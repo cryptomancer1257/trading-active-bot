@@ -222,19 +222,42 @@ class UniversalFuturesBot(CustomBot):
                 db = config.get('db')
                 bot_id = config.get('bot_id')
                 
-                # Get bot's preferred LLM provider from config (set in UI)
+                # Get bot's preferred LLM provider and model from config (set in UI)
                 preferred_provider = config.get('llm_provider')  # "openai", "claude", "gemini"
+                llm_model = config.get('llm_model')  # Specific model selected in UI (e.g., "gemini-2.5-pro")
+                
                 if preferred_provider:
                     logger.info(f"🎯 Bot configured to use LLM provider: {preferred_provider}")
+                if llm_model:
+                    logger.info(f"🎯 Bot configured to use specific model: {llm_model}")
                 
+                # Build LLM config with defaults
                 llm_config = {
                     'openai_api_key': os.getenv('OPENAI_API_KEY'),
                     'claude_api_key': os.getenv('CLAUDE_API_KEY'),
                     'gemini_api_key': os.getenv('GEMINI_API_KEY'),
                     'openai_model': config.get('openai_model', 'gpt-4o'),
                     'claude_model': config.get('claude_model', 'claude-3-5-sonnet-20241022'),
-                    'gemini_model': config.get('gemini_model', 'gemini-1.5-pro')
+                    'gemini_model': config.get('gemini_model', 'gemini-2.5-flash')  # Default
                 }
+                
+                # Override with specific model if provided (from UI dropdown)
+                if llm_model:
+                    if preferred_provider == 'openai':
+                        llm_config['openai_model'] = llm_model
+                        logger.info(f"✅ Using OpenAI model: {llm_model}")
+                    elif preferred_provider in ['anthropic', 'claude']:
+                        llm_config['claude_model'] = llm_model
+                        logger.info(f"✅ Using Claude model: {llm_model}")
+                    elif preferred_provider == 'gemini':
+                        llm_config['gemini_model'] = llm_model
+                        logger.info(f"✅ Using Gemini model: {llm_model}")
+                    elif preferred_provider == 'groq':
+                        llm_config['groq_model'] = llm_model
+                        logger.info(f"✅ Using Groq model: {llm_model}")
+                    elif preferred_provider == 'cohere':
+                        llm_config['cohere_model'] = llm_model
+                        logger.info(f"✅ Using Cohere model: {llm_model}")
                 
                 # Create LLM service with developer's API keys (BYOK - Priority!)
                 self.llm_service = create_llm_service(
