@@ -1,76 +1,91 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { MagnifyingGlassIcon, FunnelIcon, CpuChipIcon, ShieldCheckIcon, BoltIcon } from '@heroicons/react/24/outline'
+import { useQuery } from '@tanstack/react-query'
+import { api } from '@/lib/api'
+import Link from 'next/link'
 
-// Mock data for AI entities
-const mockBots = [
-  {
-    id: 1,
-    name: "Neural Phantom",
-    description: "Advanced AI entity specialized in high-frequency arbitrage across multiple exchanges",
-    category: "Arbitrage",
-    performance: "+347%",
-    risk: "Medium",
-    status: "Active",
-    creator: "QuantumMaster",
-    deployments: 1247,
-    gradient: "from-quantum-500 to-purple-600"
-  },
-  {
-    id: 2,
-    name: "Cyber Sentinel",
-    description: "Defensive trading AI that protects portfolios during market volatility",
-    category: "Risk Management",
-    performance: "+89%",
-    risk: "Low",
-    status: "Active",
-    creator: "ShieldForge",
-    deployments: 892,
-    gradient: "from-cyber-500 to-blue-600"
-  },
-  {
-    id: 3,
-    name: "Market Dominator",
-    description: "Aggressive trend-following entity with machine learning capabilities",
-    category: "Trend Following",
-    performance: "+523%",
-    risk: "High",
-    status: "Active",
-    creator: "AlphaCreator",
-    deployments: 2156,
-    gradient: "from-neural-500 to-green-600"
-  },
-  {
-    id: 4,
-    name: "Quantum Scalper",
-    description: "Ultra-fast scalping AI with microsecond execution times",
-    category: "Scalping",
-    performance: "+234%",
-    risk: "Medium",
-    status: "Maintenance",
-    creator: "SpeedDemon",
-    deployments: 743,
-    gradient: "from-yellow-500 to-orange-600"
-  },
-]
+// Fetch bots from API
+const fetchPublicBots = async () => {
+  const response = await api.get('/bots/?limit=100')
+  return response.data
+}
 
-const categories = ["All", "Arbitrage", "Risk Management", "Trend Following", "Scalping", "Market Making"]
+const categories = ["All", "Arbitrage", "Risk Management", "Trend Following", "Scalping", "Market Making", "Technical", "ML", "LLM"]
 const riskLevels = ["All", "Low", "Medium", "High"]
+
+// Helper to map bot data to display format
+const mapBotToDisplay = (bot: any) => {
+  // Map risk based on risk_percentage
+  let risk = "Medium"
+  const riskPct = bot.risk_percentage || 2
+  if (riskPct < 2) risk = "Low"
+  else if (riskPct > 5) risk = "High"
+  
+  // Map status
+  const statusMap: Record<string, string> = {
+    'APPROVED': 'Active',
+    'ACTIVE': 'Active',
+    'PENDING': 'Maintenance',
+    'REJECTED': 'Offline',
+    'INACTIVE': 'Offline'
+  }
+  const status = statusMap[bot.status] || 'Maintenance'
+  
+  // Map category
+  const category = bot.bot_type || 'Technical'
+  
+  // Calculate gradient based on bot type
+  const gradients: Record<string, string> = {
+    'LLM': 'from-quantum-500 to-purple-600',
+    'ML': 'from-neural-500 to-green-600',
+    'DL': 'from-cyber-500 to-blue-600',
+    'TECHNICAL': 'from-yellow-500 to-orange-600'
+  }
+  const gradient = gradients[bot.bot_type] || 'from-gray-500 to-gray-600'
+  
+  return {
+    id: bot.id,
+    name: bot.name,
+    description: bot.description || 'No description available',
+    category,
+    performance: `+${bot.average_rating || 0}%`,
+    risk,
+    status,
+    creator: bot.developer?.username || 'Unknown',
+    deployments: bot.total_subscribers || 0,
+    gradient
+  }
+}
 
 export default function ArsenalPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedCategory, setSelectedCategory] = useState("All")
   const [selectedRisk, setSelectedRisk] = useState("All")
 
-  const filteredBots = mockBots.filter(bot => {
-    const matchesSearch = bot.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         bot.description.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesCategory = selectedCategory === "All" || bot.category === selectedCategory
-    const matchesRisk = selectedRisk === "All" || bot.risk === selectedRisk
-    
-    return matchesSearch && matchesCategory && matchesRisk
+  // Fetch bots from API
+  const { data: botsData, isLoading, error } = useQuery({
+    queryKey: ['public-bots'],
+    queryFn: fetchPublicBots,
+    staleTime: 60000, // Cache for 1 minute
   })
+
+  // Map and filter bots
+  const filteredBots = useMemo(() => {
+    if (!botsData?.bots) return []
+    
+    const mappedBots = botsData.bots.map(mapBotToDisplay)
+    
+    return mappedBots.filter((bot: any) => {
+      const matchesSearch = bot.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           bot.description.toLowerCase().includes(searchTerm.toLowerCase())
+      const matchesCategory = selectedCategory === "All" || bot.category === selectedCategory
+      const matchesRisk = selectedRisk === "All" || bot.risk === selectedRisk
+      
+      return matchesSearch && matchesCategory && matchesRisk
+    })
+  }, [botsData, searchTerm, selectedCategory, selectedRisk])
 
   const getRiskColor = (risk: string) => {
     switch (risk) {
@@ -90,6 +105,49 @@ export default function ArsenalPage() {
     }
   }
 
+  // Loading state
+  if (isLoading) {
+    return (
+      <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
+        <div className="text-center mb-12">
+          <h1 className="text-4xl font-extrabold cyber-text mb-4">
+            🤖 AI Entity Arsenal
+          </h1>
+        </div>
+        <div className="card-quantum p-12 text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-quantum-500 mx-auto mb-4"></div>
+          <p className="text-gray-300">Loading AI Entities...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
+        <div className="text-center mb-12">
+          <h1 className="text-4xl font-extrabold cyber-text mb-4">
+            🤖 AI Entity Arsenal
+          </h1>
+        </div>
+        <div className="card-quantum p-12 text-center">
+          <CpuChipIcon className="h-16 w-16 text-danger-500 mx-auto mb-4" />
+          <h3 className="text-xl font-bold text-gray-300 mb-2">Failed to Load Entities</h3>
+          <p className="text-gray-400 mb-4">
+            {error instanceof Error ? error.message : 'An error occurred while fetching bots'}
+          </p>
+          <button 
+            onClick={() => window.location.reload()} 
+            className="btn btn-primary"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
       {/* Header */}
@@ -100,6 +158,9 @@ export default function ArsenalPage() {
         <p className="text-xl text-gray-400 max-w-3xl mx-auto">
           Discover and analyze autonomous trading entities created by the neural network community.
           Each AI entity represents years of algorithmic evolution.
+        </p>
+        <p className="text-sm text-gray-500 mt-2">
+          Total Bots: {botsData?.total || 0} | Showing: {filteredBots.length}
         </p>
       </div>
 
@@ -228,15 +289,33 @@ export default function ArsenalPage() {
 
             {/* Actions */}
             <div className="flex space-x-3">
-              <button className="btn btn-primary flex-1 py-2 text-sm">
+              <Link 
+                href={`/creator/entities/${bot.id}`} 
+                className="btn btn-primary flex-1 py-2 text-sm text-center"
+                onClick={(e) => {
+                  // Set analytics tab when clicking
+                  localStorage.setItem('bot-detail-tab', 'analytics')
+                }}
+              >
                 🧠 Analyze Entity
-              </button>
-              <button className="btn btn-secondary flex-1 py-2 text-sm">
+              </Link>
+              <Link 
+                href={`/creator/entities/${bot.id}`}
+                className="btn btn-secondary flex-1 py-2 text-sm text-center"
+                onClick={(e) => {
+                  // Set analytics tab for performance view
+                  localStorage.setItem('bot-detail-tab', 'analytics')
+                }}
+              >
                 📊 View Performance
-              </button>
-              <button className="btn btn-cyber px-4 py-2 text-sm">
+              </Link>
+              <Link 
+                href={`/marketplace/${bot.id}`} 
+                className="btn btn-cyber px-4 py-2 text-sm"
+                title="Subscribe to bot"
+              >
                 ⚡
-              </button>
+              </Link>
             </div>
           </div>
         ))}
