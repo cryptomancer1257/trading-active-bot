@@ -594,6 +594,111 @@ def get_marketplace_bots_list(
     """Get approved bots available on marketplace"""
     return crud.get_marketplace_bots(db, skip=skip, limit=limit)
 
+@router.get("/analytics/overview", response_model=dict)
+def get_developer_analytics_overview(
+    days: int = 30,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(security.get_current_active_developer)
+):
+    """Get analytics overview for all developer's bots"""
+    try:
+        from sqlalchemy import func
+        from datetime import datetime, timedelta
+        
+        # Get all developer's bots
+        bots = db.query(models.Bot).filter(
+            models.Bot.developer_id == current_user.id
+        ).all()
+        
+        if not bots:
+            return {
+                'total_bots': 0,
+                'total_subscriptions': 0,
+                'active_subscriptions': 0,
+                'total_transactions': 0,
+                'total_pnl': 0.0,
+                'win_rate': 0.0,
+                'top_bots': []
+            }
+        
+        bot_ids = [bot.id for bot in bots]
+        
+        # Calculate date range
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=days)
+        
+        # Get subscription stats
+        total_subscriptions = db.query(func.count(models.Subscription.id)).filter(
+            models.Subscription.bot_id.in_(bot_ids)
+        ).scalar() or 0
+        
+        active_subscriptions = db.query(func.count(models.Subscription.id)).filter(
+            models.Subscription.bot_id.in_(bot_ids),
+            models.Subscription.status == models.SubscriptionStatus.ACTIVE
+        ).scalar() or 0
+        
+        # Get transaction stats
+        transactions = db.query(models.Transaction).join(
+            models.Subscription,
+            models.Subscription.id == models.Transaction.subscription_id
+        ).filter(
+            models.Subscription.bot_id.in_(bot_ids),
+            models.Transaction.created_at >= start_date
+        ).all()
+        
+        total_transactions = len(transactions)
+        total_pnl = sum(float(tx.realized_pnl or 0) for tx in transactions)
+        winning_trades = len([tx for tx in transactions if float(tx.realized_pnl or 0) > 0])
+        win_rate = (winning_trades / total_transactions * 100) if total_transactions > 0 else 0
+        
+        # Get top performing bots
+        top_bots = []
+        for bot in bots[:5]:  # Top 5 bots
+            bot_subs = db.query(func.count(models.Subscription.id)).filter(
+                models.Subscription.bot_id == bot.id,
+                models.Subscription.status == models.SubscriptionStatus.ACTIVE
+            ).scalar() or 0
+            
+            bot_txs = db.query(models.Transaction).join(
+                models.Subscription,
+                models.Subscription.id == models.Transaction.subscription_id
+            ).filter(
+                models.Subscription.bot_id == bot.id,
+                models.Transaction.created_at >= start_date
+            ).all()
+            
+            bot_pnl = sum(float(tx.realized_pnl or 0) for tx in bot_txs)
+            bot_trades = len(bot_txs)
+            bot_wins = len([tx for tx in bot_txs if float(tx.realized_pnl or 0) > 0])
+            bot_win_rate = (bot_wins / bot_trades * 100) if bot_trades > 0 else 0
+            
+            top_bots.append({
+                'id': bot.id,
+                'name': bot.name,
+                'active_subscriptions': bot_subs,
+                'total_trades': bot_trades,
+                'pnl': round(bot_pnl, 2),
+                'win_rate': round(bot_win_rate, 2)
+            })
+        
+        # Sort by PnL
+        top_bots.sort(key=lambda x: x['pnl'], reverse=True)
+        
+        return {
+            'total_bots': len(bots),
+            'total_subscriptions': total_subscriptions,
+            'active_subscriptions': active_subscriptions,
+            'total_transactions': total_transactions,
+            'total_pnl': round(total_pnl, 2),
+            'win_rate': round(win_rate, 2),
+            'top_bots': top_bots[:5]
+        }
+    except Exception as e:
+        logger.error(f"Failed to get developer analytics: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.get("/{bot_id}/analytics", response_model=dict)
 def get_bot_analytics(
     bot_id: int,
