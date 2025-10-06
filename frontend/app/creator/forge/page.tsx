@@ -1282,9 +1282,11 @@ export default function ForgePage() {
                           {/* OpenAI Models */}
                           {watch('llm_provider') === 'openai' && (
                             <>
-                              <option value="gpt-4o">GPT-4o (Best, Multimodal)</option>
-                              <option value="gpt-4o-mini">GPT-4o Mini (Fast, Cheap) ⭐</option>
-                              <option value="o1-preview">O1 Preview (Reasoning)</option>
+                              <option value="gpt-4o">GPT-4o (Best, Multimodal) ⭐</option>
+                              <option value="gpt-4o-mini">GPT-4o Mini (Fast, Cheap) 💰</option>
+                              <option value="o1">O1 (Advanced Reasoning) 🧠</option>
+                              <option value="o1-mini">O1 Mini (Fast Reasoning) ⚡</option>
+                              <option value="o1-preview">O1 Preview (Beta)</option>
                               <option value="gpt-4-turbo">GPT-4 Turbo</option>
                               <option value="gpt-3.5-turbo">GPT-3.5 Turbo (Budget)</option>
                             </>
@@ -1305,10 +1307,11 @@ export default function ForgePage() {
                           {/* Gemini Models */}
                           {watch('llm_provider') === 'gemini' && (
                             <>
-                              <option value="gemini-1.5-pro">Gemini 1.5 Pro (Best)</option>
-                              <option value="gemini-1.5-flash">Gemini 1.5 Flash (Fast)</option>
-                              <option value="gemini-2.0-flash-exp">Gemini 2.0 Flash (Experimental)</option>
-                              <option value="gemini-pro">Gemini Pro (Legacy)</option>
+                              <option value="gemini-2.5-pro">Gemini 2.5 Pro (Best Reasoning) 🧠</option>
+                              <option value="gemini-2.5-flash">Gemini 2.5 Flash (Balanced) ⭐</option>
+                              <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite (Fastest) ⚡</option>
+                              <option value="gemini-2.0-flash-001">Gemini 2.0 Flash (Realtime/Vision) 👁️</option>
+                              <option value="gemini-1.5-flash-002">Gemini 1.5 Flash (Legacy)</option>
                             </>
                           )}
                         </select>

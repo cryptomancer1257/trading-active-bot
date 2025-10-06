@@ -143,12 +143,17 @@ class LLMProviderSelector:
         
         # Determine model name (llm_providers doesn't have model field)
         # Use default model based on provider_type
+        # Note: provider_type is an Enum with uppercase values (OPENAI, GEMINI, etc.)
+        provider_type_str = str(provider.provider_type.value).upper() if hasattr(provider.provider_type, 'value') else str(provider.provider_type).upper()
+        
         model_map = {
-            'openai': 'gpt-4o-mini',
-            'claude': 'claude-3-5-sonnet-20241022',
-            'gemini': 'gemini-1.5-pro'
+            'OPENAI': 'gpt-4o-mini',
+            'ANTHROPIC': 'claude-3-5-sonnet-20241022',
+            'GEMINI': 'gemini-2.5-flash',  # Updated: Latest balanced model (Oct 2025)
+            'GROQ': 'llama-3.1-70b-versatile',
+            'COHERE': 'command-r-plus'
         }
-        model = model_map.get(provider.provider_type, 'gpt-4o-mini')
+        model = model_map.get(provider_type_str, 'gpt-4o-mini')
         
         return {
             'source': 'USER_CONFIGURED',

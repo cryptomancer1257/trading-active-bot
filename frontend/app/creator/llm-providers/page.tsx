@@ -54,6 +54,9 @@ const defaultModels = {
   [LLMProviderType.OPENAI]: [
     { model_name: 'gpt-4o', display_name: 'GPT-4o', max_tokens: 128000, cost_per_1k_tokens: 0.005 },
     { model_name: 'gpt-4o-mini', display_name: 'GPT-4o Mini', max_tokens: 128000, cost_per_1k_tokens: 0.00015 },
+    { model_name: 'o1', display_name: 'O1 (Reasoning)', max_tokens: 200000, cost_per_1k_tokens: 0.015 },
+    { model_name: 'o1-mini', display_name: 'O1 Mini', max_tokens: 128000, cost_per_1k_tokens: 0.003 },
+    { model_name: 'o1-preview', display_name: 'O1 Preview', max_tokens: 128000, cost_per_1k_tokens: 0.015 },
     { model_name: 'gpt-4-turbo', display_name: 'GPT-4 Turbo', max_tokens: 128000, cost_per_1k_tokens: 0.01 },
     { model_name: 'gpt-3.5-turbo', display_name: 'GPT-3.5 Turbo', max_tokens: 16385, cost_per_1k_tokens: 0.0015 }
   ],
@@ -63,9 +66,11 @@ const defaultModels = {
     { model_name: 'claude-3-haiku-20240307', display_name: 'Claude 3 Haiku', max_tokens: 200000, cost_per_1k_tokens: 0.00025 }
   ],
   [LLMProviderType.GEMINI]: [
-    { model_name: 'gemini-1.5-pro', display_name: 'Gemini 1.5 Pro', max_tokens: 2097152, cost_per_1k_tokens: 0.00125 },
-    { model_name: 'gemini-1.5-flash', display_name: 'Gemini 1.5 Flash', max_tokens: 1048576, cost_per_1k_tokens: 0.000075 },
-    { model_name: 'gemini-pro', display_name: 'Gemini Pro', max_tokens: 32768, cost_per_1k_tokens: 0.0005 }
+    { model_name: 'gemini-2.5-pro', display_name: 'Gemini 2.5 Pro', max_tokens: 1000000, cost_per_1k_tokens: 0.00125 },
+    { model_name: 'gemini-2.5-flash', display_name: 'Gemini 2.5 Flash', max_tokens: 1000000, cost_per_1k_tokens: 0.000075 },
+    { model_name: 'gemini-2.5-flash-lite', display_name: 'Gemini 2.5 Flash Lite', max_tokens: 1000000, cost_per_1k_tokens: 0.00003 },
+    { model_name: 'gemini-2.0-flash-001', display_name: 'Gemini 2.0 Flash', max_tokens: 1048576, cost_per_1k_tokens: 0.000075 },
+    { model_name: 'gemini-1.5-flash-002', display_name: 'Gemini 1.5 Flash (Legacy)', max_tokens: 1048576, cost_per_1k_tokens: 0.000075 }
   ],
   [LLMProviderType.GROQ]: [
     { model_name: 'llama-3.1-70b-versatile', display_name: 'Llama 3.1 70B', max_tokens: 131072, cost_per_1k_tokens: 0.00059 },
