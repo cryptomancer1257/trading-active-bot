@@ -33,7 +33,7 @@ const botSchema = z.object({
   timeframe: z.string().default('1h'),
   timeframes: z.array(z.string()).default(['1h']),
   version: z.string().default('1.0.0'),
-  template: z.enum(['universal_futures_bot', 'binance_futures_bot', 'binance_futures_rpa_bot', 'binance_signals_bot', 'custom']),
+  template: z.enum(['universal_futures_bot', 'universal_spot_bot', 'binance_futures_bot', 'binance_futures_rpa_bot', 'binance_signals_bot', 'custom']),
   // Pricing
   price_per_month: z.number().min(0, 'Price must be 0 or higher').default(0),
   is_free: z.boolean().default(false),
@@ -46,6 +46,7 @@ const botSchema = z.object({
   take_profit_percentage: z.number().min(0.5).max(50).default(10),
   // LLM Configuration
   llm_provider: z.enum(['openai', 'anthropic', 'gemini']).optional(),
+  llm_model: z.string().optional(),
   enable_image_analysis: z.boolean().default(false),
   enable_sentiment_analysis: z.boolean().default(false),
 })
@@ -63,6 +64,19 @@ const botTemplates = [
     gradient: 'from-blue-500 via-purple-500 to-pink-500',
     complexity: 'Advanced',
     templateFile: 'universal_futures_bot.py',
+    highlighted: true,
+    new: true
+  },
+  {
+    id: 'universal_spot_bot',
+    name: '🌟 Universal Spot Entity',
+    description: 'Multi-exchange spot trading across 6 major platforms (Binance, Bybit, OKX, Bitget, Huobi, Kraken) with OCO orders and no leverage',
+    type: 'SPOT',
+    exchange: 'MULTI',
+    features: ['6 Exchanges Support', 'No Leverage (1x)', 'OCO Orders (SL/TP)', 'LLM Integration', 'Safer than Futures', 'Multi-Timeframe Analysis'],
+    gradient: 'from-emerald-500 via-teal-500 to-cyan-500',
+    complexity: 'Intermediate',
+    templateFile: 'universal_spot_bot.py',
     highlighted: true,
     new: true
   },
@@ -395,6 +409,7 @@ export default function ForgePage() {
           stop_loss_percentage: data.stop_loss_percentage,
           take_profit_percentage: data.take_profit_percentage,
           llm_provider: data.llm_provider,
+          llm_model: data.llm_model,
           enable_image_analysis: data.enable_image_analysis,
           enable_sentiment_analysis: data.enable_sentiment_analysis,
         })
@@ -1258,7 +1273,7 @@ export default function ForgePage() {
                 </h3>
                 
                 <div className="space-y-4">
-                  {(watchedBotType === 'LLM' || watchedBotType === 'FUTURES' || watchedBotType === 'FUTURES_RPA') && (
+                  {(watchedBotType === 'LLM' || watchedBotType === 'FUTURES' || watchedBotType === 'FUTURES_RPA' || watchedBotType === 'SPOT') && (
                     <>
                       <div>
                         <label className="form-label">LLM Provider</label>

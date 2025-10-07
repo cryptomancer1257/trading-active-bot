@@ -1142,7 +1142,8 @@ def run_bot_logic(self, subscription_id: int):
                     loop.close()
             else:
                 logger.info(f"📊 Using STANDARD WORKFLOW for {subscription.bot.name}")
-                final_action = bot.execute_full_cycle(subscription.timeframe, subscription_config)
+                final_action = bot.execute_full_cycle(subscription.bot.timeframe, subscription_config)
+                account_status = None  # Not available in standard workflow
                 
             if final_action:
                 logger.info(f"Bot {subscription.bot.name} executed with action: {final_action.action}, value: {final_action.value}, reason: {final_action.reason}")
@@ -1603,6 +1604,7 @@ def run_bot_rpa_logic(self, subscription_id: int):
             else:
                 logger.info(f"📊 Using STANDARD WORKFLOW for {subscription.bot.name}")
                 final_action = bot.execute_full_cycle(subscription.bot.timeframe, subscription_config)
+                account_status = None  # Not available in standard workflow
                 
             if final_action:
                 logger.info(f"Bot {subscription.bot.name} executed with action: {final_action.action}, value: {final_action.value}, reason: {final_action.reason}")
@@ -2011,14 +2013,17 @@ def schedule_active_bots():
                 if should_run:
                     logger.info(f"Scheduling bot execution for subscription {subscription.id}")
                     
-                    if subscription.bot.bot_mode != "PASSIVE" and subscription.bot.bot_type == "FUTURES":
+                    if subscription.bot.bot_mode != "PASSIVE" and subscription.bot.bot_type in ["FUTURES", "SPOT"]:
+                        # Active FUTURES and SPOT bots use run_bot_logic
                         run_bot_logic.delay(subscription.id)
-                        # Queue the bot execution task      
+                        logger.info(f"✅ Triggered run_bot_logic for {subscription.bot.bot_type} bot (subscription {subscription.id})")
                     elif subscription.bot.bot_type == "FUTURES_RPA":
                         run_bot_rpa_logic.delay(subscription.id)
+                        logger.info(f"✅ Triggered run_bot_rpa_logic for RPA bot (subscription {subscription.id})")
                     else:
-                        # Handle PASSIVE bots
+                        # Handle PASSIVE bots (signal-only)
                         run_bot_signal_logic.delay(subscription.bot.id, subscription.id)
+                        logger.info(f"✅ Triggered run_bot_signal_logic for PASSIVE bot (subscription {subscription.id})")
 
                     # Update next run time based on timeframe
                     if subscription.bot.timeframe == "1m":

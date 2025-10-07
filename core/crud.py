@@ -220,6 +220,8 @@ def create_bot(db: Session, bot: schemas.BotCreate, developer_id: int, status: s
         TEMPLATE_FILE_MAPPING = {
             'universal_futures_bot': 'bot_files/universal_futures_bot.py',
             'universal_futures_bot.py': 'bot_files/universal_futures_bot.py',
+            'universal_spot_bot': 'bot_files/universal_spot_bot.py',
+            'universal_spot_bot.py': 'bot_files/universal_spot_bot.py',
             'binance_futures_bot': 'bot_files/binance_futures_bot.py',
             'binance_futures_bot.py': 'bot_files/binance_futures_bot.py',
             'binance_futures_rpa_bot': 'bot_files/binance_futures_rpa_bot.py',

@@ -144,7 +144,15 @@ def create_marketplace_subscription(
         
         # Only trigger immediate execution if starting now
         if start_time <= now:
-            run_bot_logic.apply_async(args=[subscription.id], countdown=10)
+            if bot.bot_mode != models.BotMode.PASSIVE and bot.bot_type in [models.BotType.FUTURES, models.BotType.SPOT]:
+                run_bot_logic.apply_async(args=[subscription.id], countdown=10)
+                logger.info(f"✅ Triggered run_bot_logic for marketplace {bot.bot_type.value} bot (subscription {subscription.id})")
+            elif bot.bot_type == models.BotType.FUTURES_RPA:
+                run_bot_rpa_logic.apply_async(args=[subscription.id], countdown=10)
+                logger.info(f"✅ Triggered run_bot_rpa_logic for marketplace RPA bot (subscription {subscription.id})")
+            else:
+                run_bot_signal_logic.apply_async(args=[bot.id, subscription.id], countdown=10)
+                logger.info(f"✅ Triggered run_bot_signal_logic for marketplace PASSIVE bot (subscription {subscription.id})")
         
         return schemas.SubscriptionResponse(
             subscription_id=subscription.id,
@@ -300,12 +308,15 @@ async def create_marketplace_subscription_v2(
         now = datetime.utcnow()
         if subscription.started_at <= now <= subscription.expires_at:
             logger.info(f"Triggering immediate bot execution for marketplace subscription {subscription.id}")
-            if bot.bot_mode == "ACTIVE" and bot.bot_type == "FUTURES":
+            if bot.bot_mode == models.BotMode.ACTIVE and bot.bot_type in [models.BotType.FUTURES, models.BotType.SPOT]:
                 run_bot_logic.apply_async(args=[subscription.id], countdown=10)
-            elif bot.bot_mode == "ACTIVE" and bot.bot_type == "FUTURES_RPA":
+                logger.info(f"✅ Triggered run_bot_logic for marketplace v2 {bot.bot_type.value} bot (subscription {subscription.id})")
+            elif bot.bot_type == models.BotType.FUTURES_RPA:
                 run_bot_rpa_logic.apply_async(args=[subscription.id], countdown=10)
+                logger.info(f"✅ Triggered run_bot_rpa_logic for marketplace v2 RPA bot (subscription {subscription.id})")
             else:
                 run_bot_signal_logic.apply_async(args=[bot.id, subscription.id], countdown=10)
+                logger.info(f"✅ Triggered run_bot_signal_logic for marketplace v2 PASSIVE bot (subscription {subscription.id})")
         elif subscription.started_at > now:
             logger.info(f"Marketplace subscription {subscription.id} will start later at {subscription.started_at}")
         else:
@@ -444,7 +455,15 @@ async def create_marketplace_subscription_v2(
             now = datetime.utcnow()
             if subscription.started_at <= now <= subscription.expires_at:
                 logger.info(f"Triggering immediate bot execution for marketplace subscription {subscription.id}")
-                run_bot_rpa_logic.apply_async(args=[subscription.id], countdown=10)
+                if bot.bot_type in [models.BotType.FUTURES, models.BotType.SPOT]:
+                    run_bot_logic.apply_async(args=[subscription.id], countdown=10)
+                    logger.info(f"✅ Triggered run_bot_logic for marketplace v3 {bot.bot_type.value} bot (subscription {subscription.id})")
+                elif bot.bot_type == models.BotType.FUTURES_RPA:
+                    run_bot_rpa_logic.apply_async(args=[subscription.id], countdown=10)
+                    logger.info(f"✅ Triggered run_bot_rpa_logic for marketplace v3 RPA bot (subscription {subscription.id})")
+                else:
+                    run_bot_signal_logic.apply_async(args=[bot.id, subscription.id], countdown=10)
+                    logger.info(f"✅ Triggered run_bot_signal_logic for marketplace v3 PASSIVE bot (subscription {subscription.id})")
             elif subscription.started_at > now:
                 logger.info(f"Marketplace subscription {subscription.id} will start later at {subscription.started_at}")
             else:
@@ -500,7 +519,15 @@ async def create_marketplace_subscription_v2(
             now = datetime.utcnow()
             if subscription.started_at <= now <= subscription.expires_at:
                 logger.info(f"Triggering immediate bot execution for marketplace subscription {subscription.id}")
-                run_bot_rpa_logic.apply_async(args=[subscription.id], countdown=10)
+                if bot.bot_type in [models.BotType.FUTURES, models.BotType.SPOT]:
+                    run_bot_logic.apply_async(args=[subscription.id], countdown=10)
+                    logger.info(f"✅ Triggered run_bot_logic for marketplace v3 {bot.bot_type.value} bot (subscription {subscription.id})")
+                elif bot.bot_type == models.BotType.FUTURES_RPA:
+                    run_bot_rpa_logic.apply_async(args=[subscription.id], countdown=10)
+                    logger.info(f"✅ Triggered run_bot_rpa_logic for marketplace v3 RPA bot (subscription {subscription.id})")
+                else:
+                    run_bot_signal_logic.apply_async(args=[bot.id, subscription.id], countdown=10)
+                    logger.info(f"✅ Triggered run_bot_signal_logic for marketplace v3 PASSIVE bot (subscription {subscription.id})")
             elif subscription.started_at > now:
                 logger.info(f"Marketplace subscription {subscription.id} will start later at {subscription.started_at}")
             else:
@@ -1098,8 +1125,17 @@ async def resume_marketplace_subscription(
             db, request.subscription_id, request.principal_id, models.SubscriptionStatus.ACTIVE
         )
         
-        # Trigger bot execution immediately upon resume
-        run_bot_logic.apply_async(args=[updated_subscription.id], countdown=10)
+        # Trigger bot execution immediately upon resume based on bot type
+        bot = subscription.bot
+        if bot.bot_mode != models.BotMode.PASSIVE and bot.bot_type in [models.BotType.FUTURES, models.BotType.SPOT]:
+            run_bot_logic.apply_async(args=[updated_subscription.id], countdown=10)
+            logger.info(f"✅ Triggered run_bot_logic for resumed {bot.bot_type.value} bot (subscription {updated_subscription.id})")
+        elif bot.bot_type == models.BotType.FUTURES_RPA:
+            run_bot_rpa_logic.apply_async(args=[updated_subscription.id], countdown=10)
+            logger.info(f"✅ Triggered run_bot_rpa_logic for resumed RPA bot (subscription {updated_subscription.id})")
+        else:
+            run_bot_signal_logic.apply_async(args=[bot.id, updated_subscription.id], countdown=10)
+            logger.info(f"✅ Triggered run_bot_signal_logic for resumed PASSIVE bot (subscription {updated_subscription.id})")
         
         logger.info(f"Resumed marketplace subscription {request.subscription_id} for principal {request.principal_id}")
         
@@ -1205,11 +1241,17 @@ async def create_subscription_from_paypal(
         
         logger.info(f"Created subscription {subscription.id} for PayPal payment {payment_id}")
         
-        # Trigger bot execution
+        # Trigger bot execution based on bot type
         try:
-            from core.tasks import run_bot_logic
-            run_bot_logic.apply_async(args=[subscription.id], countdown=30)
-            logger.info(f"Scheduled bot execution for subscription {subscription.id}")
+            if bot.bot_mode != models.BotMode.PASSIVE and bot.bot_type in [models.BotType.FUTURES, models.BotType.SPOT]:
+                run_bot_logic.apply_async(args=[subscription.id], countdown=30)
+                logger.info(f"✅ Triggered run_bot_logic for PayPal {bot.bot_type.value} bot (subscription {subscription.id})")
+            elif bot.bot_type == models.BotType.FUTURES_RPA:
+                run_bot_rpa_logic.apply_async(args=[subscription.id], countdown=30)
+                logger.info(f"✅ Triggered run_bot_rpa_logic for PayPal RPA bot (subscription {subscription.id})")
+            else:
+                run_bot_signal_logic.apply_async(args=[bot.id, subscription.id], countdown=30)
+                logger.info(f"✅ Triggered run_bot_signal_logic for PayPal PASSIVE bot (subscription {subscription.id})")
         except Exception as e:
             logger.warning(f"Failed to schedule bot execution: {e}")
         
