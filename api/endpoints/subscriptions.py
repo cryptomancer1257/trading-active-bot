@@ -15,7 +15,7 @@ import logging
 
 from core import crud, models, schemas, security
 from core.database import get_db
-from core.tasks import run_bot_logic
+from core.tasks import run_bot_logic, run_bot_rpa_logic, run_bot_signal_logic
 from services.s3_manager import S3Manager
 from core.bot_manager import BotManager
 
@@ -128,8 +128,19 @@ def create_subscription(
         # Create subscription
         subscription = crud.create_subscription(db, sub=sub_in, user_id=current_user.id)
         
-        # Start the bot execution cycle
-        run_bot_logic.apply_async(args=[subscription.id], countdown=10)
+        # Start the bot execution cycle based on bot type and mode
+        if bot.bot_mode != models.BotMode.PASSIVE and bot.bot_type in [models.BotType.FUTURES, models.BotType.SPOT]:
+            # Active FUTURES and SPOT bots
+            run_bot_logic.apply_async(args=[subscription.id], countdown=10)
+            logger.info(f"✅ Triggered run_bot_logic for {bot.bot_type.value} bot (subscription {subscription.id})")
+        elif bot.bot_type == models.BotType.FUTURES_RPA:
+            # RPA bots
+            run_bot_rpa_logic.apply_async(args=[subscription.id], countdown=10)
+            logger.info(f"✅ Triggered run_bot_rpa_logic for RPA bot (subscription {subscription.id})")
+        else:
+            # PASSIVE bots (signal-only)
+            run_bot_signal_logic.apply_async(args=[bot.id, subscription.id], countdown=10)
+            logger.info(f"✅ Triggered run_bot_signal_logic for PASSIVE bot (subscription {subscription.id})")
         
         return schemas.SubscriptionResponse(
             subscription_id=subscription.id,
@@ -244,8 +255,19 @@ def create_trial_subscription(
         # Create trial subscription with safe defaults
         trial_subscription = crud.create_trial_subscription(db, trial=trial_in, user_id=current_user.id)
         
-        # Start the bot execution cycle for trial (with extra safety checks)
-        run_bot_logic.apply_async(args=[trial_subscription.id], countdown=30)  # Longer delay for trials
+        # Start the bot execution cycle for trial based on bot type and mode (with extra safety checks)
+        if bot.bot_mode != models.BotMode.PASSIVE and bot.bot_type in [models.BotType.FUTURES, models.BotType.SPOT]:
+            # Active FUTURES and SPOT bots
+            run_bot_logic.apply_async(args=[trial_subscription.id], countdown=30)  # Longer delay for trials
+            logger.info(f"✅ Triggered run_bot_logic for trial {bot.bot_type.value} bot (subscription {trial_subscription.id})")
+        elif bot.bot_type == models.BotType.FUTURES_RPA:
+            # RPA bots
+            run_bot_rpa_logic.apply_async(args=[trial_subscription.id], countdown=30)
+            logger.info(f"✅ Triggered run_bot_rpa_logic for trial RPA bot (subscription {trial_subscription.id})")
+        else:
+            # PASSIVE bots (signal-only)
+            run_bot_signal_logic.apply_async(args=[bot.id, trial_subscription.id], countdown=30)
+            logger.info(f"✅ Triggered run_bot_signal_logic for trial PASSIVE bot (subscription {trial_subscription.id})")
         
         return schemas.SubscriptionResponse(
             subscription_id=trial_subscription.id,

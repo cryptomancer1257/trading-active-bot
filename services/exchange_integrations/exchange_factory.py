@@ -1,11 +1,12 @@
 """
-Exchange Factory for Multi-Exchange Futures Trading
+Exchange Factory for Multi-Exchange Futures and Spot Trading
 Dynamically creates exchange integration based on exchange name
 """
 
 import logging
 from typing import Optional, Dict, Any
 
+# Futures imports
 from .base_futures_exchange import BaseFuturesExchange
 from .binance_futures import BinanceFuturesIntegration
 from .bybit_futures import BybitFuturesIntegration
@@ -14,9 +15,18 @@ from .bitget_futures import BitgetFuturesIntegration
 from .huobi_futures import HuobiFuturesIntegration
 from .kraken_futures import KrakenFuturesIntegration
 
+# Spot imports
+from .base_spot_exchange import BaseSpotExchange
+from .binance_spot import BinanceSpotExchange
+from .bybit_spot import BybitSpotExchange
+from .okx_spot import OKXSpotExchange
+from .bitget_spot import BitgetSpotExchange
+from .huobi_spot import HuobiSpotExchange
+from .kraken_spot import KrakenSpotExchange
+
 logger = logging.getLogger(__name__)
 
-# Exchange registry mapping
+# Futures exchange registry mapping
 EXCHANGE_REGISTRY = {
     'BINANCE': BinanceFuturesIntegration,
     'BYBIT': BybitFuturesIntegration,
@@ -27,8 +37,20 @@ EXCHANGE_REGISTRY = {
     'KRAKEN': KrakenFuturesIntegration
 }
 
+# Spot exchange registry mapping
+SPOT_EXCHANGE_REGISTRY = {
+    'BINANCE': BinanceSpotExchange,
+    'BYBIT': BybitSpotExchange,
+    'OKX': OKXSpotExchange,
+    'BITGET': BitgetSpotExchange,
+    'HUOBI': HuobiSpotExchange,
+    'HTX': HuobiSpotExchange,  # Alias for Huobi
+    'KRAKEN': KrakenSpotExchange
+}
+
 # Supported exchanges list for validation
 SUPPORTED_EXCHANGES = list(EXCHANGE_REGISTRY.keys())
+SUPPORTED_SPOT_EXCHANGES = list(SPOT_EXCHANGE_REGISTRY.keys())
 
 def create_futures_exchange(
     exchange_name: str,
@@ -78,6 +100,55 @@ def create_futures_exchange(
         return exchange_class(api_key, api_secret, passphrase, testnet)
     else:
         return exchange_class(api_key, api_secret, testnet)
+
+def create_spot_exchange(
+    exchange_name: str,
+    api_key: str,
+    api_secret: str,
+    passphrase: str = "",
+    testnet: bool = True
+) -> BaseSpotExchange:
+    """
+    Factory function to create spot exchange integration
+    
+    Args:
+        exchange_name: Name of exchange (BINANCE, BYBIT, OKX, BITGET, HUOBI, KRAKEN)
+        api_key: Exchange API key
+        api_secret: Exchange API secret
+        passphrase: API passphrase (required for OKX, Bitget)
+        testnet: Use testnet/demo trading (default: True)
+    
+    Returns:
+        BaseSpotExchange: Spot exchange integration instance
+    
+    Raises:
+        ValueError: If exchange is not supported
+        
+    Example:
+        >>> exchange = create_spot_exchange(
+        ...     exchange_name='BINANCE',
+        ...     api_key='your_key',
+        ...     api_secret='your_secret',
+        ...     testnet=True
+        ... )
+    """
+    exchange_name = exchange_name.upper().strip()
+    
+    if exchange_name not in SPOT_EXCHANGE_REGISTRY:
+        raise ValueError(
+            f"Unsupported spot exchange: {exchange_name}. "
+            f"Supported exchanges: {', '.join(SUPPORTED_SPOT_EXCHANGES)}"
+        )
+    
+    exchange_class = SPOT_EXCHANGE_REGISTRY[exchange_name]
+    
+    # OKX and Bitget require passphrase
+    if exchange_name in ['OKX', 'BITGET']:
+        if not passphrase:
+            logger.warning(f"{exchange_name} requires passphrase for API authentication")
+        return exchange_class(api_key, api_secret, passphrase, testnet)
+    else:
+        return exchange_class(api_key, api_secret, "", testnet)
 
 def get_supported_exchanges() -> list:
     """

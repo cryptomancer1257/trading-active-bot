@@ -52,6 +52,7 @@ export interface CreateBotRequest {
   stop_loss_percentage?: number
   take_profit_percentage?: number
   llm_provider?: string
+  llm_model?: string
   enable_image_analysis?: boolean
   enable_sentiment_analysis?: boolean
 }

@@ -34,25 +34,32 @@ export default function BotPromptsTab({ botId }: BotPromptsTabProps) {
   const detachPromptMutation = useDetachPrompt()
   const updatePromptMutation = useUpdateBotPrompt()
 
-  // Get attached prompts
-  const attachedPrompts = botPrompts?.filter(bp => bp.is_active) || []
+  // Filter prompts for trading only (exclude risk management)
+  const tradingPrompts = myPrompts?.filter(prompt => 
+    prompt.category === 'TRADING'
+  ) || []
 
-  // Get suggested prompts (prompts not yet attached)
+  // Get attached trading prompts
+  const attachedPrompts = botPrompts?.filter(bp => 
+    bp.is_active && bp.prompt_template?.category === 'TRADING'
+  ) || []
+
+  // Get suggested trading prompts (not yet attached)
   const attachedPromptIds = attachedPrompts.map(ap => ap.prompt_template?.id).filter(Boolean)
-  const suggestedPrompts = myPrompts?.filter(p => !attachedPromptIds.includes(p.id)) || []
+  const suggestedPrompts = tradingPrompts.filter(p => !attachedPromptIds.includes(p.id))
 
-  // All available prompts (user's prompts only)
-  const allPrompts = myPrompts || []
+  // All available prompts (trading prompts only)
+  const allPrompts = tradingPrompts
   
   // Debug logs
   console.log('🔍 BotPromptsTab Debug:', {
     botId,
     botPrompts: botPrompts?.length || 0,
     myPrompts: myPrompts?.length || 0,
+    tradingPrompts: tradingPrompts.length,
     attachedPrompts: attachedPrompts.length,
     suggestedPrompts: suggestedPrompts.length,
-    allPrompts: allPrompts.length,
-    myPromptsData: myPrompts
+    allPrompts: allPrompts.length
   })
 
   const handleAttachPrompt = async (promptId: number) => {
