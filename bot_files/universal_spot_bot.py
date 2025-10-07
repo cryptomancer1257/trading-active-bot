@@ -352,6 +352,21 @@ class UniversalSpotBot(CustomBot):
             logger.info(f"   Exchange: {self.exchange_name}")
             logger.info(f"   Timeframes: {self.timeframes}")
             
+            # Step 0: Check account status and balance
+            logger.info("💰 Step 0: Checking account status...")
+            account_status = self.check_account_status()
+            if not account_status:
+                logger.error("❌ Failed to check account status")
+                return Action.HOLD
+            
+            # Validate sufficient balance
+            quote_balance = account_status.get('quote_balance', 0)
+            if quote_balance <= 0:
+                logger.error(f"❌ Insufficient {self.quote_asset} balance: ${quote_balance:.2f}")
+                return Action(action="HOLD", value=0.0, reason=f"Insufficient balance: ${quote_balance:.2f} {self.quote_asset}")
+            
+            logger.info(f"✅ Account check passed - {self.quote_asset} balance: ${quote_balance:.2f}")
+            
             # Step 1: Crawl fresh multi-timeframe data
             multi_timeframe_data = self.crawl_data()
             if not multi_timeframe_data or 'timeframes' not in multi_timeframe_data:
@@ -432,6 +447,78 @@ class UniversalSpotBot(CustomBot):
             import traceback
             traceback.print_exc()
             return None
+    
+    # ==================== LLM CACHING & LOCKING ====================
+    
+    def _get_llm_cache_key(self, symbol: str, timeframes: List[str]) -> str:
+        """Generate cache key for LLM analysis"""
+        current_minute = int(time.time() // 60)
+        key_data = f"{symbol}:{':'.join(sorted(timeframes))}:{current_minute}"
+        return f"llm_analysis:{hashlib.md5(key_data.encode()).hexdigest()}"
+    
+    def _get_llm_lock_key(self, symbol: str) -> str:
+        """Generate lock key for LLM analysis"""
+        return f"llm_lock:{symbol}"
+    
+    def _acquire_llm_lock(self, symbol: str, timeout: int = 300) -> bool:
+        """Acquire distributed lock for LLM analysis"""
+        if not self.redis_client:
+            return True
+        
+        lock_key = self._get_llm_lock_key(symbol)
+        worker_id = f"worker_{os.getpid()}_{int(time.time())}"
+        
+        try:
+            acquired = self.redis_client.set(lock_key, worker_id, nx=True, ex=timeout)
+            if acquired:
+                logger.info(f"🔒 LLM lock acquired by {worker_id}")
+                return True
+            else:
+                current_owner = self.redis_client.get(lock_key)
+                logger.info(f"⏳ LLM lock held by {current_owner}, skipping")
+                return False
+        except Exception as e:
+            logger.warning(f"Failed to acquire LLM lock: {e}")
+            return True
+    
+    def _release_llm_lock(self, symbol: str):
+        """Release LLM analysis lock"""
+        if not self.redis_client:
+            return
+        
+        lock_key = self._get_llm_lock_key(symbol)
+        try:
+            self.redis_client.delete(lock_key)
+            logger.debug(f"🔓 LLM lock released")
+        except Exception as e:
+            logger.warning(f"Failed to release LLM lock: {e}")
+    
+    def _get_cached_llm_result(self, symbol: str, timeframes: List[str]) -> Optional[Dict[str, Any]]:
+        """Get cached LLM analysis result"""
+        if not self.redis_client:
+            return None
+        
+        cache_key = self._get_llm_cache_key(symbol, timeframes)
+        try:
+            cached_result = self.redis_client.get(cache_key)
+            if cached_result:
+                logger.info(f"📋 Using cached LLM analysis")
+                return json.loads(cached_result)
+        except Exception as e:
+            logger.warning(f"Failed to get cached LLM result: {e}")
+        return None
+    
+    def _cache_llm_result(self, symbol: str, timeframes: List[str], result: Dict[str, Any]):
+        """Cache LLM analysis result for 60 seconds"""
+        if not self.redis_client:
+            return
+        
+        cache_key = self._get_llm_cache_key(symbol, timeframes)
+        try:
+            self.redis_client.setex(cache_key, 60, json.dumps(result))
+            logger.debug(f"💾 Cached LLM analysis")
+        except Exception as e:
+            logger.warning(f"Failed to cache LLM result: {e}")
     
     # ==================== DATA CRAWLING ====================
     
@@ -967,17 +1054,20 @@ class UniversalSpotBot(CustomBot):
                     )
                 
                 # Try to acquire lock
+                logger.info(f"🔐 Attempting to acquire LLM lock for {self.trading_pair}...")
                 if not self._acquire_llm_lock(self.trading_pair):
+                    logger.info(f"⏸️  Lock not acquired, waiting 3s for cache...")
                     time.sleep(3)
                     cached_result = self._get_cached_llm_result(self.trading_pair, self.timeframes)
                     if cached_result:
+                        logger.info(f"✅ Found cached result after wait")
                         return Action(
                             action=cached_result.get('action', 'HOLD'),
                             value=cached_result.get('confidence', 0.0),
                             reason=f"[WAITED-SPOT-{self.exchange_name}] {cached_result.get('reasoning', 'LLM from other worker')}"
                         )
                     else:
-                        logger.warning("⚠️ No cached result, falling back to technical")
+                        logger.warning("⚠️ No cached result after wait, falling back to technical")
                 else:
                     logger.info(f"🤖 Generating LLM signal for SPOT {self.exchange_name}...")
                     
@@ -1002,6 +1092,7 @@ class UniversalSpotBot(CustomBot):
                             try:
                                 llm_action = future.result(timeout=60)
                                 if llm_action:
+                                    logger.info(f"✅ LLM signal generated successfully: {llm_action.action}")
                                     cache_data = {
                                         'action': llm_action.action,
                                         'confidence': llm_action.value,
@@ -1010,11 +1101,14 @@ class UniversalSpotBot(CustomBot):
                                     self._cache_llm_result(self.trading_pair, self.timeframes, cache_data)
                                     self._release_llm_lock(self.trading_pair)
                                     return llm_action
+                                else:
+                                    logger.warning("⚠️ LLM signal returned None, falling back to technical")
+                                    self._release_llm_lock(self.trading_pair)
                             except concurrent.futures.TimeoutError:
-                                logger.warning("LLM signal timed out")
+                                logger.warning("⏱️ LLM signal timed out after 60s")
                                 self._release_llm_lock(self.trading_pair)
                             except Exception as e:
-                                logger.warning(f"LLM signal failed: {e}")
+                                logger.warning(f"❌ LLM signal failed with exception: {e}")
                                 self._release_llm_lock(self.trading_pair)
                                 
                     except Exception as e:
