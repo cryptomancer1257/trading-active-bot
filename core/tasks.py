@@ -1127,9 +1127,9 @@ def run_bot_logic(self, subscription_id: int):
                 'user_id': subscription.user_id or 0  # 0 for marketplace users
                 }
 
-                # Execute bot prediction - Advanced workflow for Futures bots
-            if hasattr(subscription.bot, 'bot_type') and subscription.bot.bot_type and subscription.bot.bot_type.upper() == 'FUTURES':
-                logger.info(f"🚀 Using ADVANCED FUTURES WORKFLOW for {subscription.bot.name}")
+                # Execute bot prediction - Advanced workflow for Futures and Spot bots
+            if hasattr(subscription.bot, 'bot_type') and subscription.bot.bot_type and subscription.bot.bot_type.upper() in ['FUTURES', 'SPOT']:
+                logger.info(f"🚀 Using ADVANCED WORKFLOW for {subscription.bot.name} ({subscription.bot.bot_type.upper()})")
                 # Run async workflow in event loop
                 import asyncio
                 loop = asyncio.new_event_loop()
@@ -1223,8 +1223,9 @@ def run_bot_logic(self, subscription_id: int):
                             balance_info = f"\n💼 Account Balance ({mode_label}): Unable to fetch - {str(e)[:100]}\n"
             
                 # Execute actual trading (if not HOLD)
+                # Skip if advanced workflow already handled trading (FUTURES/SPOT bots)
                 trade_details = None
-                if not is_futures:
+                if not is_futures and subscription.bot.bot_type not in ['FUTURES', 'SPOT']:
                     trade_result = False
                     if final_action.action != "HOLD":
                         try:

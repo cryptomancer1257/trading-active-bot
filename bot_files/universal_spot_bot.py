@@ -1259,6 +1259,7 @@ class UniversalSpotBot(CustomBot):
             logger.info(f"   Method: {position_recommendation.sizing_method}")
             
             optimal_position_size_pct = position_recommendation.recommended_size_pct
+            logger.info(f"📊 Position sizing: {optimal_position_size_pct*100:.4f}% of balance (${quote_balance * optimal_position_size_pct:.2f})")
             
             if optimal_position_size_pct <= 0:
                 return {
@@ -1315,12 +1316,15 @@ class UniversalSpotBot(CustomBot):
             # Calculate position value and quantity
             position_value = quote_balance * optimal_position_size_pct  # No leverage in spot
             quantity = position_value / entry_price
+            logger.info(f"💵 Initial calculation: position_value=${position_value:.2f}, quantity={quantity:.8f}")
             
             # Round quantity to proper precision (exchange-specific)
             quantity = round(quantity, 6)  # Most exchanges support 6 decimals
+            logger.info(f"🔢 After rounding: quantity={quantity:.6f}")
             
             # Check and adjust for minimum notional
             notional = quantity * entry_price
+            logger.info(f"💰 Notional value: ${notional:.2f} (min required: ${self.min_notional})")
             if notional < self.min_notional:
                 # Auto-adjust quantity to meet minimum notional
                 logger.warning(f"⚠️ Order value ${notional:.2f} below minimum ${self.min_notional}, adjusting...")
@@ -1361,7 +1365,8 @@ class UniversalSpotBot(CustomBot):
                         'market_type': 'SPOT'
                     }
                 
-                if not hasattr(order, 'status') or order.status not in ['FILLED', 'NEW']:
+                # Binance Spot can return: FILLED, NEW, PARTIALLY_FILLED, CLOSED (for filled market orders)
+                if not hasattr(order, 'status') or order.status not in ['FILLED', 'NEW', 'PARTIALLY_FILLED', 'CLOSED']:
                     return {
                         'status': 'error',
                         'message': f'Order failed with status: {getattr(order, "status", "UNKNOWN")}',
@@ -1545,7 +1550,7 @@ class UniversalSpotBot(CustomBot):
                 
                 # Trade Details (SPOT)
                 action=action,
-                position_side='SPOT',  # Mark as spot trade
+                position_side='LONG' if action == 'BUY' else 'SHORT',  # SPOT: BUY=LONG, SELL=SHORT
                 symbol=trade_result.get('symbol', self.trading_pair),
                 quantity=Decimal(str(trade_result.get('quantity', 0))),
                 entry_price=Decimal(str(entry_price)),
