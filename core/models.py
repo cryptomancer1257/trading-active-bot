@@ -14,6 +14,20 @@ class BotStatus(enum.Enum):
     REJECTED = "REJECTED"
     ARCHIVED = "ARCHIVED"
 
+class BotMode(enum.Enum):
+    PASSIVE = "PASSIVE"
+    ACTIVE = "ACTIVE"
+
+class BotType(enum.Enum):
+    TECHNICAL = "TECHNICAL"
+    ML = "ML"
+    DL = "DL"
+    LLM = "LLM"
+    SPOT = "SPOT"
+    FUTURES = "FUTURES"
+    FUTURES_RPA = "FUTURES_RPA"
+    FUTURES_API = "FUTURES_API"
+
 class SubscriptionStatus(enum.Enum):
     ACTIVE = "ACTIVE"
     PAUSED = "PAUSED"
