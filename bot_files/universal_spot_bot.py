@@ -415,7 +415,9 @@ class UniversalSpotBot(CustomBot):
             balances = account_info.get('balances', [])
             for balance in balances:
                 asset = balance.get('asset', '')
-                free = float(balance.get('free', 0))
+                free_value = balance.get('free', 0)
+                # Handle None values from exchanges (e.g., Bybit)
+                free = float(free_value) if free_value is not None else 0.0
                 
                 if asset == self.base_asset:
                     base_balance = free
@@ -1220,7 +1222,9 @@ class UniversalSpotBot(CustomBot):
             balances = account_info.get('balances', [])
             for balance in balances:
                 if balance.get('asset') == self.quote_asset:
-                    quote_balance = float(balance.get('free', 0))
+                    free_value = balance.get('free', 0)
+                    # Handle None values from exchanges (e.g., Bybit)
+                    quote_balance = float(free_value) if free_value is not None else 0.0
                     break
             
             if quote_balance <= self.min_notional:
@@ -1351,11 +1355,23 @@ class UniversalSpotBot(CustomBot):
             # Place market order (BUY for spot)
             if action.action == "BUY":
                 try:
-                    order = self.spot_client.create_market_order(
-                        symbol=symbol,
-                        side="BUY",
-                        quantity=f"{quantity:.6f}"
-                    )
+                    # Bybit quirk: market BUY orders need cost (USDT) instead of quantity (BTC)
+                    # Other exchanges (Binance, OKX) use quantity
+                    if self.exchange_name.upper() == 'BYBIT':
+                        # Pass notional value (cost in quote currency)
+                        order = self.spot_client.create_market_order(
+                            symbol=symbol,
+                            side="BUY",
+                            quantity=f"{notional:.2f}"  # Cost in USDT
+                        )
+                        logger.info(f"✅ Bybit market BUY: passed cost=${notional:.2f} USDT")
+                    else:
+                        # Standard: pass quantity in base currency
+                        order = self.spot_client.create_market_order(
+                            symbol=symbol,
+                            side="BUY",
+                            quantity=f"{quantity:.6f}"  # Quantity in BTC
+                        )
                 except Exception as e:
                     logger.error(f"Failed to create market order: {e}")
                     return {
@@ -1440,7 +1456,9 @@ class UniversalSpotBot(CustomBot):
                 base_balance = 0.0
                 for balance in balances:
                     if balance.get('asset') == self.base_asset:
-                        base_balance = float(balance.get('free', 0))
+                        free_value = balance.get('free', 0)
+                        # Handle None values from exchanges (e.g., Bybit)
+                        base_balance = float(free_value) if free_value is not None else 0.0
                         break
                 
                 if base_balance < quantity:

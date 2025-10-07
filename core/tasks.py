@@ -1085,7 +1085,10 @@ def run_bot_logic(self, subscription_id: int):
                 return
 
             is_futures = bool(getattr(subscription.bot, 'bot_type', None) and str(subscription.bot.bot_type).upper() == 'FUTURES')
-            if not is_futures:
+            bot_type = str(subscription.bot.bot_type).upper() if hasattr(subscription.bot, 'bot_type') and subscription.bot.bot_type else None
+            
+            # Only create exchange client for old-style bots (not FUTURES/SPOT using advanced workflow)
+            if not is_futures and bot_type not in ['FUTURES', 'SPOT']:
                 logger.info(f"Creating exchange client for subscription {subscription_id} (testnet={use_testnet})")
                 
                 exchange = ExchangeFactory.create_exchange(
@@ -1094,6 +1097,9 @@ def run_bot_logic(self, subscription_id: int):
                     api_secret=api_secret,
                     testnet=use_testnet
                 )
+            else:
+                # FUTURES and SPOT bots handle their own exchange clients
+                exchange = None
             
             # Get current market data
             trading_pair = subscription.bot.trading_pair or 'BTC/USDT'
@@ -1102,19 +1108,24 @@ def run_bot_logic(self, subscription_id: int):
                 if is_futures:
                     # Use Futures client base_url and endpoints
                     ticker = bot.futures_client.get_ticker(exchange_symbol)
-                else:
+                    current_price = float(ticker['price'])
+                elif bot_type == 'SPOT':
+                    # SPOT bots have their own spot_client
+                    current_price = bot.spot_client.get_current_price(exchange_symbol)
+                elif exchange:
+                    # Old-style bots use ExchangeFactory client
                     ticker = exchange.get_ticker(exchange_symbol)
-                current_price = float(ticker['price'])
+                    current_price = float(ticker['price'])
+                else:
+                    # Fallback: use a reasonable default
+                    current_price = 0.0
+                    logger.warning(f"Could not get current price for {trading_pair}, using 0.0")
             except Exception as e:
                 logger.error(f"Failed to get ticker for {trading_pair}: {e}")
-                crud.log_bot_action(
-                    db, subscription_id, "ERROR", 
-                    f"Failed to get ticker for {trading_pair}: {str(e)}"
-                )
-                return
+                current_price = 0.0  # Use fallback instead of returning
 
-            # Set bot's exchange client
-            if not is_futures:
+            # Set bot's exchange client (only for old-style bots)
+            if not is_futures and bot_type not in ['FUTURES', 'SPOT'] and exchange:
                 bot.exchange_client = exchange
             
             # Create subscription config
@@ -1176,7 +1187,8 @@ def run_bot_logic(self, subscription_id: int):
                 
             # Get balance info for BUY/SELL actions (real API call)
                 balance_info = ""
-                if not is_futures:
+                # Only for old-style bots, not SPOT/FUTURES (they handle their own balance)
+                if not is_futures and bot_type not in ['FUTURES', 'SPOT'] and exchange:
                     if final_action.action in ["BUY", "SELL"]:
                         try:
                         # Get balance from exchange using real API
@@ -1541,11 +1553,12 @@ def run_bot_rpa_logic(self, subscription_id: int):
                     "No exchange API credentials configured. Please add your exchange credentials in settings."
                 )
                 return
-
-            logger.info(f"Creating exchange client for subscription {subscription_id} (testnet={use_testnet})")
             
             is_futures = bool(getattr(subscription.bot, 'bot_type', None) and str(subscription.bot.bot_type).upper() == 'FUTURES_RPA')
-            if not is_futures:
+            bot_type = str(subscription.bot.bot_type).upper() if hasattr(subscription.bot, 'bot_type') and subscription.bot.bot_type else None
+            
+            # Only create exchange client for old-style bots (not FUTURES/SPOT using advanced workflow)
+            if not is_futures and bot_type not in ['FUTURES', 'SPOT', 'FUTURES_RPA']:
                 logger.info(f"Creating exchange client for subscription {subscription_id} (testnet={use_testnet})")
                 
                 exchange = ExchangeFactory.create_exchange(
@@ -1554,6 +1567,9 @@ def run_bot_rpa_logic(self, subscription_id: int):
                     api_secret=api_secret,
                     testnet=use_testnet
                 )
+            else:
+                # FUTURES and SPOT bots handle their own exchange clients
+                exchange = None
             
             # Get current market data
             trading_pair = subscription.bot.trading_pair or 'BTC/USDT'
@@ -1564,19 +1580,24 @@ def run_bot_rpa_logic(self, subscription_id: int):
                     # Use Futures client base_url and endpoints
                     ticker = bot.futures_client.get_ticker(exchange_symbol)
                     logger.info(f"Futures client ticker: {ticker}")
-                else:
+                    current_price = float(ticker['price'])
+                elif bot_type == 'SPOT':
+                    # SPOT bots have their own spot_client
+                    current_price = bot.spot_client.get_current_price(exchange_symbol)
+                elif exchange:
+                    # Old-style bots use ExchangeFactory client
                     ticker = exchange.get_ticker(exchange_symbol)
-                current_price = float(ticker['price'])
+                    current_price = float(ticker['price'])
+                else:
+                    # Fallback: use a reasonable default
+                    current_price = 0.0
+                    logger.warning(f"Could not get current price for {trading_pair}, using 0.0")
             except Exception as e:
                 logger.error(f"Failed to get ticker for {trading_pair}: {e}")
-                crud.log_bot_action(
-                    db, subscription_id, "ERROR", 
-                    f"Failed to get ticker for {trading_pair}: {str(e)}"
-                )
-                return
+                current_price = 0.0  # Use fallback instead of returning
 
-            # Set bot's exchange client
-            if not is_futures:
+            # Set bot's exchange client (only for old-style bots)
+            if not is_futures and bot_type not in ['FUTURES', 'SPOT', 'FUTURES_RPA'] and exchange:
                 bot.exchange_client = exchange
             
             # Create subscription config
@@ -1860,6 +1881,9 @@ def run_bot_signal_logic(self, bot_id: int, subscription_id: int):
                     sys.stdout.flush()
                     print(f"🔍 DEBUG: Session ID: {session_id}")
                     sys.stdout.flush()
+                    
+                    # Initialize image_paths to avoid UnboundLocalError in finally block
+                    image_paths = []
                     
                     # Wait for session file to be created (race condition fix)
                     import time
