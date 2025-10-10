@@ -993,7 +993,7 @@ class BinanceFuturesRPABot(CustomBot):
             
             # Get entry price - use recommendation if available, fallback to current price
             entry_price = None
-            take_profit_target = None
+            take_profit_targets = []  # Array of {price, size_pct}
             stop_loss_target = None
             
             # First, try to get from recommendation
@@ -1005,10 +1005,29 @@ class BinanceFuturesRPABot(CustomBot):
                     if entry_str and entry_str != 'Market' and entry_str != 'N/A':
                         entry_price = float(entry_str)
                     
-                    # Parse take profit
-                    tp_str = rec.get('take_profit', '').replace(',', '').strip()
-                    if tp_str and tp_str != 'N/A':
-                        take_profit_target = float(tp_str)
+                    # Parse take profit (handle both array and legacy string format)
+                    tp = rec.get('take_profit')
+                    if isinstance(tp, list) and len(tp) > 0:
+                        # New array format
+                        for tp_level in tp:
+                            try:
+                                price_str = str(tp_level.get('price', '')).replace(',', '').strip()
+                                size_pct = float(tp_level.get('size_pct', 0))
+                                if price_str and price_str != 'N/A':
+                                    price = float(price_str)
+                                    # Normalize price
+                                    price = normalize_price(price, current_price)
+                                    take_profit_targets.append({'price': price, 'size_pct': size_pct})
+                            except (ValueError, TypeError):
+                                continue
+                        logger.info(f"📊 Parsed {len(take_profit_targets)} TP levels from LLM (RPA)")
+                    else:
+                        # Legacy string format fallback
+                        tp_str = str(tp).replace(',', '').strip() if tp else ''
+                        if tp_str and tp_str != 'N/A':
+                            price = float(tp_str)
+                            price = normalize_price(price, current_price)
+                            take_profit_targets = [{'price': price, 'size_pct': 100}]
                     
                     # Parse stop loss
                     sl_str = rec.get('stop_loss', '').replace(',', '').strip()
@@ -1017,8 +1036,6 @@ class BinanceFuturesRPABot(CustomBot):
                         
                 except (ValueError, TypeError) as e:
                     logger.warning(f"Failed to parse recommendation prices in setup_position: {e}")
-                if take_profit_target:
-                    take_profit_target = normalize_price(take_profit_target, current_price)
                 if stop_loss_target:
                     stop_loss_target = normalize_price(stop_loss_target, current_price)
                 if entry_price:
@@ -1072,6 +1089,12 @@ class BinanceFuturesRPABot(CustomBot):
             logger.info(f"✅ Market order placed successfully: {order.status}")
             
             # Calculate stop loss and take profit prices - use recommendation if available
+            # Use first TP target (usually highest %) as primary TP price
+            primary_tp_price = None
+            if take_profit_targets and len(take_profit_targets) > 0:
+                primary_tp_price = take_profit_targets[0]['price']
+                logger.info(f"📊 Using TP1: ${primary_tp_price:.2f} ({take_profit_targets[0]['size_pct']}%) as primary take profit (RPA)")
+            
             if action.action == "BUY":
                 # Use recommendation targets or fallback to percentage calculation
                 if stop_loss_target:
@@ -1079,23 +1102,23 @@ class BinanceFuturesRPABot(CustomBot):
                 else:
                     stop_loss_price = entry_price * (1 - self.stop_loss_pct)
                 
-                if take_profit_target:
-                    take_profit_price = take_profit_target
+                if primary_tp_price:
+                    take_profit_price = primary_tp_price
                 else:
                     take_profit_price = entry_price * (1 + self.take_profit_pct)
                 
                 sl_side = "SELL"
                 tp_side = "SELL"
             else:  # SELL
-                logger.info(f"stop loss target is {stop_loss_target}, take profit target is {take_profit_target}")
+                logger.info(f"stop loss target is {stop_loss_target}, take profit target primary is {primary_tp_price}")
                 # Use recommendation targets or fallback to percentage calculation
                 if stop_loss_target:
                     stop_loss_price = stop_loss_target
                 else:
                     stop_loss_price = entry_price * (1 + self.stop_loss_pct)
                 
-                if take_profit_target:
-                    take_profit_price = take_profit_target
+                if primary_tp_price:
+                    take_profit_price = primary_tp_price
                 else:
                     take_profit_price = entry_price * (1 - self.take_profit_pct)
                 

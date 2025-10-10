@@ -484,10 +484,74 @@ class ExecutionConfig(BaseModel):
     sell_order_type: str = Field(..., pattern="^(PERCENTAGE|ALL)$")
     sell_order_value: float = Field(..., gt=0)
 
+class RiskManagementMode(str, Enum):
+    """Risk management mode"""
+    DEFAULT = "DEFAULT"  # Human-configured rules
+    AI_PROMPT = "AI_PROMPT"  # LLM-based dynamic risk management
+
+class TrailingStopConfig(BaseModel):
+    """Trailing stop loss configuration"""
+    enabled: bool = False
+    activation_percent: Optional[float] = Field(None, gt=0, description="Profit % to activate trailing")
+    trailing_percent: Optional[float] = Field(None, gt=0, description="Distance from peak to trail")
+
+class TradingWindowConfig(BaseModel):
+    """Trading time window configuration"""
+    enabled: bool = False
+    start_hour: Optional[int] = Field(None, ge=0, le=23, description="Trading start hour (UTC)")
+    end_hour: Optional[int] = Field(None, ge=0, le=23, description="Trading end hour (UTC)")
+    days_of_week: Optional[List[int]] = Field(None, description="Days allowed (0=Monday, 6=Sunday)")
+
+class CooldownConfig(BaseModel):
+    """Cooldown after loss configuration"""
+    enabled: bool = False
+    cooldown_minutes: Optional[int] = Field(None, gt=0, description="Minutes to wait after loss")
+    trigger_loss_count: Optional[int] = Field(None, gt=0, description="Number of consecutive losses to trigger")
+
 class RiskConfig(BaseModel):
-    stop_loss_percent: Optional[float] = Field(None, gt=0, le=100)
-    take_profit_percent: Optional[float] = Field(None, gt=0)
-    max_position_size: Optional[float] = Field(None, gt=0)
+    """Enhanced risk configuration supporting DEFAULT and AI modes"""
+    
+    # Mode selection
+    mode: RiskManagementMode = Field(default=RiskManagementMode.DEFAULT, description="Risk management mode")
+    
+    # === DEFAULT MODE: Manual Configuration ===
+    
+    # Basic Risk Parameters (Legacy support)
+    stop_loss_percent: Optional[float] = Field(None, gt=0, le=100, description="Stop loss %")
+    take_profit_percent: Optional[float] = Field(None, gt=0, description="Take profit %")
+    max_position_size: Optional[float] = Field(None, gt=0, description="Max position size %")
+    
+    # Advanced Risk Parameters
+    min_risk_reward_ratio: Optional[float] = Field(None, gt=0, description="Minimum RR ratio (e.g., 2 means 2:1)")
+    risk_per_trade_percent: Optional[float] = Field(None, gt=0, le=100, description="Risk % per trade")
+    max_leverage: Optional[int] = Field(None, gt=1, le=125, description="Maximum leverage allowed")
+    max_portfolio_exposure: Optional[float] = Field(None, gt=0, le=100, description="Max total exposure %")
+    daily_loss_limit_percent: Optional[float] = Field(None, gt=0, le=100, description="Daily loss limit %")
+    
+    # Trailing Stop Configuration
+    trailing_stop: Optional[TrailingStopConfig] = Field(default=None, description="Trailing stop settings")
+    
+    # Trading Window
+    trading_window: Optional[TradingWindowConfig] = Field(default=None, description="Trading time restrictions")
+    
+    # Cooldown Rules
+    cooldown: Optional[CooldownConfig] = Field(default=None, description="Cooldown after losses")
+    
+    # === AI MODE: Prompt-based Dynamic Risk Management ===
+    
+    ai_prompt_id: Optional[int] = Field(None, description="ID of AI risk management prompt template")
+    ai_prompt_custom: Optional[str] = Field(None, description="Custom AI prompt for risk analysis")
+    ai_update_frequency_minutes: Optional[int] = Field(default=15, gt=0, description="How often to consult AI")
+    
+    # Hybrid: AI can override defaults within these bounds
+    ai_allow_override: bool = Field(default=False, description="Allow AI to override default rules")
+    ai_min_stop_loss: Optional[float] = Field(None, gt=0, description="AI cannot set SL below this")
+    ai_max_stop_loss: Optional[float] = Field(None, gt=0, description="AI cannot set SL above this")
+    ai_min_take_profit: Optional[float] = Field(None, gt=0, description="AI cannot set TP below this")
+    ai_max_take_profit: Optional[float] = Field(None, gt=0, description="AI cannot set TP above this")
+    
+    class Config:
+        use_enum_values = True
 
 class SubscriptionBase(BaseModel):
     instance_name: str

@@ -188,7 +188,7 @@ class BybitFuturesIntegration(BaseFuturesExchange):
             return False
     
     def get_symbol_precision(self, symbol: str) -> dict:
-        """Get quantity and price precision for symbol"""
+        """Get quantity and price precision for symbol including minimum quantities"""
         if symbol in self._symbol_info_cache:
             return self._symbol_info_cache[symbol]
         
@@ -201,20 +201,46 @@ class BybitFuturesIntegration(BaseFuturesExchange):
                 lot_filter = info.get('lotSizeFilter', {})
                 price_filter = info.get('priceFilter', {})
                 
+                # Extract minimum and maximum quantities
+                min_order_qty = float(lot_filter.get('minOrderQty', '0.001'))
+                max_order_qty = float(lot_filter.get('maxOrderQty', '1000'))
+                qty_step = float(lot_filter.get('qtyStep', '0.001'))
+                
                 precision_info = {
-                    'quantityPrecision': len(str(float(lot_filter.get('qtyStep', '0.001'))).split('.')[-1]),
+                    'quantityPrecision': len(str(qty_step).split('.')[-1]),
                     'pricePrecision': len(str(float(price_filter.get('tickSize', '0.01'))).split('.')[-1]),
-                    'stepSize': lot_filter.get('qtyStep', '0.001'),
-                    'tickSize': price_filter.get('tickSize', '0.01')
+                    'stepSize': str(qty_step),
+                    'tickSize': price_filter.get('tickSize', '0.01'),
+                    'minQty': min_order_qty,
+                    'maxQty': max_order_qty,
+                    'minNotional': float(lot_filter.get('minNotionalValue', '5'))  # Minimum order value in USDT
                 }
+                
+                logger.info(f"📐 {symbol} Bybit precision: minQty={min_order_qty}, step={qty_step}, minNotional=${precision_info['minNotional']}")
                 
                 self._symbol_info_cache[symbol] = precision_info
                 return precision_info
             
-            return {'quantityPrecision': 3, 'pricePrecision': 2, 'stepSize': '0.001', 'tickSize': '0.01'}
+            return {
+                'quantityPrecision': 3, 
+                'pricePrecision': 2, 
+                'stepSize': '0.001', 
+                'tickSize': '0.01',
+                'minQty': 0.001,
+                'maxQty': 1000,
+                'minNotional': 5
+            }
         except Exception as e:
             logger.error(f"Failed to get symbol precision: {e}")
-            return {'quantityPrecision': 3, 'pricePrecision': 2, 'stepSize': '0.001', 'tickSize': '0.01'}
+            return {
+                'quantityPrecision': 3, 
+                'pricePrecision': 2, 
+                'stepSize': '0.001', 
+                'tickSize': '0.01',
+                'minQty': 0.001,
+                'maxQty': 1000,
+                'minNotional': 5
+            }
     
     def round_quantity(self, quantity: float, symbol: str) -> str:
         """Round quantity to proper precision"""

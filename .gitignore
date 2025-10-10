@@ -229,4 +229,7 @@ frontend/.next/
 .next/
 out/
 dist/
+log.html
+output.xml
+report.html
 

@@ -415,12 +415,18 @@ OUTPUT FORMAT (STRICT JSON SCHEMA):
 {{
   "recommendation": {{
     "action": "BUY" | "SELL" | "HOLD",
-    "entry_price": "<string or null>",
-    "take_profit": "<string or null>",
-    "stop_loss": "<string or null>",
+    "entry_price": "<string | null>",
+    "stop_loss": "<string | null>",
+    "take_profit": [
+      {
+        "level": "<string>",           // ví dụ: "TP1", "TP2", "TP3"
+        "price": "<string>",           // ví dụ: "124500"
+        "size_pct": "<number>"         // phần trăm vị thế, ví dụ: 50, 30, 20
+      }
+    ],
     "strategy": "<MA, MACD, RSI, BollingerBands, Fibonacci_Retracement hoặc kết hợp>",
-    "risk_reward": "<string hoặc null>",
-    "confidence": "<0-100>",
+    "risk_reward": "<string | null>",  // ví dụ: "1:3"
+    "confidence": "<number 0-100>",
     "reasoning": "<ngắn gọn 1-2 câu giải thích tại sao>"
   }}
 }}
