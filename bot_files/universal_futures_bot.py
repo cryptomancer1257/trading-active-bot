@@ -463,7 +463,7 @@ class UniversalFuturesBot(CustomBot):
             
             # Get entry price and targets from LLM recommendation
             entry_price = None
-            take_profit_target = None
+            take_profit_targets = []  # Array of {price, size_pct}
             stop_loss_target = None
             
             if action.recommendation:
@@ -474,13 +474,29 @@ class UniversalFuturesBot(CustomBot):
                     if entry_str and entry_str not in ['Market', 'N/A', '']:
                         entry_price = float(entry_str)
                     
-                    # Parse take profit
-                    tp_str = str(rec.get('take_profit', '')).replace(',', '').strip()
-                    if tp_str and tp_str != 'N/A':
-                        import re
-                        numbers = re.findall(r'\d+\.\d+', tp_str)
-                        if numbers:
-                            take_profit_target = float(numbers[0])
+                    # Parse take profit (handle both array and legacy string format)
+                    tp = rec.get('take_profit')
+                    if isinstance(tp, list) and len(tp) > 0:
+                        # New array format
+                        for tp_level in tp:
+                            try:
+                                price_str = str(tp_level.get('price', '')).replace(',', '').strip()
+                                size_pct = float(tp_level.get('size_pct', 0))
+                                if price_str and price_str != 'N/A':
+                                    price = float(price_str)
+                                    take_profit_targets.append({'price': price, 'size_pct': size_pct})
+                            except (ValueError, TypeError):
+                                continue
+                        logger.info(f"📊 Parsed {len(take_profit_targets)} TP levels from LLM")
+                    else:
+                        # Legacy string format fallback
+                        tp_str = str(tp).replace(',', '').strip() if tp else ''
+                        if tp_str and tp_str != 'N/A':
+                            import re
+                            numbers = re.findall(r'\d+\.\d+', tp_str)
+                            if numbers:
+                                # Use first TP as single target with 100%
+                                take_profit_targets = [{'price': float(numbers[0]), 'size_pct': 100}]
                     
                     # Parse stop loss
                     sl_str = str(rec.get('stop_loss', '')).replace(',', '').strip()
@@ -529,18 +545,54 @@ class UniversalFuturesBot(CustomBot):
                 logger.warning(f"Failed to get realtime price, using analysis price: {e}")
                 actual_entry_price = entry_price
             
+            # Get exchange minimums for this symbol
+            precision_info = self.futures_client.get_symbol_precision(symbol)
+            min_qty = precision_info.get('minQty', 0.001)
+            step_size = float(precision_info.get('stepSize', '0.001'))
+            min_notional = precision_info.get('minNotional', 5)
+            
             # Calculate position size with realtime price
             position_value = available_balance * optimal_position_size_pct * self.leverage
             quantity = position_value / actual_entry_price
             
-            # Round to proper precision
-            quantity = round(quantity, 3)
-            quantity_str = f"{quantity:.3f}"
+            # Round to proper precision based on step size
+            quantity = round(quantity / step_size) * step_size
+            
+            # Check if quantity meets exchange minimum
+            notional_value = quantity * actual_entry_price
+            if quantity < min_qty or notional_value < min_notional:
+                logger.warning(f"⚠️ Calculated quantity {quantity} below minimum requirements:")
+                logger.warning(f"   Min Quantity: {min_qty}, Min Notional: ${min_notional}")
+                
+                # Use exchange minimum instead
+                quantity = max(min_qty, min_notional / actual_entry_price)
+                quantity = round(quantity / step_size) * step_size
+                notional_value = quantity * actual_entry_price
+                
+                # Check if account has enough balance for minimum order
+                required_balance = notional_value / self.leverage
+                if required_balance > available_balance:
+                    return {
+                        'status': 'error',
+                        'message': f'Insufficient balance: ${available_balance:.2f} USDT. ' +
+                                 f'Minimum order requires ${required_balance:.2f} USDT ' +
+                                 f'({min_qty} {self.base_asset} @ ${actual_entry_price:.2f} with {self.leverage}x leverage)',
+                        'exchange': self.exchange_name,
+                        'min_balance_required': required_balance,
+                        'current_balance': available_balance
+                    }
+                
+                logger.info(f"✅ Adjusted to exchange minimum: {quantity} (notional: ${notional_value:.2f})")
+            
+            # Format quantity string with proper precision
+            decimals = precision_info.get('quantityPrecision', 3)
+            quantity_str = f"{quantity:.{decimals}f}"
             
             logger.info(f"🚀 Opening {action.action} position on {self.exchange_name}:")
             logger.info(f"   Symbol: {symbol}")
             logger.info(f"   Quantity: {quantity_str}")
             logger.info(f"   Entry (Realtime): ${actual_entry_price:.2f}")
+            logger.info(f"   Notional Value: ${notional_value:.2f}")
             logger.info(f"   Leverage: {self.leverage}x")
             
             # Place market order (NO PRICE for market orders!)
@@ -565,14 +617,20 @@ class UniversalFuturesBot(CustomBot):
             logger.info(f"✅ Market order placed successfully: {order.status}")
             
             # Calculate stop loss and take profit prices using actual entry price
+            # Use first TP target (usually highest %) as primary TP price
+            primary_tp_price = None
+            if take_profit_targets and len(take_profit_targets) > 0:
+                primary_tp_price = take_profit_targets[0]['price']
+                logger.info(f"📊 Using TP1: ${primary_tp_price:.2f} ({take_profit_targets[0]['size_pct']}%) as primary take profit")
+            
             if action.action == "BUY":
                 stop_loss_price = stop_loss_target or (actual_entry_price * (1 - self.stop_loss_pct))
-                take_profit_price = take_profit_target or (actual_entry_price * (1 + self.take_profit_pct))
+                take_profit_price = primary_tp_price or (actual_entry_price * (1 + self.take_profit_pct))
                 sl_side = "SELL"
                 tp_side = "SELL"
             else:  # SELL
                 stop_loss_price = stop_loss_target or (actual_entry_price * (1 + self.stop_loss_pct))
-                take_profit_price = take_profit_target or (actual_entry_price * (1 - self.take_profit_pct))
+                take_profit_price = primary_tp_price or (actual_entry_price * (1 - self.take_profit_pct))
                 sl_side = "BUY"
                 tp_side = "BUY"
             
@@ -653,7 +711,8 @@ class UniversalFuturesBot(CustomBot):
                 'take_profit': {
                     'price': take_profit_price,
                     'order_ids': [tp.get('order_id') for tp in tp_orders] if tp_orders else [None],
-                    'source': 'recommendation' if take_profit_target else 'percentage'
+                    'source': 'recommendation' if primary_tp_price else 'percentage',
+                    'levels': take_profit_targets if take_profit_targets else [{'price': take_profit_price, 'size_pct': 100}]
                 },
                 'confidence': action.value,
                 'reason': action.reason,

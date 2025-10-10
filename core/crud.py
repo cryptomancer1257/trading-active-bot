@@ -1214,8 +1214,31 @@ def log_bot_action(db: Session, subscription_id: int, action: str, details: str 
             
         # Add account information
         if account_status:
+            # Serialize account_status to handle FuturesPosition and other non-JSON objects
+            serialized_account_status = {}
+            for key, value in account_status.items():
+                try:
+                    if hasattr(value, '__dict__'):
+                        # Convert objects to dict
+                        serialized_account_status[key] = {
+                            k: v for k, v in value.__dict__.items() 
+                            if not k.startswith('_') and not callable(v)
+                        }
+                    elif isinstance(value, (list, tuple)):
+                        # Handle lists/tuples of objects
+                        serialized_account_status[key] = [
+                            {k: v for k, v in item.__dict__.items() if not k.startswith('_') and not callable(v)}
+                            if hasattr(item, '__dict__') else item
+                            for item in value
+                        ]
+                    else:
+                        serialized_account_status[key] = value
+                except Exception as e:
+                    # Fallback to string representation if serialization fails
+                    serialized_account_status[key] = str(value)
+            
             comprehensive_signal_data.update({
-                "account_status": account_status,
+                "account_status": serialized_account_status,
                 "available_balance": account_status.get("available_balance"),
                 "total_balance": account_status.get("total_balance"),
                 "margin_level": account_status.get("margin_level"),

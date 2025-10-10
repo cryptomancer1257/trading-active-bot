@@ -278,6 +278,10 @@ class Bot(Base):
     stop_loss_percentage = Column(Float, default=5.0)
     take_profit_percentage = Column(Float, default=10.0)
     
+    # Enhanced risk management (new system)
+    risk_config = Column(JSON, default=dict)  # Default risk configuration for all subscriptions
+    risk_management_mode = Column(String(20), default='DEFAULT')  # DEFAULT or AI_PROMPT
+    
     # AI/LLM configuration
     llm_provider = Column(String(50), nullable=True)  # openai, anthropic, gemini
     enable_image_analysis = Column(Boolean, default=False)
@@ -372,6 +376,11 @@ class Subscription(Base):
 
     # Risk management
     risk_config = Column(JSON)
+    risk_management_mode = Column(String(20), default='DEFAULT')  # DEFAULT or AI_PROMPT
+    daily_loss_amount = Column(DECIMAL(20, 8), default=0)
+    last_loss_reset_date = Column(DateTime)
+    cooldown_until = Column(DateTime)
+    consecutive_losses = Column(Integer, default=0)
     
     # Subscription management
     started_at = Column(DateTime, server_default=func.now())

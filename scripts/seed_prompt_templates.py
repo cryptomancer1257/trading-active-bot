@@ -101,15 +101,17 @@ def create_default_prompts():
   2. Above Upper Bollinger Band, OR
   3. 2-3% above entry (whichever is closer)
 
-**TAKE-PROFIT TARGETS:**
-- BUY Targets:
-  1. Next resistance level, OR
-  2. Upper Bollinger Band, OR
-  3. 1.5x stop-loss distance minimum
-- SELL Targets:
-  1. Next support level, OR
-  2. Lower Bollinger Band, OR
-  3. 1.5x stop-loss distance minimum
+**TAKE-PROFIT TARGETS (Multiple levels recommended):**
+- Provide 2-3 take-profit levels with size distribution
+- BUY Targets (in ascending order):
+  - TP1: First resistance OR 1.5x stop distance (50% position)
+  - TP2: Next resistance OR Upper BB (30% position)
+  - TP3: Major resistance OR 3x stop distance (20% position)
+- SELL Targets (in descending order):
+  - TP1: First support OR 1.5x stop distance (50% position)
+  - TP2: Next support OR Lower BB (30% position)
+  - TP3: Major support OR 3x stop distance (20% position)
+- Size percentages must total 100%
 - MINIMUM R:R RATIO: 1.5:1 (prefer 2:1+)
 
 **OUTPUT FORMAT (STRICT JSON SCHEMA):**
@@ -117,13 +119,19 @@ def create_default_prompts():
 {
   "recommendation": {
     "action": "BUY" | "SELL" | "HOLD",
-    "entry_price": "<string or null>",
-    "take_profit": "<string or null>",
-    "stop_loss": "<string or null>",
-    "strategy": "<MA, MACD, RSI, BollingerBands, Fibonacci_Retracement or combination>",
-    "risk_reward": "<string or null>",
-    "confidence": "<0-100>",
-    "reasoning": "<brief 1-2 sentence explanation>"
+    "entry_price": "<string | null>",
+    "stop_loss": "<string | null>",
+    "take_profit": [
+      {
+        "level": "<string>",           // ví dụ: "TP1", "TP2", "TP3"
+        "price": "<string>",           // ví dụ: "124500"
+        "size_pct": "<number>"         // phần trăm vị thế, ví dụ: 50, 30, 20
+      }
+    ],
+    "strategy": "<MA, MACD, RSI, BollingerBands, Fibonacci_Retracement hoặc kết hợp>",
+    "risk_reward": "<string | null>",  // ví dụ: "1:3"
+    "confidence": "<number 0-100>",
+    "reasoning": "<ngắn gọn 1-2 câu giải thích tại sao>"
   }
 }
 ```
@@ -299,15 +307,17 @@ Based on this data, please:
   2. Above Upper Bollinger Band, OR
   3. 2-3% above entry (whichever is closer)
 
-**TAKE-PROFIT TARGETS:**
-- BUY Targets:
-  1. Next resistance level, OR
-  2. Upper Bollinger Band, OR
-  3. 1.5x stop-loss distance minimum
-- SELL Targets:
-  1. Next support level, OR
-  2. Lower Bollinger Band, OR
-  3. 1.5x stop-loss distance minimum
+**TAKE-PROFIT TARGETS (Multiple levels recommended):**
+- Provide 2-3 take-profit levels with size distribution
+- BUY Targets (in ascending order):
+  - TP1: First resistance OR 1.5x stop distance (50% position)
+  - TP2: Next resistance OR Upper BB (30% position)
+  - TP3: Major resistance OR 3x stop distance (20% position)
+- SELL Targets (in descending order):
+  - TP1: First support OR 1.5x stop distance (50% position)
+  - TP2: Next support OR Lower BB (30% position)
+  - TP3: Major support OR 3x stop distance (20% position)
+- Size percentages must total 100%
 - MINIMUM R:R RATIO: 1.5:1 (prefer 2:1+)
 
 **OUTPUT FORMAT (STRICT JSON SCHEMA):**
@@ -315,13 +325,19 @@ Based on this data, please:
 {
   "recommendation": {
     "action": "BUY" | "SELL" | "HOLD",
-    "entry_price": "<string or null>",
-    "take_profit": "<string or null>",
-    "stop_loss": "<string or null>",
-    "strategy": "<MA, MACD, RSI, BollingerBands, Fibonacci_Retracement or combination>",
-    "risk_reward": "<string or null>",
-    "confidence": "<0-100>",
-    "reasoning": "<brief 1-2 sentence explanation>"
+    "entry_price": "<string | null>",
+    "stop_loss": "<string | null>",
+    "take_profit": [
+      {
+        "level": "<string>",           // ví dụ: "TP1", "TP2", "TP3"
+        "price": "<string>",           // ví dụ: "124500"
+        "size_pct": "<number>"         // phần trăm vị thế, ví dụ: 50, 30, 20
+      }
+    ],
+    "strategy": "<MA, MACD, RSI, BollingerBands, Fibonacci_Retracement hoặc kết hợp>",
+    "risk_reward": "<string | null>",  // ví dụ: "1:3"
+    "confidence": "<number 0-100>",
+    "reasoning": "<ngắn gọn 1-2 câu giải thích tại sao>"
   }
 }
 ```

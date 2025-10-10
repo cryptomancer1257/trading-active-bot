@@ -406,8 +406,10 @@ class OKXFuturesIntegration(BaseFuturesExchange):
                     'pricePrecision': len(str(tick_sz).split('.')[-1]) if '.' in str(tick_sz) else 0,
                     'stepSize': str(lot_sz),
                     'tickSize': str(tick_sz),
-                    'contractValue': ct_val,  # NEW: How much crypto per contract
-                    'minSize': lot_sz  # Minimum order size in contracts
+                    'contractValue': ct_val,  # How much crypto per contract
+                    'minQty': lot_sz,  # Minimum order size in contracts
+                    'maxQty': 10000,  # OKX default max
+                    'minNotional': 5  # Minimum order value
                 }
                 
                 logger.info(f"📐 {symbol} precision info:")
@@ -425,7 +427,9 @@ class OKXFuturesIntegration(BaseFuturesExchange):
                 'stepSize': '1', 
                 'tickSize': '0.01',
                 'contractValue': 0.01,
-                'minSize': 1
+                'minQty': 1,
+                'maxQty': 10000,
+                'minNotional': 5
             }
         except Exception as e:
             logger.error(f"Failed to get symbol precision: {e}")
@@ -435,7 +439,9 @@ class OKXFuturesIntegration(BaseFuturesExchange):
                 'stepSize': '1', 
                 'tickSize': '0.01',
                 'contractValue': 0.01,
-                'minSize': 1
+                'minQty': 1,
+                'maxQty': 10000,
+                'minNotional': 5
             }
     
     def quantity_to_contracts(self, quantity: float, symbol: str) -> float:

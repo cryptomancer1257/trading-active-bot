@@ -1,17 +1,20 @@
 'use client'
 
 import { useState } from 'react'
-import { EyeIcon, PencilIcon, TrashIcon, PlusIcon } from '@heroicons/react/24/outline'
+import { EyeIcon, PencilIcon, TrashIcon, PlusIcon, Cog6ToothIcon, DocumentTextIcon } from '@heroicons/react/24/outline'
 import { useBotPrompts, useAttachPrompt, useDetachPrompt, useUpdateBotPrompt } from '@/hooks/useBotPrompts'
 import { useMyPrompts } from '@/hooks/usePrompts'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
+import RiskConfigurationForm from './RiskConfigurationForm'
 
 interface RiskManagementTabProps {
   botId: number
+  subscriptionId?: number
 }
 
-export default function RiskManagementTab({ botId }: RiskManagementTabProps) {
+export default function RiskManagementTab({ botId, subscriptionId }: RiskManagementTabProps) {
+  const [activeTab, setActiveTab] = useState<'configuration' | 'prompts'>('configuration')
   const [showAttachModal, setShowAttachModal] = useState(false)
   const [selectedPrompt, setSelectedPrompt] = useState<any>(null)
   const [priority, setPriority] = useState(0)
@@ -127,6 +130,50 @@ export default function RiskManagementTab({ botId }: RiskManagementTabProps) {
 
   return (
     <div className="space-y-6">
+      {/* Tab Navigation */}
+      <div className="border-b border-gray-700">
+        <nav className="flex space-x-8">
+          <button
+            onClick={() => setActiveTab('configuration')}
+            className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 transition-colors ${
+              activeTab === 'configuration'
+                ? 'border-blue-500 text-blue-500'
+                : 'border-transparent text-gray-400 hover:text-gray-300 hover:border-gray-300'
+            }`}
+          >
+            <Cog6ToothIcon className="h-5 w-5" />
+            Risk Configuration
+          </button>
+          <button
+            onClick={() => setActiveTab('prompts')}
+            className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 transition-colors ${
+              activeTab === 'prompts'
+                ? 'border-blue-500 text-blue-500'
+                : 'border-transparent text-gray-400 hover:text-gray-300 hover:border-gray-300'
+            }`}
+          >
+            <DocumentTextIcon className="h-5 w-5" />
+            AI Prompts
+            {attachedRiskPrompts.length > 0 && (
+              <span className="bg-blue-600 text-white text-xs px-2 py-0.5 rounded-full">
+                {attachedRiskPrompts.length}
+              </span>
+            )}
+          </button>
+        </nav>
+      </div>
+
+      {/* Configuration Tab */}
+      {activeTab === 'configuration' && (
+        <RiskConfigurationForm 
+          botId={botId}
+          subscriptionId={subscriptionId}
+        />
+      )}
+
+      {/* Prompts Tab */}
+      {activeTab === 'prompts' && (
+        <div className="space-y-6">
       {/* Attached Risk Management Prompts */}
       <div>
         <h3 className="text-lg font-semibold text-white mb-2">
@@ -351,6 +398,8 @@ export default function RiskManagementTab({ botId }: RiskManagementTabProps) {
               </div>
             </div>
           </div>
+        </div>
+      )}
         </div>
       )}
     </div>
