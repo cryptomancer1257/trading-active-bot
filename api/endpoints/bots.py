@@ -703,11 +703,55 @@ def get_developer_analytics_overview(
 def get_bot_analytics(
     bot_id: int,
     days: int = 30,
+    page: int = 1,
+    limit: int = 10,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(security.get_current_active_developer)
 ):
-    """Get bot analytics including transactions, subscribers, and performance metrics"""
-    return crud.get_bot_analytics(db, bot_id=bot_id, developer_id=current_user.id, days=days)
+    """Get bot analytics including transactions, subscribers, and performance metrics with pagination"""
+    return crud.get_bot_analytics(db, bot_id=bot_id, developer_id=current_user.id, days=days, page=page, limit=limit)
+
+@router.get("/{bot_id}/subscriptions", response_model=dict)
+def get_bot_subscriptions(
+    bot_id: int,
+    page: int = 1,
+    limit: int = 20,
+    principal_id: Optional[str] = None,
+    user_id: Optional[int] = None,
+    trading_pair: Optional[str] = None,
+    status: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    search: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(security.get_current_active_developer)
+):
+    """
+    Get all subscriptions for a bot with advanced filtering and search
+    
+    Filters:
+    - principal_id: Filter by user principal ID
+    - user_id: Filter by developer user ID
+    - trading_pair: Filter by trading pair (e.g., BTC/USDT)
+    - status: Filter by subscription status (ACTIVE, PAUSED, CANCELLED, EXPIRED)
+    - start_date: Filter by subscription start date (YYYY-MM-DD)
+    - end_date: Filter by subscription end date (YYYY-MM-DD)
+    - search: Search in principal_id, instance_name, or trading_pair
+    """
+    return crud.get_bot_subscriptions(
+        db=db,
+        bot_id=bot_id,
+        developer_id=current_user.id,
+        page=page,
+        limit=limit,
+        principal_id=principal_id,
+        user_id=user_id,
+        trading_pair=trading_pair,
+        status=status,
+        start_date=start_date,
+        end_date=end_date,
+        search=search
+    )
 
 @router.get("/validate-bot-key/{api_key}", response_model=schemas.BotMarketplaceRegistrationInDB)
 def validate_bot_api_key(

@@ -116,6 +116,7 @@ def create_marketplace_subscription(
             bot_id=marketplace_sub.bot_id,
             exchange_type=marketplace_sub.exchange_type,
             trading_pair=marketplace_sub.trading_pair,
+            secondary_trading_pairs=marketplace_sub.secondary_trading_pairs or [],
             timeframe=marketplace_sub.timeframe,
             strategy_config=marketplace_sub.strategy_config,
             execution_config=marketplace_sub.execution_config,
@@ -283,6 +284,7 @@ async def create_marketplace_subscription_v2(
             is_testnet=request.is_testnet,
             network_type=request.trading_network,
             trading_pair=request.trading_pair,
+            secondary_trading_pairs=request.secondary_trading_pairs or [],  # Multi-pair trading
             payment_method=request.payment_method,
             paypal_payment_id=request.paypal_payment_id,
 
@@ -433,6 +435,8 @@ async def create_marketplace_subscription_v2(
                 
                 is_testnet=request.is_testnet,
                 # network_type=network_type_model,
+                trading_pair=request.trading_pair,
+                secondary_trading_pairs=request.secondary_trading_pairs or [],  # Multi-pair trading
 
                 # configs
                 execution_config=execution_config.dict(),
@@ -497,6 +501,8 @@ async def create_marketplace_subscription_v2(
                 
                 is_testnet=request.is_testnet,
                 # network_type=network_type_model,
+                trading_pair=request.trading_pair,
+                secondary_trading_pairs=request.secondary_trading_pairs or [],  # Multi-pair trading
 
                 # configs
                 execution_config=execution_config.dict(),

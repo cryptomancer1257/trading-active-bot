@@ -139,7 +139,7 @@ class BaseFuturesExchange(ABC):
                             reduce_only: bool = True) -> Dict[str, Any]:
         """
         Create managed orders (SL + TP) - Default implementation
-        Can be overridden by specific exchanges for optimized behavior
+        Intelligently handles small positions by skipping split when necessary
         """
         try:
             # Cancel existing orders first
@@ -148,12 +148,21 @@ class BaseFuturesExchange(ABC):
                 if order.get('type') in ['STOP_MARKET', 'TAKE_PROFIT_MARKET']:
                     self.cancel_order(symbol, str(order.get('orderId', order.get('order_id', ''))))
             
-            # Split quantity for partial TP strategy
-            total_qty = float(quantity)
-            partial_qty = total_qty * 0.5
-            remaining_qty = total_qty * 0.5
+            # Get exchange minimums
+            precision_info = self.get_symbol_precision(symbol)
+            min_qty = precision_info.get('minQty', 0.001)
+            step_size = float(precision_info.get('stepSize', '0.001'))
             
-            # Create stop loss
+            total_qty = float(quantity)
+            
+            # Check if quantity is large enough to split (each half must exceed minimum)
+            # We need at least 2.2x minimum to safely split (with some buffer)
+            can_split = (total_qty / 2.0) >= (min_qty * 1.1)
+            
+            if not can_split:
+                logger.warning(f"⚠️ Quantity {total_qty} too small to split (min={min_qty}). Creating single TP order instead.")
+            
+            # Create stop loss (always full quantity)
             stop_response = self.create_stop_loss_order(
                 symbol=symbol,
                 side=side,
@@ -164,22 +173,70 @@ class BaseFuturesExchange(ABC):
             
             # Create take profit orders
             tp1_price = float(take_profit_price)
-            tp1_response = self.create_take_profit_order(
-                symbol=symbol,
-                side=side,
-                quantity=f"{partial_qty:.5f}",
-                stop_price=f"{tp1_price:.2f}",
-                reduce_only=reduce_only
-            )
+            tp_orders = []
             
-            tp2_price = tp1_price * 1.02  # 2% higher
-            tp2_response = self.create_take_profit_order(
-                symbol=symbol,
-                side=side,
-                quantity=f"{remaining_qty:.5f}",
-                stop_price=f"{tp2_price:.2f}",
-                reduce_only=reduce_only
-            )
+            if can_split:
+                # Split into two TP orders for partial profit taking
+                partial_qty = round((total_qty * 0.5) / step_size) * step_size
+                remaining_qty = round((total_qty - partial_qty) / step_size) * step_size
+                
+                # Safety check: ensure both parts meet minimum
+                if partial_qty >= min_qty and remaining_qty >= min_qty:
+                    tp1_response = self.create_take_profit_order(
+                        symbol=symbol,
+                        side=side,
+                        quantity=f"{partial_qty:.5f}",
+                        stop_price=f"{tp1_price:.2f}",
+                        reduce_only=reduce_only
+                    )
+                    
+                    tp2_price = tp1_price * 1.02  # 2% higher
+                    tp2_response = self.create_take_profit_order(
+                        symbol=symbol,
+                        side=side,
+                        quantity=f"{remaining_qty:.5f}",
+                        stop_price=f"{tp2_price:.2f}",
+                        reduce_only=reduce_only
+                    )
+                    
+                    tp_orders = [
+                        {
+                            'order_id': tp1_response.order_id,
+                            'quantity': partial_qty,
+                            'price': tp1_price,
+                            'type': 'partial'
+                        },
+                        {
+                            'order_id': tp2_response.order_id,
+                            'quantity': remaining_qty,
+                            'price': tp2_price,
+                            'type': 'profit'
+                        }
+                    ]
+                    logger.info(f"✅ Split TP: {partial_qty} @ ${tp1_price:.2f} + {remaining_qty} @ ${tp2_price:.2f}")
+                else:
+                    # Fallback to single TP
+                    can_split = False
+            
+            if not can_split:
+                # Create single take profit order with full quantity
+                tp_response = self.create_take_profit_order(
+                    symbol=symbol,
+                    side=side,
+                    quantity=f"{total_qty:.5f}",
+                    stop_price=f"{tp1_price:.2f}",
+                    reduce_only=reduce_only
+                )
+                
+                tp_orders = [
+                    {
+                        'order_id': tp_response.order_id,
+                        'quantity': total_qty,
+                        'price': tp1_price,
+                        'type': 'full'
+                    }
+                ]
+                logger.info(f"✅ Single TP: {total_qty} @ ${tp1_price:.2f}")
             
             logger.info(f"✅ Managed Orders Created on {self.exchange_name}")
             
@@ -189,20 +246,7 @@ class BaseFuturesExchange(ABC):
                     'quantity': total_qty,
                     'price': stop_price
                 },
-                'take_profit_orders': [
-                    {
-                        'order_id': tp1_response.order_id,
-                        'quantity': partial_qty,
-                        'price': tp1_price,
-                        'type': 'partial'
-                    },
-                    {
-                        'order_id': tp2_response.order_id,
-                        'quantity': remaining_qty,
-                        'price': tp2_price,
-                        'type': 'profit'
-                    }
-                ]
+                'take_profit_orders': tp_orders
             }
         except Exception as e:
             logger.error(f"Failed to create managed orders on {self.exchange_name}: {e}")

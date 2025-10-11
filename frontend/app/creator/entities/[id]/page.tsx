@@ -9,13 +9,15 @@ import {
   SparklesIcon,
   ChartBarIcon,
   DocumentTextIcon,
-  ExclamationTriangleIcon
+  ExclamationTriangleIcon,
+  UserGroupIcon
 } from '@heroicons/react/24/outline'
 import { CheckCircleIcon, ClockIcon, XCircleIcon, ArchiveBoxIcon } from '@heroicons/react/24/solid'
 import Link from 'next/link'
 import BotPromptsTab from '@/components/BotPromptsTab'
 import RiskManagementTab from '@/components/RiskManagementTab'
 import BotAnalytics from '@/components/BotAnalytics'
+import BotSubscriptions from '@/components/BotSubscriptions'
 import toast from 'react-hot-toast'
 import config from '@/lib/config'
 import { useAuth } from '@/contexts/AuthContext'
@@ -32,22 +34,48 @@ interface BotLog {
   symbol?: string
   quantity?: number
   entry_price?: number
+  entry_time?: string | null
   leverage?: number
   status?: string
   order_id?: string
-  stop_loss?: number
-  take_profit?: number
+  position_side?: string
+  
+  // Risk Management
+  stop_loss?: number | null
+  take_profit?: number | null
+  
+  // P&L (synced from exchange by Celery every 10s)
   unrealized_pnl?: number | null
+  realized_pnl?: number | null
+  pnl_usd?: number | null
+  pnl_percentage?: number | null
+  is_winning?: boolean | null
+  
+  // Price & Exit Info
+  last_updated_price?: number | null
+  exit_price?: number | null
+  exit_time?: string | null
+  exit_reason?: string | null
+  
+  // Additional Metrics
+  fees_paid?: number | null
+  trade_duration_minutes?: number | null
+  risk_reward_ratio?: number | null
+  actual_rr_ratio?: number | null
+  strategy_used?: string | null
+  
+  // Legacy fields (deprecated)
   unrealized_pnl_pct?: number | null
   funding_fees?: number
   needs_price_update?: boolean
+  
   confidence?: number
   reason?: string
   details?: string
   signal_data?: any
 }
 
-type TabType = 'overview' | 'prompts' | 'risk-management' | 'settings' | 'analytics'
+type TabType = 'overview' | 'prompts' | 'risk-management' | 'settings' | 'analytics' | 'subscriptions'
 
 export default function BotDetailPage() {
   const router = useRouter()
@@ -71,6 +99,7 @@ export default function BotDetailPage() {
   const [isStartingTrial, setIsStartingTrial] = useState(false)
   const [trialConfig, setTrialConfig] = useState({
     tradingPair: 'BTC/USDT',
+    secondaryTradingPairs: [] as string[],
     networkType: 'TESTNET'
   })
   const [botLogs, setBotLogs] = useState<BotLog[]>([])
@@ -161,6 +190,7 @@ export default function BotDetailPage() {
         subscription_end: endDate.toISOString(),
         is_testnet: trialConfig.networkType === 'TESTNET',
         trading_pair: trialConfig.tradingPair,
+        secondary_trading_pairs: trialConfig.secondaryTradingPairs, // Multi-pair trading
         trading_network: trialConfig.networkType,
         payment_method: 'TRIAL'
       }
@@ -262,7 +292,7 @@ export default function BotDetailPage() {
               
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Trading Pair
+                  Primary Trading Pair
                 </label>
                 <select
                   value={trialConfig.tradingPair}
@@ -276,9 +306,145 @@ export default function BotDetailPage() {
                   <option value="SOL/USDT">SOL/USDT</option>
                 </select>
                 <p className="text-xs text-gray-400 mt-1">
-                  Choose the trading pair for your bot trial
+                  🎯 Main trading pair (highest priority)
                 </p>
               </div>
+            </div>
+            
+            {/* Secondary Trading Pairs */}
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Secondary Trading Pairs (Optional)
+              </label>
+              <p className="text-xs text-gray-400 mb-3">
+                📊 Bot will trade these pairs when primary is busy (priority order)
+              </p>
+              
+              {/* Add New Pair Dropdown */}
+              <div className="flex gap-2 mb-3">
+                <select
+                  className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  onChange={(e) => {
+                    const value = e.target.value
+                    if (value && !trialConfig.secondaryTradingPairs.includes(value) && value !== trialConfig.tradingPair) {
+                      setTrialConfig(prev => ({
+                        ...prev,
+                        secondaryTradingPairs: [...prev.secondaryTradingPairs, value]
+                      }))
+                      e.target.value = '' // Reset select
+                    }
+                  }}
+                  defaultValue=""
+                >
+                  <option value="" disabled>Select pair to add...</option>
+                  <option value="BTC/USDT">BTC/USDT</option>
+                  <option value="ETH/USDT">ETH/USDT</option>
+                  <option value="BNB/USDT">BNB/USDT</option>
+                  <option value="ADA/USDT">ADA/USDT</option>
+                  <option value="SOL/USDT">SOL/USDT</option>
+                  <option value="XRP/USDT">XRP/USDT</option>
+                  <option value="DOGE/USDT">DOGE/USDT</option>
+                  <option value="DOT/USDT">DOT/USDT</option>
+                  <option value="MATIC/USDT">MATIC/USDT</option>
+                  <option value="AVAX/USDT">AVAX/USDT</option>
+                </select>
+              </div>
+              
+              {/* List of Secondary Pairs */}
+              {trialConfig.secondaryTradingPairs.length > 0 && (
+                <div className="space-y-2">
+                  {trialConfig.secondaryTradingPairs.map((pair, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center gap-2 bg-gray-700/50 border border-gray-600 rounded-md p-2"
+                    >
+                      {/* Priority Badge */}
+                      <div className="flex items-center justify-center w-7 h-7 rounded-full bg-purple-500/20 text-purple-400 text-sm font-bold">
+                        {index + 2}
+                      </div>
+                      
+                      {/* Pair Name */}
+                      <div className="flex-1 text-white font-medium text-sm">
+                        {pair}
+                      </div>
+                      
+                      {/* Reorder Buttons */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (index > 0) {
+                            const pairs = [...trialConfig.secondaryTradingPairs]
+                            ;[pairs[index - 1], pairs[index]] = [pairs[index], pairs[index - 1]]
+                            setTrialConfig(prev => ({ ...prev, secondaryTradingPairs: pairs }))
+                          }
+                        }}
+                        disabled={index === 0}
+                        className={`p-1 rounded ${
+                          index === 0
+                            ? 'text-gray-600 cursor-not-allowed'
+                            : 'text-gray-400 hover:text-purple-400'
+                        }`}
+                        title="Move up"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                        </svg>
+                      </button>
+                      
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (index < trialConfig.secondaryTradingPairs.length - 1) {
+                            const pairs = [...trialConfig.secondaryTradingPairs]
+                            ;[pairs[index], pairs[index + 1]] = [pairs[index + 1], pairs[index]]
+                            setTrialConfig(prev => ({ ...prev, secondaryTradingPairs: pairs }))
+                          }
+                        }}
+                        disabled={index === trialConfig.secondaryTradingPairs.length - 1}
+                        className={`p-1 rounded ${
+                          index === trialConfig.secondaryTradingPairs.length - 1
+                            ? 'text-gray-600 cursor-not-allowed'
+                            : 'text-gray-400 hover:text-purple-400'
+                        }`}
+                        title="Move down"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </button>
+                      
+                      {/* Remove Button */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const pairs = trialConfig.secondaryTradingPairs.filter((_, i) => i !== index)
+                          setTrialConfig(prev => ({ ...prev, secondaryTradingPairs: pairs }))
+                        }}
+                        className="p-1 text-red-400 hover:text-red-300 rounded"
+                        title="Remove"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+                  
+                  {/* Summary */}
+                  <div className="mt-2 text-xs text-gray-500 bg-gray-800/50 rounded p-2 border border-purple-500/20">
+                    <div className="font-medium text-purple-400 mb-1">Trading Priority Order:</div>
+                    <div className="space-y-0.5">
+                      <div>1️⃣ {trialConfig.tradingPair} <span className="text-gray-600">(Primary)</span></div>
+                      {trialConfig.secondaryTradingPairs.map((pair, idx) => (
+                        <div key={idx}>{idx + 2}️⃣ {pair}</div>
+                      ))}
+                    </div>
+                    <div className="mt-1 text-gray-600">
+                      💡 Bot trades first available pair without open position
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -421,9 +587,24 @@ export default function BotDetailPage() {
                       const entryPrice = log.entry_price
                       const tradingPair = log.symbol
                       const status = log.status
+                      
+                      // P&L fields (synced from exchange every 10s by Celery)
                       const unrealizedPnl = log.unrealized_pnl
-                      const unrealizedPnlPct = log.unrealized_pnl_pct
-                      const fundingFees = log.funding_fees
+                      const realizedPnl = log.realized_pnl
+                      const pnlUsd = log.pnl_usd
+                      const pnlPercentage = log.pnl_percentage
+                      const isWinning = log.is_winning
+                      
+                      // Price & Exit info
+                      const lastUpdatedPrice = log.last_updated_price
+                      const exitPrice = log.exit_price
+                      const exitTime = log.exit_time
+                      const exitReason = log.exit_reason
+                      
+                      // Additional metrics
+                      const feesPaid = log.fees_paid
+                      const tradeDuration = log.trade_duration_minutes
+                      const strategyUsed = log.strategy_used
                       
                       // Status badge color
                       const getStatusBadge = (status: string) => {
@@ -447,37 +628,79 @@ export default function BotDetailPage() {
                                     <span className="font-semibold">{log.action}</span> {quantity} {tradingPair} at ${typeof entryPrice === 'number' ? entryPrice.toFixed(2) : entryPrice} 
                                     {leverage && <span className="text-purple-400"> ({leverage}x)</span>}
                                     {status && getStatusBadge(status)}
+                                    {log.subscription_id && (
+                                      <span className="text-gray-500 ml-2 text-xs">Sub#{log.subscription_id}</span>
+                                    )}
                                     {confidence && (
                                       <span className="text-gray-500 ml-2">(Confidence: {(confidence * 100).toFixed(1)}%)</span>
                                     )}
                                     
                                     {/* Risk Management + P&L Info */}
-                                    {(stopLoss || takeProfit || unrealizedPnl !== undefined) && (
-                                      <div className="ml-8 mt-1 text-sm space-y-1">
-                                        {(stopLoss || takeProfit) && (
-                                          <div className="text-gray-400">
-                                            {stopLoss && <span className="mr-4">🛑 SL: ${typeof stopLoss === 'number' ? stopLoss.toFixed(2) : stopLoss}</span>}
-                                            {takeProfit && <span>🎯 TP: ${typeof takeProfit === 'number' ? takeProfit.toFixed(2) : takeProfit}</span>}
-                                          </div>
-                                        )}
-                                        
-                                        {/* Realtime P&L for OPEN positions */}
-                                        {status === 'OPEN' && (
-                                          <div className={getPnlColor(unrealizedPnl)}>
-                                            {unrealizedPnl !== null && unrealizedPnlPct !== null ? (
+                                    <div className="ml-8 mt-1 text-sm space-y-1">
+                                      {/* Risk Management */}
+                                      {(stopLoss || takeProfit) && (
+                                        <div className="text-gray-400">
+                                          {stopLoss && <span className="mr-4">🛡️ SL: ${typeof stopLoss === 'number' ? stopLoss.toFixed(2) : stopLoss}</span>}
+                                          {takeProfit && <span>💚 TP: ${typeof takeProfit === 'number' ? takeProfit.toFixed(2) : takeProfit}</span>}
+                                        </div>
+                                      )}
+                                      
+                                      {/* OPEN Position - Show Unrealized P&L */}
+                                      {status === 'OPEN' && (
+                                        <>
+                                          {lastUpdatedPrice && (
+                                            <div className="text-gray-400">
+                                              💰 Current: ${lastUpdatedPrice.toFixed(2)}
+                                            </div>
+                                          )}
+                                          <div className={getPnlColor(unrealizedPnl ?? null)}>
+                                            {unrealizedPnl !== null && unrealizedPnl !== undefined && pnlPercentage !== null && pnlPercentage !== undefined ? (
                                               <>
-                                                💹 P&L: ${unrealizedPnl.toFixed(2)} ({unrealizedPnlPct >= 0 ? '+' : ''}{unrealizedPnlPct.toFixed(2)}%)
-                                                {fundingFees !== undefined && fundingFees !== 0 && (
-                                                  <span className="ml-4 text-yellow-400">💸 Fees: ${fundingFees.toFixed(2)}</span>
+                                                💵 P&L: ${unrealizedPnl >= 0 ? '+' : ''}{unrealizedPnl.toFixed(2)} ({pnlPercentage >= 0 ? '+' : ''}{pnlPercentage.toFixed(2)}%)
+                                                {feesPaid !== undefined && feesPaid !== null && feesPaid !== 0 && (
+                                                  <span className="ml-4 text-yellow-400">💸 Fees: -${feesPaid.toFixed(2)}</span>
                                                 )}
                                               </>
                                             ) : (
-                                              <span className="text-gray-500">💹 P&L: Calculating...</span>
+                                              <span className="text-gray-500">💵 P&L: Syncing...</span>
                                             )}
                                           </div>
-                                        )}
-                                      </div>
-                                    )}
+                                        </>
+                                      )}
+                                      
+                                      {/* CLOSED Position - Show Realized P&L */}
+                                      {status === 'CLOSED' && (
+                                        <>
+                                          {exitPrice && (
+                                            <div className="text-gray-400">
+                                              🚪 Exit: ${exitPrice.toFixed(2)}
+                                              {exitReason && (
+                                                <span className="ml-2 px-1.5 py-0.5 text-xs bg-gray-800 rounded">
+                                                  {exitReason === 'TP_HIT' && '✅ TP'}
+                                                  {exitReason === 'SL_HIT' && '❌ SL'}
+                                                  {exitReason === 'MANUAL' && '👤 Manual'}
+                                                  {exitReason === 'LIQUIDATION' && '⚠️ Liq'}
+                                                  {!['TP_HIT', 'SL_HIT', 'MANUAL', 'LIQUIDATION'].includes(exitReason) && exitReason}
+                                                </span>
+                                              )}
+                                            </div>
+                                          )}
+                                          {realizedPnl !== null && realizedPnl !== undefined && pnlPercentage !== null && pnlPercentage !== undefined && (
+                                            <div className={getPnlColor(realizedPnl ?? null)}>
+                                              {isWinning ? '✅' : '❌'} Realized: ${realizedPnl >= 0 ? '+' : ''}{realizedPnl.toFixed(2)} ({pnlPercentage >= 0 ? '+' : ''}{pnlPercentage.toFixed(2)}%)
+                                              {tradeDuration && (
+                                                <span className="ml-4 text-gray-500">⏱️ {tradeDuration < 60 ? `${tradeDuration}m` : `${(tradeDuration / 60).toFixed(1)}h`}</span>
+                                              )}
+                                            </div>
+                                          )}
+                                          {exitTime && (
+                                            <div className="text-xs text-gray-500">
+                                              Closed: {new Date(exitTime).toLocaleString()}
+                                            </div>
+                                          )}
+                                        </>
+                                      )}
+                                    </div>
                                   </>
                                 )
                               : (log.details || log.message || `${log.action} ${log.symbol}`)
@@ -530,6 +753,8 @@ export default function BotDetailPage() {
         return <RiskManagementTab botId={bot.id} />
       case 'analytics':
         return <BotAnalytics botId={bot.id} />
+      case 'subscriptions':
+        return <BotSubscriptions botId={bot.id} />
       default:
         return null
     }
@@ -604,6 +829,17 @@ export default function BotDetailPage() {
             >
               <ChartBarIcon className="h-5 w-5 inline-block mr-2" />
               Analytics
+            </button>
+            <button
+              onClick={() => setActiveTab('subscriptions')}
+              className={`whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'subscriptions'
+                  ? 'border-purple-500 text-purple-400'
+                  : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-300'
+              }`}
+            >
+              <UserGroupIcon className="h-5 w-5 inline-block mr-2" />
+              Subscriptions
             </button>
           </nav>
         </div>

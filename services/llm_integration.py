@@ -297,14 +297,13 @@ class LLMIntegrationService:
                                     "recommendation": {
                                         "action": "BUY" | "SELL" | "HOLD",
                                         "entry_price": "<string or null>",
-                                        "take_profit": "<string or null>",
-                                        "stop_loss": "<string or null>",
                                         "strategy": "<MA, MACD, RSI, BollingerBands, Fibonacci_Retracement hoặc kết hợp>",
-                                        "risk_reward": "<string hoặc null>",
                                         "confidence": "<0-100>",
                                         "reasoning": "<ngắn gọn 1-2 câu giải thích tại sao>"
                                     }
                                     }
+                                    
+                                    NOTE: Stop Loss and Take Profit are automatically calculated from Risk Config (developer-configured parameters), not from LLM.
                                     """
                         bot_prompt = bot_prompt + output_format
                         
@@ -415,15 +414,14 @@ OUTPUT FORMAT (STRICT JSON SCHEMA):
 {{
   "recommendation": {{
     "action": "BUY" | "SELL" | "HOLD",
-    "entry_price": "<string or null>",
-    "take_profit": "<string or null>",
-    "stop_loss": "<string or null>",
+    "entry_price": "<string | null>",
     "strategy": "<MA, MACD, RSI, BollingerBands, Fibonacci_Retracement hoặc kết hợp>",
-    "risk_reward": "<string hoặc null>",
-    "confidence": "<0-100>",
+    "confidence": "<number 0-100>",
     "reasoning": "<ngắn gọn 1-2 câu giải thích tại sao>"
   }}
 }}
+
+NOTE: Stop Loss and Take Profit are automatically calculated from Risk Config (developer-configured parameters), not from LLM.
 OUTPUT RULES:
     HOLD actions: All price fields = null
     Decimal precision: 1 decimal place for all prices

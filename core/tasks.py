@@ -956,6 +956,26 @@ def execute_trade_action(db, subscription, exchange, action, current_price):
         logger.error(traceback.format_exc())
         return False
 
+def _calculate_next_run(timeframe: str) -> 'datetime':
+    """Helper function to calculate next run time based on timeframe"""
+    from datetime import datetime, timedelta
+    
+    if timeframe == "1m":
+        return datetime.utcnow() + timedelta(minutes=1)
+    elif timeframe == "5m":
+        return datetime.utcnow() + timedelta(minutes=5)
+    elif timeframe == "15m":
+        return datetime.utcnow() + timedelta(minutes=15)
+    elif timeframe == "1h":
+        return datetime.utcnow() + timedelta(hours=1)
+    elif timeframe == "4h":
+        return datetime.utcnow() + timedelta(hours=4)
+    elif timeframe == "1d":
+        return datetime.utcnow() + timedelta(days=1)
+    else:
+        return datetime.utcnow() + timedelta(hours=1)  # Default to 1 hour
+
+
 @app.task(bind=True, autoretry_for=(Exception,), retry_kwargs={'max_retries': 3, 'countdown': 60})
 def run_bot_logic(self, subscription_id: int):
     """
@@ -1017,6 +1037,15 @@ def run_bot_logic(self, subscription_id: int):
             if subscription.started_at and subscription.started_at > now:
                 logger.info(f"Subscription {subscription_id} hasn't started yet (starts at {subscription.started_at}), skipping")
                 return
+            
+            # ⏰ UPDATE NEXT_RUN_AT IMMEDIATELY: Prevent duplicate scheduling
+            try:
+                bot_timeframe = subscription.bot.timeframe
+                next_run = _calculate_next_run(bot_timeframe)
+                crud.update_subscription_next_run(db, subscription_id, next_run)
+                logger.info(f"⏰ Next run scheduled at {next_run} (preventing duplicate execution)")
+            except Exception as e:
+                logger.error(f"Failed to update next_run_at at start: {e}")
 
             # Initialize bot
             bot = initialize_bot(subscription)
@@ -1367,8 +1396,19 @@ def run_bot_logic(self, subscription_id: int):
                                 tp = rec.get('take_profit') or rec.get('take_profit_price')
                                 if sl is not None:
                                     stop_loss_text = str(sl)
+                                # Handle take_profit array format
                                 if tp is not None:
-                                    take_profit_text = str(tp)
+                                    if isinstance(tp, list) and len(tp) > 0:
+                                        # Format: TP1: $124500 (50%), TP2: $125000 (30%), TP3: $126000 (20%)
+                                        tp_parts = []
+                                        for tp_level in tp:
+                                            level = tp_level.get('level', 'TP')
+                                            price = tp_level.get('price', '?')
+                                            size_pct = tp_level.get('size_pct', 0)
+                                            tp_parts.append(f"{level}: ${price} ({size_pct}%)")
+                                        take_profit_text = ', '.join(tp_parts)
+                                    else:
+                                        take_profit_text = str(tp)
                         except Exception:
                             pass
 
@@ -1401,6 +1441,8 @@ def run_bot_logic(self, subscription_id: int):
                     db, subscription_id, "NO_ACTION",
                     "Bot analysis completed but no action was taken"
                 )
+            
+            logger.info(f"✅ Bot execution completed. Next run was already scheduled at start to prevent duplicates.")
 
         finally:
             db.close()
@@ -1409,15 +1451,22 @@ def run_bot_logic(self, subscription_id: int):
         logger.error(f"Error in run_bot_logic for subscription {subscription_id}: {e}")
         logger.error(traceback.format_exc())
         
-        # Try to log error to database
+        # Try to log error to database and schedule retry
         try:
             from core.database import SessionLocal
             from core import crud
+            from datetime import timedelta
             db = SessionLocal()
             crud.log_bot_action(
                 db, subscription_id, "ERROR",
                 f"Bot execution failed: {str(e)}"
             )
+            
+            # Schedule retry after 5 minutes on error
+            next_run = datetime.utcnow() + timedelta(minutes=5)
+            crud.update_subscription_next_run(db, subscription_id, next_run)
+            logger.info(f"⚠️ Bot execution failed. Retry scheduled at {next_run}")
+            
             db.close()
         except:
             pass
@@ -1488,6 +1537,15 @@ def run_bot_rpa_logic(self, subscription_id: int):
             if subscription.started_at and subscription.started_at > now:
                 logger.info(f"Subscription {subscription_id} hasn't started yet (starts at {subscription.started_at}), skipping")
                 return
+            
+            # ⏰ UPDATE NEXT_RUN_AT IMMEDIATELY: Prevent duplicate scheduling
+            try:
+                bot_timeframe = subscription.bot.timeframe
+                next_run = _calculate_next_run(bot_timeframe)
+                crud.update_subscription_next_run(db, subscription_id, next_run)
+                logger.info(f"⏰ Next run scheduled at {next_run} (preventing duplicate execution)")
+            except Exception as e:
+                logger.error(f"Failed to update next_run_at at start: {e}")
 
             # Initialize bot
             bot = initialize_bot_rpa_v1(subscription)
@@ -1751,11 +1809,32 @@ def run_bot_rpa_logic(self, subscription_id: int):
                     db, subscription_id, "NO_ACTION",
                     "Bot analysis completed but no action was taken"
                 )
+            
+            logger.info(f"✅ RPA bot execution completed. Next run was already scheduled at start to prevent duplicates.")
+                
         finally:
             db.close()
             
     except Exception as e:
         logger.error(f"Error in RPA bot execution: {e}")
+        logger.error(traceback.format_exc())
+        
+        # Try to schedule retry on error
+        try:
+            from core.database import SessionLocal
+            from core import crud
+            from datetime import timedelta
+            db = SessionLocal()
+            
+            # Schedule retry after 5 minutes on error
+            next_run = datetime.utcnow() + timedelta(minutes=5)
+            crud.update_subscription_next_run(db, subscription_id, next_run)
+            logger.info(f"⚠️ RPA bot execution failed. Retry scheduled at {next_run}")
+            
+            db.close()
+        except:
+            pass
+            
         return {"status": "error", "reason": str(e)}
         
     finally:
@@ -1819,6 +1898,15 @@ def run_bot_signal_logic(self, bot_id: int, subscription_id: int):
             if subscription.expires_at and subscription.expires_at < now:
                 logger.info(f"Subscription {subscription_id} has expired (ended at {subscription.expires_at}), skipping")
                 return
+            
+            # ⏰ UPDATE NEXT_RUN_AT IMMEDIATELY: Prevent duplicate scheduling
+            try:
+                bot_timeframe = subscription.bot.timeframe
+                next_run = _calculate_next_run(bot_timeframe)
+                crud.update_subscription_next_run(db, subscription_id, next_run)
+                logger.info(f"⏰ Next run scheduled at {next_run} (preventing duplicate execution)")
+            except Exception as e:
+                logger.error(f"Failed to update next_run_at at start: {e}")
             
             if subscription.user_principal_id:
                 session_id = str(uuid.uuid4())
@@ -1948,12 +2036,26 @@ def run_bot_signal_logic(self, bot_id: int, subscription_id: int):
                         send_telegram_beauty_notification.delay(telegram_chat_id, final_response)
                     if discord_user_id:
                         send_discord_notification.delay(discord_user_id, final_response)
+                    
+                    logger.info(f"✅ Signal bot execution completed. Next run was already scheduled at start to prevent duplicates.")
+                        
                 except Exception as e:
                     logger.error(f"🚨 EXCEPTION in scheduled_bot_task: {e}")
                     sys.stdout.flush()
                     import traceback
                     logger.error(f"🚨 TRACEBACK: {traceback.format_exc()}")
                     sys.stdout.flush()
+                    
+                    # Try to schedule retry on error
+                    try:
+                        from datetime import timedelta
+                        from core import crud
+                        next_run = datetime.utcnow() + timedelta(minutes=5)
+                        crud.update_subscription_next_run(db, subscription_id, next_run)
+                        logger.info(f"⚠️ Signal bot execution failed. Retry scheduled at {next_run}")
+                    except:
+                        pass
+                        
                 finally:
                     if os.path.exists(image_path_file):
                         try:
@@ -2050,24 +2152,8 @@ def schedule_active_bots():
                         run_bot_signal_logic.delay(subscription.bot.id, subscription.id)
                         logger.info(f"✅ Triggered run_bot_signal_logic for PASSIVE bot (subscription {subscription.id})")
 
-                    # Update next run time based on timeframe
-                    if subscription.bot.timeframe == "1m":
-                        next_run = datetime.utcnow() + timedelta(minutes=1)
-                    elif subscription.bot.timeframe == "5m":
-                        next_run = datetime.utcnow() + timedelta(minutes=5)
-                    elif subscription.bot.timeframe == "15m":
-                        next_run = datetime.utcnow() + timedelta(minutes=15)
-                    elif subscription.bot.timeframe == "1h":
-                        next_run = datetime.utcnow() + timedelta(hours=1)
-                    elif subscription.bot.timeframe == "4h":
-                        next_run = datetime.utcnow() + timedelta(hours=4)
-                    elif subscription.bot.timeframe == "1d":
-                        next_run = datetime.utcnow() + timedelta(days=1)
-                    else:
-                        next_run = datetime.utcnow() + timedelta(hours=1)  # Default to 1 hour
-                    
-                    crud.update_subscription_next_run(db, subscription.id, next_run)
-                    logger.info(f"Updated next_run_at for subscription {subscription.id} to {next_run}")
+                    # ✅ NOTE: next_run_at is now updated by the task itself after completion
+                    # This ensures accurate scheduling based on actual execution time
                 else:
                     logger.debug(f"Subscription {subscription.id} not ready to run yet. Next run: {subscription.next_run_at}")
                     
@@ -2291,7 +2377,7 @@ def run_futures_bot_trading(self, user_principal_id: str = None, config: Dict[st
                 trade_result = None
                 if signal.action != "HOLD":
                     logger.info(f"🚀 AUTO-EXECUTING {signal.action} trade via Celery...")
-                    trade_result = await bot.setup_position(signal, analysis)
+                    trade_result = await bot.setup_position(signal, analysis, subscription)
                     
                     # Save transaction if successful
                     if trade_result.get('status') == 'success':
@@ -2405,6 +2491,346 @@ def schedule_futures_bot_trading(self, interval_minutes: int = 60, user_principa
         logger.error(f"❌ Error scheduling Futures Bot: {e}")
         return {'status': 'error', 'message': str(e)}
 
+def apply_risk_management(subscription, signal, analysis, account_status, db):
+    """
+    Apply risk management rules before executing trade
+    Returns: (approved: bool, reason: str, adjusted_signal: Action)
+    """
+    try:
+        from core import schemas, crud
+        from datetime import datetime, timedelta
+        
+        logger.info("=" * 80)
+        logger.info("🛡️ RISK MANAGEMENT CHECK START")
+        logger.info("=" * 80)
+        
+        # Get risk config: Subscription override OR Bot default
+        risk_config_dict = subscription.bot.risk_config
+        
+        if subscription.bot.risk_config:
+            logger.info("📋 Using BOT-LEVEL risk config (default)")
+        else:
+            logger.info("✅ No risk management configured, trade approved")
+            logger.info("=" * 80)
+            return True, "No risk management configured", signal
+        
+        # Debug: Log raw config dict
+        logger.info(f"\n📋 Raw Risk Config Dict:")
+        logger.info(f"   Type: {type(risk_config_dict)}")
+        import json
+        logger.info(f"   Content: {json.dumps(risk_config_dict, indent=2, default=str)}")
+        
+        risk_config = schemas.RiskConfig(**risk_config_dict)
+        
+        # Debug: Log parsed config
+        logger.info(f"\n🔧 Parsed Risk Config:")
+        logger.info(f"   Mode: {risk_config.mode}")
+        logger.info(f"   Daily Loss Limit: {risk_config.daily_loss_limit_percent}")
+        logger.info(f"   Min R/R Ratio: {risk_config.min_risk_reward_ratio}")
+        logger.info(f"   Max Leverage: {risk_config.max_leverage}")
+        logger.info(f"   Max Position Size: {risk_config.max_position_size}")
+        
+        logger.info(f"\n📊 Signal: {signal.action} | Confidence: {signal.value*100:.1f}%")
+        
+        # Log all configured rules
+        logger.info("\n📋 Configured Risk Rules:")
+        if risk_config.stop_loss_percent:
+            logger.info(f"  • Stop Loss: {risk_config.stop_loss_percent}%")
+        if risk_config.take_profit_percent:
+            logger.info(f"  • Take Profit: {risk_config.take_profit_percent}%")
+        if risk_config.min_risk_reward_ratio:
+            logger.info(f"  • Min Risk/Reward: {risk_config.min_risk_reward_ratio}:1")
+        if risk_config.max_leverage:
+            logger.info(f"  • Max Leverage: {risk_config.max_leverage}x")
+        if risk_config.daily_loss_limit_percent:
+            logger.info(f"  • Daily Loss Limit: {risk_config.daily_loss_limit_percent}%")
+        if risk_config.trading_window and risk_config.trading_window.enabled:
+            logger.info(f"  • Trading Window: {risk_config.trading_window.start_hour}:00-{risk_config.trading_window.end_hour}:00 UTC")
+        if risk_config.cooldown and risk_config.cooldown.enabled:
+            logger.info(f"  • Cooldown: {risk_config.cooldown.cooldown_minutes} min after {risk_config.cooldown.trigger_loss_count} losses")
+        
+        logger.info("\n🔍 Starting Risk Checks...")
+        
+        # 1. Check trading window
+        logger.info("\n1️⃣ Trading Window Check:")
+        if risk_config.trading_window and risk_config.trading_window.enabled:
+            now = datetime.utcnow()
+            current_hour = now.hour
+            current_day = now.weekday()  # 0=Monday, 6=Sunday
+            day_names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+            
+            logger.info(f"  Current Time: {now.strftime('%Y-%m-%d %H:%M:%S')} UTC")
+            logger.info(f"  Current Day: {day_names[current_day]} ({current_day})")
+            logger.info(f"  Current Hour: {current_hour}:00")
+            
+            window = risk_config.trading_window
+            if window.days_of_week:
+                allowed_days = [day_names[d] for d in window.days_of_week]
+                logger.info(f"  Allowed Days: {', '.join(allowed_days)}")
+                
+                if current_day not in window.days_of_week:
+                    logger.warning(f"  ❌ REJECTED: Current day {day_names[current_day]} not in allowed days")
+                    logger.warning("\n" + "=" * 80)
+                    logger.warning("🚫 RISK MANAGEMENT: TRADE REJECTED")
+                    logger.warning("=" * 80)
+                    logger.warning(f"   Reason: Outside trading window (day check)")
+                    logger.warning(f"   Current Day: {day_names[current_day]} ({current_day})")
+                    logger.warning(f"   Allowed Days: {', '.join([day_names[d] for d in window.days_of_week])}")
+                    logger.warning(f"   Config Source: {risk_config.mode} mode")
+                    logger.warning("=" * 80)
+                    return False, f"Outside trading window: Current day {current_day} not in allowed days {window.days_of_week}", signal
+                else:
+                    logger.info(f"  ✅ Day check passed")
+            
+            if window.start_hour is not None and window.end_hour is not None:
+                logger.info(f"  Allowed Hours: {window.start_hour}:00 - {window.end_hour}:00 UTC")
+                
+                if window.start_hour <= window.end_hour:
+                    is_allowed = window.start_hour <= current_hour < window.end_hour
+                else:
+                    is_allowed = current_hour >= window.start_hour or current_hour < window.end_hour
+                
+                if not is_allowed:
+                    logger.warning(f"  ❌ REJECTED: Current hour {current_hour}:00 outside allowed window")
+                    logger.warning("\n" + "=" * 80)
+                    logger.warning("🚫 RISK MANAGEMENT: TRADE REJECTED")
+                    logger.warning("=" * 80)
+                    logger.warning(f"   Reason: Outside trading window (hour check)")
+                    logger.warning(f"   Current Hour: {current_hour}:00 UTC")
+                    logger.warning(f"   Allowed Hours: {window.start_hour}:00 - {window.end_hour}:00 UTC")
+                    logger.warning(f"   Config Source: {risk_config.mode} mode")
+                    logger.warning("=" * 80)
+                    return False, f"Outside trading window: {window.start_hour}:00-{window.end_hour}:00 UTC", signal
+                else:
+                    logger.info(f"  ✅ Hour check passed")
+        else:
+            logger.info("  ⏭️ Trading window not configured, skipping")
+        
+        # 2. Check cooldown status
+        logger.info("\n2️⃣ Cooldown Status Check:")
+        if subscription.cooldown_until:
+            now = datetime.utcnow()
+            logger.info(f"  Cooldown Until: {subscription.cooldown_until}")
+            logger.info(f"  Current Time: {now}")
+            logger.info(f"  Consecutive Losses: {subscription.consecutive_losses or 0}")
+            
+            if now < subscription.cooldown_until:
+                remaining = (subscription.cooldown_until - now).total_seconds() / 60
+                logger.warning(f"  ❌ REJECTED: In cooldown for {remaining:.1f} more minutes")
+                logger.warning("\n" + "=" * 80)
+                logger.warning("🚫 RISK MANAGEMENT: TRADE REJECTED")
+                logger.warning("=" * 80)
+                logger.warning(f"   Reason: Active cooldown period")
+                logger.warning(f"   Consecutive Losses: {subscription.consecutive_losses or 0}")
+                logger.warning(f"   Cooldown Until: {subscription.cooldown_until}")
+                logger.warning(f"   Remaining: {remaining:.1f} minutes")
+                logger.warning(f"   Config Source: {risk_config.mode} mode")
+                logger.warning("=" * 80)
+                return False, f"In cooldown for {remaining:.1f} more minutes", signal
+            else:
+                logger.info(f"  ✅ Cooldown expired, clearing status")
+                subscription.cooldown_until = None
+                db.commit()
+        else:
+            logger.info("  ✅ No active cooldown")
+        
+        # 3. Check daily loss limit
+        logger.info("\n3️⃣ Daily Loss Limit Check:")
+        logger.info(f"  Config Daily Loss Limit: {risk_config.daily_loss_limit_percent}%")
+        logger.info(f"  Account Status Available: {account_status is not None}")
+        
+        if risk_config.daily_loss_limit_percent:
+            if not account_status:
+                logger.warning(f"  ⚠️ Daily loss limit configured ({risk_config.daily_loss_limit_percent}%) but account_status is None")
+                logger.warning(f"  ⏭️ Skipping check (cannot verify without account balance)")
+            else:
+                available_balance = account_status.get('available_balance', 0)
+                daily_loss = float(subscription.daily_loss_amount or 0)
+                
+                logger.info(f"  Available Balance: ${available_balance:.2f}")
+                logger.info(f"  Daily Loss Limit: {risk_config.daily_loss_limit_percent}%")
+                logger.info(f"  Current Daily Loss: ${daily_loss:.2f}")
+                
+                # Reset daily loss if new day
+                now = datetime.utcnow()
+                if subscription.last_loss_reset_date != now.date():
+                    logger.info(f"  🔄 New day detected, resetting daily loss counter")
+                    logger.info(f"     Last Reset: {subscription.last_loss_reset_date}")
+                    logger.info(f"     Current Date: {now.date()}")
+                    subscription.daily_loss_amount = 0
+                    subscription.last_loss_reset_date = now.date()
+                    db.commit()
+                    daily_loss = 0
+                
+                loss_limit = available_balance * (risk_config.daily_loss_limit_percent / 100)
+                logger.info(f"  Calculated Loss Limit: ${loss_limit:.2f}")
+                
+                if daily_loss >= loss_limit:
+                    logger.warning(f"  ❌ REJECTED: Daily loss limit reached: ${daily_loss:.2f} >= ${loss_limit:.2f}")
+                    logger.warning("\n" + "=" * 80)
+                    logger.warning("🚫 RISK MANAGEMENT: TRADE REJECTED")
+                    logger.warning("=" * 80)
+                    logger.warning(f"   Reason: Daily loss limit exceeded")
+                    logger.warning(f"   Daily Loss Limit: {risk_config.daily_loss_limit_percent}%")
+                    logger.warning(f"   Available Balance: ${available_balance:.2f}")
+                    logger.warning(f"   Loss Limit Amount: ${loss_limit:.2f}")
+                    logger.warning(f"   Current Daily Loss: ${daily_loss:.2f}")
+                    logger.warning(f"   Over Limit By: ${daily_loss - loss_limit:.2f}")
+                    logger.warning(f"   Config Source: {risk_config.mode} mode")
+                    logger.warning("=" * 80)
+                    return False, f"Daily loss limit reached: ${daily_loss:.2f} >= ${loss_limit:.2f}", signal
+                else:
+                    remaining = loss_limit - daily_loss
+                    logger.info(f"  ✅ Within limit (${remaining:.2f} remaining)")
+        else:
+            logger.info("  ⏭️ Daily loss limit not configured in risk config")
+        
+        # 4. Check minimum Risk/Reward ratio
+        logger.info("\n4️⃣ Risk/Reward Ratio Check:")
+        logger.info(f"  Config Min R/R Ratio: {risk_config.min_risk_reward_ratio}")
+        logger.info(f"  Signal has 'recommendation' attribute: {hasattr(signal, 'recommendation')}")
+        
+        if risk_config.min_risk_reward_ratio:
+            if not hasattr(signal, 'recommendation'):
+                logger.warning(f"  ⚠️ Min R/R ratio configured ({risk_config.min_risk_reward_ratio}:1) but signal has no 'recommendation' attribute")
+                logger.info(f"     Signal type: {type(signal)}")
+                logger.info(f"     Signal attributes: {dir(signal)}")
+                logger.warning(f"  ⏭️ Skipping check (signal doesn't provide R/R data)")
+            else:
+                rec = signal.recommendation
+                logger.info(f"  Recommendation data: {rec}")
+                
+            if rec and 'risk_reward' in rec:
+                rr_value = rec.get('risk_reward')
+                
+                # Skip if risk_reward is N/A or invalid
+                if rr_value in ['N/A', 'n/a', None, '']:
+                    logger.info(f"  ⏭️ Risk/Reward is '{rr_value}' - Skipping R/R check (TP/SL from risk_config will be used)")
+                else:
+                    try:
+                        rr = float(rr_value)
+                        logger.info(f"  Current R/R Ratio: {rr:.2f}:1")
+                        logger.info(f"  Minimum Required: {risk_config.min_risk_reward_ratio}:1")
+                        
+                        if rr < risk_config.min_risk_reward_ratio:
+                            logger.warning(f"  ❌ REJECTED: Risk/Reward ratio too low: {rr:.2f} < {risk_config.min_risk_reward_ratio}")
+                            logger.warning("\n" + "=" * 80)
+                            logger.warning("🚫 RISK MANAGEMENT: TRADE REJECTED")
+                            logger.warning("=" * 80)
+                            logger.warning(f"   Reason: Risk/Reward ratio below minimum")
+                            logger.warning(f"   Min R/R Required: {risk_config.min_risk_reward_ratio}:1")
+                            logger.warning(f"   LLM Provided R/R: {rr:.2f}:1")
+                            logger.warning(f"   Shortfall: {risk_config.min_risk_reward_ratio - rr:.2f}")
+                            if rec:
+                                logger.warning(f"   LLM Entry: {rec.get('entry_price', 'N/A')}")
+                                logger.warning(f"   LLM Stop Loss: {rec.get('stop_loss', 'N/A')}")
+                                logger.warning(f"   LLM Take Profit: {rec.get('take_profit', 'N/A')}")
+                            logger.warning(f"   Config Source: {risk_config.mode} mode")
+                            logger.warning("=" * 80)
+                            return False, f"Risk/Reward ratio too low: {rr:.2f} < {risk_config.min_risk_reward_ratio}", signal
+                        else:
+                            logger.info(f"  ✅ R/R ratio acceptable")
+                    except (ValueError, TypeError) as e:
+                        logger.warning(f"  ⚠️ Could not parse risk_reward: {rr_value} - Error: {e}")
+                        logger.info(f"  ⏭️ Skipping R/R check (TP/SL from risk_config will be used)")
+            else:
+                logger.warning(f"  ⚠️ Recommendation exists but no 'risk_reward' field found")
+                logger.info(f"     Available fields: {list(rec.keys()) if rec else 'None'}")
+                logger.warning(f"  ⏭️ Skipping check")
+        else:
+            logger.info("  ⏭️ Min R/R ratio not configured in risk config")
+        
+        # 5. Adjust leverage if max_leverage is set
+        logger.info("\n5️⃣ Leverage Check & Adjustment:")
+        logger.info(f"  Config Max Leverage: {risk_config.max_leverage}x")
+        logger.info(f"  Signal has 'recommendation' attribute: {hasattr(signal, 'recommendation')}")
+        
+        if risk_config.max_leverage:
+            if not hasattr(signal, 'recommendation'):
+                logger.warning(f"  ⚠️ Max leverage configured ({risk_config.max_leverage}x) but signal has no 'recommendation' attribute")
+                logger.warning(f"  ⏭️ Skipping check (signal doesn't provide leverage data)")
+            else:
+                rec = signal.recommendation
+                logger.info(f"  Recommendation type: {type(rec)}")
+                
+                if rec and 'leverage' in rec:
+                    try:
+                        leverage = int(rec['leverage'])
+                        logger.info(f"  Current Leverage: {leverage}x")
+                        logger.info(f"  Max Allowed: {risk_config.max_leverage}x")
+                        
+                        if leverage > risk_config.max_leverage:
+                            logger.warning(f"  ⚠️ Leverage adjusted: {leverage}x → {risk_config.max_leverage}x")
+                            rec['leverage'] = risk_config.max_leverage
+                        else:
+                            logger.info(f"  ✅ Leverage within limit")
+                    except (ValueError, TypeError) as e:
+                        logger.warning(f"  ⚠️ Could not parse leverage: {rec.get('leverage')} - Error: {e}")
+                else:
+                    logger.warning(f"  ⚠️ Recommendation exists but no 'leverage' field found")
+                    logger.info(f"     Available fields: {list(rec.keys()) if rec else 'None'}")
+                    logger.warning(f"  ⏭️ Skipping check")
+        else:
+            logger.info("  ⏭️ Max leverage not configured in risk config")
+        
+        # Final Summary
+        logger.info("\n" + "=" * 80)
+        logger.info("✅ RISK MANAGEMENT: ALL CHECKS PASSED")
+        logger.info("=" * 80)
+        
+        # Detailed approval reason
+        approval_summary = []
+        approval_summary.append(f"✅ Mode: {risk_config.mode}")
+        
+        if risk_config.trading_window and risk_config.trading_window.enabled:
+            approval_summary.append(f"✅ Trading Window: Within allowed time")
+        
+        if subscription.cooldown_until:
+            approval_summary.append(f"✅ Cooldown: No active cooldown")
+        
+        if risk_config.daily_loss_limit_percent and account_status:
+            daily_loss = float(subscription.daily_loss_amount or 0)
+            available_balance = account_status.get('available_balance', 0)
+            loss_limit = available_balance * (risk_config.daily_loss_limit_percent / 100)
+            remaining = loss_limit - daily_loss
+            approval_summary.append(f"✅ Daily Loss Limit: ${remaining:.2f} remaining (${daily_loss:.2f}/${loss_limit:.2f})")
+        
+        if risk_config.min_risk_reward_ratio and hasattr(signal, 'recommendation'):
+            rec = signal.recommendation
+            if rec and 'risk_reward' in rec:
+                try:
+                    rr = float(rec['risk_reward'])
+                    approval_summary.append(f"✅ Risk/Reward: {rr:.2f}:1 >= {risk_config.min_risk_reward_ratio}:1")
+                except:
+                    pass
+        
+        if risk_config.max_leverage and hasattr(signal, 'recommendation'):
+            rec = signal.recommendation
+            if rec and 'leverage' in rec:
+                leverage = int(rec.get('leverage', 0))
+                if leverage <= risk_config.max_leverage:
+                    approval_summary.append(f"✅ Leverage: {leverage}x <= {risk_config.max_leverage}x")
+                else:
+                    approval_summary.append(f"⚠️ Leverage: Adjusted {leverage}x → {risk_config.max_leverage}x")
+        
+        logger.info("\n📊 APPROVAL SUMMARY:")
+        for item in approval_summary:
+            logger.info(f"   {item}")
+        
+        reason = f"All checks passed: {len(approval_summary)} validations completed"
+        logger.info(f"\n💡 Reason: {reason}")
+        logger.info("=" * 80)
+        
+        return True, reason, signal
+        
+    except Exception as e:
+        logger.error(f"❌ Error in risk management: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        # On error, allow trade to proceed (fail-open for safety)
+        return True, f"Risk management error (fail-open): {e}", signal
+
+
 async def run_advanced_futures_workflow(bot, subscription_id: int, subscription_config: dict, db):
     """
     Advanced multi-timeframe futures trading workflow
@@ -2412,8 +2838,98 @@ async def run_advanced_futures_workflow(bot, subscription_id: int, subscription_
     """
     try:
         from datetime import datetime
+        from core import crud, models
         trade_result = None
         logger.info(f"🎯 Starting ADVANCED FUTURES WORKFLOW for subscription {subscription_id}")
+        
+        # Get subscription for risk management
+        subscription = crud.get_subscription_by_id(db, subscription_id)
+        if not subscription:
+            logger.error(f"Subscription {subscription_id} not found")
+            from bots.bot_sdk.Action import Action
+            return Action(action="HOLD", value=0.0, reason="Subscription not found"), None, None
+        
+        # 0. MULTI-PAIR PRIORITY LOGIC: Find first available trading pair without OPEN position
+        logger.info("=" * 80)
+        logger.info("🎯 Step 0: MULTI-PAIR TRADING - Finding available trading pair...")
+        logger.info("=" * 80)
+        
+        # Build list of trading pairs in priority order: [primary, secondary1, secondary2, ...]
+        primary_pair = subscription_config.get('trading_pair') or subscription.trading_pair
+        secondary_pairs = subscription.secondary_trading_pairs or []
+        
+        # Ensure secondary_pairs is a list
+        if isinstance(secondary_pairs, str):
+            import json
+            try:
+                secondary_pairs = json.loads(secondary_pairs)
+            except:
+                secondary_pairs = []
+        
+        all_trading_pairs = [primary_pair] + (secondary_pairs if secondary_pairs else [])
+        
+        logger.info(f"📋 Trading Pairs Priority List:")
+        logger.info(f"   1️⃣ Primary: {primary_pair}")
+        if secondary_pairs:
+            for idx, pair in enumerate(secondary_pairs, start=2):
+                logger.info(f"   {idx}️⃣ Secondary: {pair}")
+        else:
+            logger.info(f"   ℹ️  No secondary pairs configured")
+        logger.info(f"   📊 Total pairs to check: {len(all_trading_pairs)}")
+        
+        # Find first available pair (no OPEN position)
+        selected_trading_pair = None
+        
+        for idx, trading_pair in enumerate(all_trading_pairs, start=1):
+            # Normalize trading pair: Remove '/' for DB query (BTC/USDT -> BTCUSDT)
+            trading_pair_normalized = trading_pair.replace('/', '') if trading_pair else trading_pair
+            
+            logger.info(f"\n🔍 Checking pair {idx}/{len(all_trading_pairs)}: {trading_pair} (DB: {trading_pair_normalized})")
+            
+            # Use SELECT FOR UPDATE to prevent race conditions
+            open_positions = db.query(models.Transaction).filter(
+                models.Transaction.subscription_id == subscription_id,
+                models.Transaction.symbol == trading_pair_normalized,
+                models.Transaction.status == 'OPEN'
+            ).with_for_update().all()
+            
+            if open_positions:
+                logger.info(f"   ⏭️  SKIP: {len(open_positions)} OPEN position(s) found")
+                for pos in open_positions:
+                    logger.info(f"      - Position #{pos.id}: {pos.action} {pos.quantity} @ ${pos.entry_price}, P&L: ${pos.unrealized_pnl:.2f}")
+                # Continue to next pair
+                continue
+            else:
+                # Found available pair!
+                selected_trading_pair = trading_pair
+                logger.info(f"   ✅ AVAILABLE: No OPEN positions")
+                logger.info(f"   🎯 SELECTED for trading: {trading_pair}")
+                break
+        
+        # Check if all pairs have OPEN positions
+        if selected_trading_pair is None:
+            logger.warning("\n" + "=" * 80)
+            logger.warning("⏸️  ALL TRADING PAIRS HAVE OPEN POSITIONS")
+            logger.warning("=" * 80)
+            logger.warning(f"   Checked {len(all_trading_pairs)} pair(s): {', '.join(all_trading_pairs)}")
+            logger.warning(f"   All pairs currently have active positions")
+            logger.warning(f"   💡 Will trade again when any position is CLOSED")
+            logger.warning("=" * 80)
+            db.commit()  # Release lock
+            from bots.bot_sdk.Action import Action
+            return Action(action="HOLD", value=0.0, reason=f"All {len(all_trading_pairs)} trading pairs have OPEN positions"), None, None
+        
+        # Update subscription_config with selected pair
+        subscription_config['trading_pair'] = selected_trading_pair
+        bot.trading_pair = selected_trading_pair.replace('/', '')  # Update bot instance
+        
+        db.commit()  # Release lock before proceeding
+        logger.info("\n" + "=" * 80)
+        logger.info(f"🎯 SELECTED TRADING PAIR: {selected_trading_pair}")
+        logger.info("=" * 80)
+        logger.info(f"   Priority: {all_trading_pairs.index(selected_trading_pair) + 1} of {len(all_trading_pairs)}")
+        logger.info(f"   Proceeding with LLM analysis for {selected_trading_pair}...")
+        logger.info("=" * 80)
         
         # 1. Check account status (like main_execution)
         logger.info("💰 Step 1: Checking account status...")
@@ -2457,17 +2973,47 @@ async def run_advanced_futures_workflow(bot, subscription_id: int, subscription_
             logger.info(f"   Strategy: {rec.get('action', 'N/A')}")
             logger.info(f"   Strategy: {rec.get('strategy', 'N/A')}")
             logger.info(f"   Entry Price: {rec.get('entry_price', 'Market')}")
-            logger.info(f"   Take Profit: {rec.get('take_profit', 'N/A')}")
+            # Handle take_profit array
+            tp = rec.get('take_profit', 'N/A')
+            if isinstance(tp, list) and len(tp) > 0:
+                logger.info(f"   Take Profit Levels:")
+                for tp_level in tp:
+                    level = tp_level.get('level', 'TP')
+                    price = tp_level.get('price', '?')
+                    size_pct = tp_level.get('size_pct', 0)
+                    logger.info(f"     {level}: ${price} ({size_pct}% position)")
+            else:
+                logger.info(f"   Take Profit: {tp}")
             logger.info(f"   Stop Loss: {rec.get('stop_loss', 'N/A')}")
             logger.info(f"   Risk/Reward: {rec.get('risk_reward', 'N/A')}")
-        
-        # 5. Execute advanced position setup (if not HOLD)
+
         if signal.action != "HOLD":
+            # 4.5. Apply Risk Management (NEW)
+            logger.info("🛡️ Step 4.5: Applying Risk Management rules...")
+            risk_approved, risk_reason, adjusted_signal = apply_risk_management(
+                subscription, signal, analysis, account_status, db
+            )
+
+            if not risk_approved:
+                logger.warning("=" * 80)
+                logger.warning(f"🚫 TRADE REJECTED BY RISK MANAGEMENT")
+                logger.warning(f"   Reason: {risk_reason}")
+                logger.warning("=" * 80)
+                from bots.bot_sdk.Action import Action
+                return Action(action="HOLD", value=0.0, reason=f"Risk Management: {risk_reason}"), account_status, None
+
+            logger.info("=" * 80)
+            logger.info(f"✅ TRADE APPROVED BY RISK MANAGEMENT")
+            logger.info(f"   Details: {risk_reason}")
+            logger.info("=" * 80)
+            signal = adjusted_signal  # Use adjusted signal (e.g., leverage may be capped)
+
+            # 5. Execute advanced position setup (if not HOLD)
             logger.info(f"🚀 Step 5: Executing ADVANCED POSITION SETUP for {signal.action}...")
             logger.info("🤖 AUTO-CONFIRMED via Celery (no user confirmation required)")
             
             # Use advanced setup_position with capital management, stop loss, take profit
-            trade_result = await bot.setup_position(signal, analysis)
+            trade_result = await bot.setup_position(signal, analysis, subscription)
             
             if trade_result.get('status') == 'success':
                 logger.info(f"✅ Advanced trade executed successfully!")
@@ -2480,8 +3026,62 @@ async def run_advanced_futures_workflow(bot, subscription_id: int, subscription_
                 # Save transaction to database (like main_execution)
                 bot.save_transaction_to_db(trade_result)
                 logger.info("💾 Transaction saved to database")
+                
+                # Update risk tracking: Reset consecutive losses on successful trade
+                try:
+                    logger.info("\n" + "=" * 80)
+                    logger.info("📊 RISK TRACKING UPDATE: Trade Success")
+                    logger.info("=" * 80)
+                    logger.info(f"  Previous Consecutive Losses: {subscription.consecutive_losses or 0}")
+                    subscription.consecutive_losses = 0
+                    db.commit()
+                    logger.info(f"  New Consecutive Losses: 0 (RESET)")
+                    logger.info("  ✅ Consecutive losses counter reset due to successful trade")
+                    logger.info("=" * 80)
+                except Exception as e:
+                    logger.error(f"❌ Failed to update risk tracking: {e}")
+                    
             else:
                 logger.error(f"❌ Advanced trade execution failed: {trade_result}")
+                
+                # Update risk tracking: Increment consecutive losses
+                try:
+                    logger.info("\n" + "=" * 80)
+                    logger.info("📊 RISK TRACKING UPDATE: Trade Failed")
+                    logger.info("=" * 80)
+                    prev_losses = subscription.consecutive_losses or 0
+                    subscription.consecutive_losses = prev_losses + 1
+                    logger.info(f"  Previous Consecutive Losses: {prev_losses}")
+                    logger.info(f"  New Consecutive Losses: {subscription.consecutive_losses}")
+                    
+                    # Check if cooldown should be triggered
+                    risk_config_dict = subscription.risk_config or subscription.bot.risk_config
+                    if risk_config_dict:
+                        from core import schemas
+                        from datetime import timedelta
+                        risk_config = schemas.RiskConfig(**risk_config_dict)
+                        
+                        if risk_config.cooldown and risk_config.cooldown.enabled:
+                            logger.info(f"\n  🔍 Cooldown Check:")
+                            logger.info(f"     Trigger Threshold: {risk_config.cooldown.trigger_loss_count} losses")
+                            logger.info(f"     Current Losses: {subscription.consecutive_losses}")
+                            
+                            if subscription.consecutive_losses >= risk_config.cooldown.trigger_loss_count:
+                                cooldown_until = datetime.utcnow() + timedelta(minutes=risk_config.cooldown.cooldown_minutes)
+                                subscription.cooldown_until = cooldown_until
+                                logger.warning(f"\n  🚫 COOLDOWN TRIGGERED!")
+                                logger.warning(f"     Reason: {subscription.consecutive_losses} consecutive losses >= {risk_config.cooldown.trigger_loss_count}")
+                                logger.warning(f"     Duration: {risk_config.cooldown.cooldown_minutes} minutes")
+                                logger.warning(f"     Paused Until: {cooldown_until}")
+                            else:
+                                remaining = risk_config.cooldown.trigger_loss_count - subscription.consecutive_losses
+                                logger.info(f"     ✅ No cooldown yet ({remaining} more losses until cooldown)")
+                    
+                    db.commit()
+                    logger.info(f"\n  ✅ Risk tracking updated successfully")
+                    logger.info("=" * 80)
+                except Exception as e:
+                    logger.error(f"❌ Failed to update risk tracking: {e}")
         else:
             logger.info("📊 Signal is HOLD - no position setup needed")
         
@@ -2494,7 +3094,7 @@ async def run_advanced_futures_workflow(bot, subscription_id: int, subscription_
         import traceback
         logger.error(traceback.format_exc())
         from bots.bot_sdk.Action import Action
-        return Action(action="HOLD", value=0.0, reason=f"Advanced workflow error: {e}")
+        return Action(action="HOLD", value=0.0, reason=f"Advanced workflow error: {e}"), None, None
 
 async def run_advanced_futures_rpa_workflow(bot, subscription_id: int, subscription_config: Dict[str, Any], db):
     """
@@ -2502,8 +3102,97 @@ async def run_advanced_futures_rpa_workflow(bot, subscription_id: int, subscript
     """
     try:
         from bots.bot_sdk.Action import Action
+        from core import crud, models
         logger.info(f"🎯 Starting ADVANCED FUTURES RPA WORKFLOW for subscription {subscription_id}")
         trade_result = None
+        
+        # Get subscription for risk management
+        subscription = crud.get_subscription_by_id(db, subscription_id)
+        if not subscription:
+            logger.error(f"Subscription {subscription_id} not found")
+            return Action(action="HOLD", value=0.0, reason="Subscription not found"), None, None
+        
+        # 0. MULTI-PAIR PRIORITY LOGIC: Find first available trading pair without OPEN position
+        logger.info("=" * 80)
+        logger.info("🎯 Step 0: MULTI-PAIR TRADING (RPA) - Finding available trading pair...")
+        logger.info("=" * 80)
+        
+        # Build list of trading pairs in priority order: [primary, secondary1, secondary2, ...]
+        primary_pair = subscription_config.get('trading_pair') or subscription.trading_pair
+        secondary_pairs = subscription.secondary_trading_pairs or []
+        
+        # Ensure secondary_pairs is a list
+        if isinstance(secondary_pairs, str):
+            import json
+            try:
+                secondary_pairs = json.loads(secondary_pairs)
+            except:
+                secondary_pairs = []
+        
+        all_trading_pairs = [primary_pair] + (secondary_pairs if secondary_pairs else [])
+        
+        logger.info(f"📋 Trading Pairs Priority List:")
+        logger.info(f"   1️⃣ Primary: {primary_pair}")
+        if secondary_pairs:
+            for idx, pair in enumerate(secondary_pairs, start=2):
+                logger.info(f"   {idx}️⃣ Secondary: {pair}")
+        else:
+            logger.info(f"   ℹ️  No secondary pairs configured")
+        logger.info(f"   📊 Total pairs to check: {len(all_trading_pairs)}")
+        
+        # Find first available pair (no OPEN position)
+        selected_trading_pair = None
+        
+        for idx, trading_pair in enumerate(all_trading_pairs, start=1):
+            # Normalize trading pair: Remove '/' for DB query (BTC/USDT -> BTCUSDT)
+            trading_pair_normalized = trading_pair.replace('/', '') if trading_pair else trading_pair
+            
+            logger.info(f"\n🔍 Checking pair {idx}/{len(all_trading_pairs)}: {trading_pair} (DB: {trading_pair_normalized})")
+            
+            # Use SELECT FOR UPDATE to prevent race conditions
+            open_positions = db.query(models.Transaction).filter(
+                models.Transaction.subscription_id == subscription_id,
+                models.Transaction.symbol == trading_pair_normalized,
+                models.Transaction.status == 'OPEN'
+            ).with_for_update().all()
+            
+            if open_positions:
+                logger.info(f"   ⏭️  SKIP: {len(open_positions)} OPEN position(s) found")
+                for pos in open_positions:
+                    logger.info(f"      - Position #{pos.id}: {pos.action} {pos.quantity} @ ${pos.entry_price}, P&L: ${pos.unrealized_pnl:.2f}")
+                # Continue to next pair
+                continue
+            else:
+                # Found available pair!
+                selected_trading_pair = trading_pair
+                logger.info(f"   ✅ AVAILABLE: No OPEN positions")
+                logger.info(f"   🎯 SELECTED for RPA trading: {trading_pair}")
+                break
+        
+        # Check if all pairs have OPEN positions
+        if selected_trading_pair is None:
+            logger.warning("\n" + "=" * 80)
+            logger.warning("⏸️  ALL TRADING PAIRS HAVE OPEN POSITIONS (RPA)")
+            logger.warning("=" * 80)
+            logger.warning(f"   Checked {len(all_trading_pairs)} pair(s): {', '.join(all_trading_pairs)}")
+            logger.warning(f"   All pairs currently have active positions")
+            logger.warning(f"   💡 Will trade again when any position is CLOSED")
+            logger.warning("=" * 80)
+            db.commit()  # Release lock
+            return Action(action="HOLD", value=0.0, reason=f"All {len(all_trading_pairs)} trading pairs have OPEN positions"), None, None
+        
+        # Update subscription_config with selected pair
+        subscription_config['trading_pair'] = selected_trading_pair
+        bot.trading_pair = selected_trading_pair.replace('/', '_')  # RPA uses underscore format
+        
+        db.commit()  # Release lock before proceeding
+        logger.info("\n" + "=" * 80)
+        logger.info(f"🎯 SELECTED TRADING PAIR (RPA): {selected_trading_pair}")
+        logger.info("=" * 80)
+        logger.info(f"   Priority: {all_trading_pairs.index(selected_trading_pair) + 1} of {len(all_trading_pairs)}")
+        logger.info(f"   Proceeding with RPA + LLM analysis for {selected_trading_pair}...")
+        logger.info("=" * 80)
+        
         # 1. Check account status
         logger.info("💰 Step 1: Checking account status...")
         account_status = bot.check_account_status()
@@ -2556,9 +3245,32 @@ async def run_advanced_futures_rpa_workflow(bot, subscription_id: int, subscript
             logger.info(f"   Strategy: {rec.get('action', 'N/A')}")
             logger.info(f"   Strategy: {rec.get('strategy', 'N/A')}")
             logger.info(f"   Entry Price: {rec.get('entry_price', 'Market')}")
-            logger.info(f"   Take Profit: {rec.get('take_profit', 'N/A')}")
+            # Handle take_profit array
+            tp = rec.get('take_profit', 'N/A')
+            if isinstance(tp, list) and len(tp) > 0:
+                logger.info(f"   Take Profit Levels:")
+                for tp_level in tp:
+                    level = tp_level.get('level', 'TP')
+                    price = tp_level.get('price', '?')
+                    size_pct = tp_level.get('size_pct', 0)
+                    logger.info(f"     {level}: ${price} ({size_pct}% position)")
+            else:
+                logger.info(f"   Take Profit: {tp}")
             logger.info(f"   Stop Loss: {rec.get('stop_loss', 'N/A')}")
             logger.info(f"   Risk/Reward: {rec.get('risk_reward', 'N/A')}")
+        
+        # 4.5. Apply Risk Management (NEW)
+        logger.info("🛡️ Step 4.5: Applying Risk Management rules...")
+        risk_approved, risk_reason, adjusted_action = apply_risk_management(
+            subscription, action, {}, account_status, db
+        )
+        
+        if not risk_approved:
+            logger.warning(f"🚫 Trade rejected by Risk Management: {risk_reason}")
+            return Action(action="HOLD", value=0.0, reason=f"Risk Management: {risk_reason}"), account_status, None
+        
+        logger.info(f"✅ Risk Management approved: {risk_reason}")
+        action = adjusted_action  # Use adjusted action
         
         # 5. Execute advanced position setup (if not HOLD)
         if action.action != "HOLD":
@@ -2566,7 +3278,7 @@ async def run_advanced_futures_rpa_workflow(bot, subscription_id: int, subscript
             logger.info("🤖 AUTO-CONFIRMED via Celery (no user confirmation required)")
             
             # Use advanced setup_position with capital management, stop loss, take profit
-            trade_result = await bot.setup_position(action)
+            trade_result = await bot.setup_position(action, None, subscription)
             
             if trade_result.get('status') == 'success':
                 logger.info(f"✅ Advanced trade executed successfully!")
@@ -2579,6 +3291,20 @@ async def run_advanced_futures_rpa_workflow(bot, subscription_id: int, subscript
                 # Save transaction to database (like main_execution)
                 bot.save_transaction_to_db(trade_result)
                 logger.info("💾 Transaction saved to database")
+                
+                # Update risk tracking: Reset consecutive losses on successful trade
+                try:
+                    logger.info("\n" + "=" * 80)
+                    logger.info("📊 RISK TRACKING UPDATE: Trade Success")
+                    logger.info("=" * 80)
+                    logger.info(f"  Previous Consecutive Losses: {subscription.consecutive_losses or 0}")
+                    subscription.consecutive_losses = 0
+                    db.commit()
+                    logger.info(f"  New Consecutive Losses: 0 (RESET)")
+                    logger.info("  ✅ Consecutive losses counter reset due to successful trade")
+                    logger.info("=" * 80)
+                except Exception as e:
+                    logger.error(f"❌ Failed to update risk tracking: {e}")
                 
                 # Log execution to database
                 try:
@@ -2606,6 +3332,46 @@ async def run_advanced_futures_rpa_workflow(bot, subscription_id: int, subscript
                     logger.error(f"❌ Failed to log execution: {e}")
             else:
                 logger.error(f"❌ Advanced trade execution failed: {trade_result}")
+                
+                # Update risk tracking: Increment consecutive losses
+                try:
+                    from datetime import datetime, timedelta
+                    logger.info("\n" + "=" * 80)
+                    logger.info("📊 RISK TRACKING UPDATE: Trade Failed (RPA)")
+                    logger.info("=" * 80)
+                    prev_losses = subscription.consecutive_losses or 0
+                    subscription.consecutive_losses = prev_losses + 1
+                    logger.info(f"  Previous Consecutive Losses: {prev_losses}")
+                    logger.info(f"  New Consecutive Losses: {subscription.consecutive_losses}")
+                    
+                    # Check if cooldown should be triggered
+                    risk_config_dict = subscription.risk_config or subscription.bot.risk_config
+                    if risk_config_dict:
+                        from core import schemas
+                        risk_config = schemas.RiskConfig(**risk_config_dict)
+                        
+                        if risk_config.cooldown and risk_config.cooldown.enabled:
+                            logger.info(f"\n  🔍 Cooldown Check:")
+                            logger.info(f"     Trigger Threshold: {risk_config.cooldown.trigger_loss_count} losses")
+                            logger.info(f"     Current Losses: {subscription.consecutive_losses}")
+                            
+                            if subscription.consecutive_losses >= risk_config.cooldown.trigger_loss_count:
+                                cooldown_until = datetime.utcnow() + timedelta(minutes=risk_config.cooldown.cooldown_minutes)
+                                subscription.cooldown_until = cooldown_until
+                                logger.warning(f"\n  🚫 COOLDOWN TRIGGERED!")
+                                logger.warning(f"     Reason: {subscription.consecutive_losses} consecutive losses >= {risk_config.cooldown.trigger_loss_count}")
+                                logger.warning(f"     Duration: {risk_config.cooldown.cooldown_minutes} minutes")
+                                logger.warning(f"     Paused Until: {cooldown_until}")
+                            else:
+                                remaining = risk_config.cooldown.trigger_loss_count - subscription.consecutive_losses
+                                logger.info(f"     ✅ No cooldown yet ({remaining} more losses until cooldown)")
+                    
+                    db.commit()
+                    logger.info(f"\n  ✅ Risk tracking updated successfully")
+                    logger.info("=" * 80)
+                except Exception as e:
+                    logger.error(f"❌ Failed to update risk tracking: {e}")
+                
                 # Log failed execution
                 try:
                     from utils.execution_logger import ExecutionLogger
@@ -2658,7 +3424,7 @@ async def run_advanced_futures_rpa_workflow(bot, subscription_id: int, subscript
         except Exception as log_error:
             logger.error(f"❌ Failed to log error: {log_error}")
         
-        return Action(action="HOLD", value=0.0, reason=f"Advanced RPA workflow error: {e}"), None
+        return Action(action="HOLD", value=0.0, reason=f"Advanced RPA workflow error: {e}"), None, None
 
 @app.task(bind=True, max_retries=3)
 def create_subscription_from_paypal_task(self, payment_id: str):
@@ -2879,10 +3645,11 @@ def update_bot_performance_metrics(self, bot_id: int):
             bot = db.query(models.Bot).filter(models.Bot.id == bot_id).first()
             if bot:
                 # Store in metadata JSON
-                if not bot.metadata:
-                    bot.metadata = {}
+                # SQLAlchemy JSON field: Need to copy, modify, reassign
+                from sqlalchemy.orm.attributes import flag_modified
                 
-                bot.metadata['performance'] = {
+                metadata_dict = dict(bot.metadata) if bot.metadata else {}
+                metadata_dict['performance'] = {
                     'total_trades': total_trades,
                     'winning_trades': winning_trades,
                     'losing_trades': losing_trades,
@@ -2894,6 +3661,8 @@ def update_bot_performance_metrics(self, bot_id: int):
                     'profit_factor': round(profit_factor, 2),
                     'last_updated': datetime.now().isoformat()
                 }
+                bot.metadata = metadata_dict
+                flag_modified(bot, 'metadata')
                 
                 db.commit()
             
@@ -3050,3 +3819,59 @@ def update_risk_management_performance(self, bot_id: int):
         logger.error(f"❌ Failed to analyze risk management for {bot_id}: {e}")
         logger.error(traceback.format_exc())
         raise self.retry(exc=e, countdown=60)
+
+
+@app.task(bind=True)
+def sync_open_positions_realtime(self):
+    """
+    Real-time position sync task
+    - Fetches position status from exchange APIs
+    - Updates transactions with real-time data
+    - Auto-detects closed positions
+    - Updates P&L, prices, exit info
+    
+    Features:
+    - Multi-exchange support (Bybit, Binance, OKX, Bitget, Huobi, Kraken)
+    - Real-time unrealized P&L calculation
+    - Auto-close detection
+    - Configurable interval (default: 10s)
+    
+    Schedule: Run every 10 seconds (configurable in beat_schedule)
+    """
+    try:
+        from core.database import SessionLocal
+        from services.position_sync_service import PositionSyncService
+        
+        logger.info("🔄 Starting real-time position sync...")
+        
+        # Get database session
+        db = SessionLocal()
+        
+        try:
+            # Initialize sync service
+            sync_service = PositionSyncService(db)
+            
+            # Sync all open positions
+            results = sync_service.sync_all_open_positions()
+            
+            # Log summary
+            if results["total"] > 0:
+                logger.info(f"✅ Position sync complete:")
+                logger.info(f"   📊 Total: {results['total']}")
+                logger.info(f"   ✅ Updated: {results['updated']}")
+                logger.info(f"   🔒 Closed: {results['closed']}")
+                if results['errors'] > 0:
+                    logger.warning(f"   ❌ Errors: {results['errors']}")
+            else:
+                logger.debug("No open positions to sync")
+            
+            return results
+            
+        finally:
+            db.close()
+            
+    except Exception as e:
+        logger.error(f"❌ Position sync task failed: {e}")
+        logger.error(traceback.format_exc())
+        # Retry with backoff (30 seconds)
+        raise self.retry(exc=e, countdown=30)

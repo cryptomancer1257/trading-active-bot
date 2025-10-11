@@ -281,7 +281,7 @@ class BotBase(BaseModel):
     code_path_rpa: Optional[str] = None
     version_rpa: Optional[str] = None
     
-    # Template-related fields
+    # Template-related fields (legacy - kept for backward compatibility)
     template: Optional[str] = None
     templateFile: Optional[str] = None
     leverage: Optional[int] = None
@@ -292,6 +292,10 @@ class BotBase(BaseModel):
     llm_model: Optional[str] = None  # Specific model to use (e.g., "claude-3-5-sonnet-20241022")
     enable_image_analysis: Optional[bool] = False
     enable_sentiment_analysis: Optional[bool] = False
+    
+    # Risk Management (new system)
+    risk_config: Optional[Dict[str, Any]] = None
+    risk_management_mode: Optional[str] = None
 
 class PayLoadAnalysis(BaseModel):
     bot_name: str = ""
@@ -484,16 +488,81 @@ class ExecutionConfig(BaseModel):
     sell_order_type: str = Field(..., pattern="^(PERCENTAGE|ALL)$")
     sell_order_value: float = Field(..., gt=0)
 
+class RiskManagementMode(str, Enum):
+    """Risk management mode"""
+    DEFAULT = "DEFAULT"  # Human-configured rules
+    AI_PROMPT = "AI_PROMPT"  # LLM-based dynamic risk management
+
+class TrailingStopConfig(BaseModel):
+    """Trailing stop loss configuration"""
+    enabled: bool = False
+    activation_percent: Optional[float] = Field(None, gt=0, description="Profit % to activate trailing")
+    trailing_percent: Optional[float] = Field(None, gt=0, description="Distance from peak to trail")
+
+class TradingWindowConfig(BaseModel):
+    """Trading time window configuration"""
+    enabled: bool = False
+    start_hour: Optional[int] = Field(None, ge=0, le=23, description="Trading start hour (UTC)")
+    end_hour: Optional[int] = Field(None, ge=0, le=23, description="Trading end hour (UTC)")
+    days_of_week: Optional[List[int]] = Field(None, description="Days allowed (0=Monday, 6=Sunday)")
+
+class CooldownConfig(BaseModel):
+    """Cooldown after loss configuration"""
+    enabled: bool = False
+    cooldown_minutes: Optional[int] = Field(None, gt=0, description="Minutes to wait after loss")
+    trigger_loss_count: Optional[int] = Field(None, gt=0, description="Number of consecutive losses to trigger")
+
 class RiskConfig(BaseModel):
-    stop_loss_percent: Optional[float] = Field(None, gt=0, le=100)
-    take_profit_percent: Optional[float] = Field(None, gt=0)
-    max_position_size: Optional[float] = Field(None, gt=0)
+    """Enhanced risk configuration supporting DEFAULT and AI modes"""
+    
+    # Mode selection
+    mode: RiskManagementMode = Field(default=RiskManagementMode.DEFAULT, description="Risk management mode")
+    
+    # === DEFAULT MODE: Manual Configuration ===
+    
+    # Basic Risk Parameters (Legacy support)
+    stop_loss_percent: Optional[float] = Field(None, gt=0, le=100, description="Stop loss %")
+    take_profit_percent: Optional[float] = Field(None, gt=0, description="Take profit %")
+    max_position_size: Optional[float] = Field(None, gt=0, description="Max position size %")
+    
+    # Advanced Risk Parameters
+    min_risk_reward_ratio: Optional[float] = Field(None, gt=0, description="Minimum RR ratio (e.g., 2 means 2:1)")
+    risk_per_trade_percent: Optional[float] = Field(None, gt=0, le=100, description="Risk % per trade")
+    max_leverage: Optional[int] = Field(None, gt=1, le=125, description="Maximum leverage allowed")
+    max_portfolio_exposure: Optional[float] = Field(None, gt=0, le=100, description="Max total exposure %")
+    daily_loss_limit_percent: Optional[float] = Field(None, gt=0, le=100, description="Daily loss limit %")
+    
+    # Trailing Stop Configuration
+    trailing_stop: Optional[TrailingStopConfig] = Field(default=None, description="Trailing stop settings")
+    
+    # Trading Window
+    trading_window: Optional[TradingWindowConfig] = Field(default=None, description="Trading time restrictions")
+    
+    # Cooldown Rules
+    cooldown: Optional[CooldownConfig] = Field(default=None, description="Cooldown after losses")
+    
+    # === AI MODE: Prompt-based Dynamic Risk Management ===
+    
+    ai_prompt_id: Optional[int] = Field(None, description="ID of AI risk management prompt template")
+    ai_prompt_custom: Optional[str] = Field(None, description="Custom AI prompt for risk analysis")
+    ai_update_frequency_minutes: Optional[int] = Field(default=15, gt=0, description="How often to consult AI")
+    
+    # Hybrid: AI can override defaults within these bounds
+    ai_allow_override: bool = Field(default=False, description="Allow AI to override default rules")
+    ai_min_stop_loss: Optional[float] = Field(None, gt=0, description="AI cannot set SL below this")
+    ai_max_stop_loss: Optional[float] = Field(None, gt=0, description="AI cannot set SL above this")
+    ai_min_take_profit: Optional[float] = Field(None, gt=0, description="AI cannot set TP below this")
+    ai_max_take_profit: Optional[float] = Field(None, gt=0, description="AI cannot set TP above this")
+    
+    class Config:
+        use_enum_values = True
 
 class SubscriptionBase(BaseModel):
     instance_name: str
     bot_id: int
     exchange_type: ExchangeType = ExchangeType.BINANCE
-    trading_pair: str
+    trading_pair: str  # Primary trading pair
+    secondary_trading_pairs: Optional[List[str]] = []  # Secondary pairs in priority order
     timeframe: str = Field(..., pattern="^(1m|5m|15m|1h|2h|4h|6h|8h|12h|1d|1w)$")
     strategy_config: Dict[str, Any] = {}
     execution_config: ExecutionConfig
@@ -521,6 +590,7 @@ class MarketplaceSubscriptionCreate(BaseModel):
     bot_id: int
     exchange_type: ExchangeType = ExchangeType.BINANCE
     trading_pair: str = "BTCUSDT"
+    secondary_trading_pairs: Optional[List[str]] = []  # Multi-pair trading
     timeframe: str = "1h"
     is_testnet: bool = True  # Default to testnet for safety
     
@@ -555,6 +625,7 @@ class MarketplaceSubscriptionCreateV2(BaseModel):
     # Trading configuration
     is_testnet: bool = True
     trading_pair: Optional[str] = Field(None, description="Trading pair like BTC/USDT")
+    secondary_trading_pairs: Optional[List[str]] = []  # Multi-pair trading
     trading_network: Optional[str] = Field(None, description="Trading network like MAINNET, TESTNET")
     payment_method:  Optional[str] = None
     paypal_payment_id: Optional[str] = None

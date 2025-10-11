@@ -398,10 +398,15 @@ class UniversalFuturesBot(CustomBot):
             traceback.print_exc()
             return None
     
-    async def setup_position(self, action: Action, analysis: Dict[str, Any]) -> Dict[str, Any]:
+    async def setup_position(self, action: Action, analysis: Dict[str, Any], subscription = None) -> Dict[str, Any]:
         """
         Setup futures position with intelligent capital management and stop loss/take profit
         Works across all supported exchanges (Binance, Bybit, OKX, Bitget, Huobi, Kraken)
+        
+        Args:
+            action: Trading action (BUY/SELL/HOLD) from signal generation
+            analysis: Market analysis data
+            subscription: Subscription object (needed for risk_config)
         """
         try:
             if action.action == "HOLD":
@@ -453,6 +458,28 @@ class UniversalFuturesBot(CustomBot):
             # Use recommended position size
             optimal_position_size_pct = position_recommendation.recommended_size_pct
             
+            # Apply Risk Config limits to Capital Management recommendation
+            if subscription and hasattr(subscription, 'bot') and hasattr(subscription.bot, 'risk_config'):
+                risk_config_dict = subscription.bot.risk_config
+                if risk_config_dict:
+                    try:
+                        from core import schemas
+                        risk_config = schemas.RiskConfig(**risk_config_dict)
+                        
+                        # Enforce max_position_size limit
+                        if risk_config.max_position_size:
+                            max_size_decimal = risk_config.max_position_size / 100  # Convert % to decimal
+                            if optimal_position_size_pct > max_size_decimal:
+                                logger.warning(f"⚠️ Position size capped by Risk Config:")
+                                logger.warning(f"   Capital Mgmt Recommended: {optimal_position_size_pct*100:.2f}%")
+                                logger.warning(f"   Risk Config Max: {risk_config.max_position_size}%")
+                                logger.warning(f"   Using: {risk_config.max_position_size}%")
+                                optimal_position_size_pct = max_size_decimal
+                        
+                        logger.info(f"✅ Final Position Size: {optimal_position_size_pct*100:.2f}% (after risk config limits)")
+                    except Exception as e:
+                        logger.warning(f"Failed to apply risk config limits: {e}")
+            
             if optimal_position_size_pct <= 0:
                 return {
                     'status': 'info',
@@ -461,37 +488,19 @@ class UniversalFuturesBot(CustomBot):
                     'exchange': self.exchange_name
                 }
             
-            # Get entry price and targets from LLM recommendation
+            # Get entry price from LLM recommendation (if provided)
             entry_price = None
-            take_profit_target = None
-            stop_loss_target = None
             
             if action.recommendation:
                 rec = action.recommendation
                 try:
-                    # Parse entry price
+                    # Parse entry price only (TP/SL will be calculated from risk config)
                     entry_str = str(rec.get('entry_price', '')).replace(',', '').strip()
                     if entry_str and entry_str not in ['Market', 'N/A', '']:
                         entry_price = float(entry_str)
-                    
-                    # Parse take profit
-                    tp_str = str(rec.get('take_profit', '')).replace(',', '').strip()
-                    if tp_str and tp_str != 'N/A':
-                        import re
-                        numbers = re.findall(r'\d+\.\d+', tp_str)
-                        if numbers:
-                            take_profit_target = float(numbers[0])
-                    
-                    # Parse stop loss
-                    sl_str = str(rec.get('stop_loss', '')).replace(',', '').strip()
-                    if sl_str and sl_str != 'N/A':
-                        import re
-                        numbers = re.findall(r'\d+\.\d+', sl_str)
-                        if numbers:
-                            stop_loss_target = float(numbers[0])
                             
                 except (ValueError, TypeError) as e:
-                    logger.warning(f"Failed to parse recommendation prices: {e}")
+                    logger.warning(f"Failed to parse recommendation entry price: {e}")
             
             # Fallback to current market price
             if not entry_price:
@@ -504,10 +513,32 @@ class UniversalFuturesBot(CustomBot):
                     }
                 entry_price = current_price
             
+            # Determine leverage (use risk_config max_leverage if available)
+            leverage_to_use = self.leverage  # Default
+            
+            if subscription and hasattr(subscription, 'bot') and hasattr(subscription.bot, 'risk_config'):
+                risk_config_dict = subscription.bot.risk_config
+                if risk_config_dict:
+                    try:
+                        from core import schemas
+                        risk_config = schemas.RiskConfig(**risk_config_dict)
+                        if risk_config.max_leverage:
+                            # Use the LOWER of bot default and risk config max
+                            leverage_to_use = min(self.leverage, risk_config.max_leverage)
+                            if leverage_to_use < self.leverage:
+                                logger.warning(f"⚠️ Leverage capped by Risk Config:")
+                                logger.warning(f"   Bot Default: {self.leverage}x")
+                                logger.warning(f"   Risk Config Max: {risk_config.max_leverage}x")
+                                logger.warning(f"   Using: {leverage_to_use}x")
+                            else:
+                                logger.info(f"✅ Using Risk Config Max Leverage: {leverage_to_use}x")
+                    except Exception as e:
+                        logger.warning(f"Failed to read risk config leverage: {e}")
+            
             # Setup leverage - ignore if already set (common with Bybit)
             try:
-                self.futures_client.set_leverage(symbol, self.leverage)
-                logger.info(f"✅ Set leverage to {self.leverage}x on {self.exchange_name}")
+                self.futures_client.set_leverage(symbol, leverage_to_use)
+                logger.info(f"✅ Set leverage to {leverage_to_use}x on {self.exchange_name}")
             except Exception as e:
                 error_msg = str(e).lower()
                 # Bybit returns "leverage not modified" if already set - this is OK
@@ -529,19 +560,57 @@ class UniversalFuturesBot(CustomBot):
                 logger.warning(f"Failed to get realtime price, using analysis price: {e}")
                 actual_entry_price = entry_price
             
-            # Calculate position size with realtime price
-            position_value = available_balance * optimal_position_size_pct * self.leverage
+            # Get exchange minimums for this symbol
+            precision_info = self.futures_client.get_symbol_precision(symbol)
+            min_qty = precision_info.get('minQty', 0.001)
+            step_size = float(precision_info.get('stepSize', '0.001'))
+            min_notional = precision_info.get('minNotional', 5)
+            
+            # Calculate position size with realtime price (use leverage_to_use from risk config)
+            position_value = available_balance * optimal_position_size_pct * leverage_to_use
             quantity = position_value / actual_entry_price
             
-            # Round to proper precision
-            quantity = round(quantity, 3)
-            quantity_str = f"{quantity:.3f}"
+            # Round to proper precision based on step size
+            quantity = round(quantity / step_size) * step_size
+            
+            # Check if quantity meets exchange minimum
+            notional_value = quantity * actual_entry_price
+            if quantity < min_qty or notional_value < min_notional:
+                logger.warning(f"⚠️ Calculated quantity {quantity} below minimum requirements:")
+                logger.warning(f"   Min Quantity: {min_qty}, Min Notional: ${min_notional}")
+                
+                # Use exchange minimum instead
+                quantity = max(min_qty, min_notional / actual_entry_price)
+                quantity = round(quantity / step_size) * step_size
+                notional_value = quantity * actual_entry_price
+                
+                # Check if account has enough balance for minimum order
+                required_balance = notional_value / leverage_to_use
+                if required_balance > available_balance:
+                    # Extract base asset from trading pair (e.g., BTCUSDT -> BTC)
+                    base_asset = self.trading_pair.replace('USDT', '').replace('/', '')
+                    return {
+                        'status': 'error',
+                        'message': f'Insufficient balance: ${available_balance:.2f} USDT. ' +
+                                 f'Minimum order requires ${required_balance:.2f} USDT ' +
+                                 f'({min_qty} {base_asset} @ ${actual_entry_price:.2f} with {leverage_to_use}x leverage)',
+                        'exchange': self.exchange_name,
+                        'min_balance_required': required_balance,
+                        'current_balance': available_balance
+                    }
+                
+                logger.info(f"✅ Adjusted to exchange minimum: {quantity} (notional: ${notional_value:.2f})")
+            
+            # Format quantity string with proper precision
+            decimals = precision_info.get('quantityPrecision', 3)
+            quantity_str = f"{quantity:.{decimals}f}"
             
             logger.info(f"🚀 Opening {action.action} position on {self.exchange_name}:")
             logger.info(f"   Symbol: {symbol}")
             logger.info(f"   Quantity: {quantity_str}")
             logger.info(f"   Entry (Realtime): ${actual_entry_price:.2f}")
-            logger.info(f"   Leverage: {self.leverage}x")
+            logger.info(f"   Notional Value: ${notional_value:.2f}")
+            logger.info(f"   Leverage: {leverage_to_use}x")
             
             # Place market order (NO PRICE for market orders!)
             try:
@@ -554,8 +623,8 @@ class UniversalFuturesBot(CustomBot):
                     'exchange': self.exchange_name
                 }
             
-            # Check order status
-            if not hasattr(order, 'status') or order.status not in ['FILLED', 'NEW']:
+            # Check order status (PENDING is valid for Bybit market orders)
+            if not hasattr(order, 'status') or order.status not in ['FILLED', 'NEW', 'PENDING']:
                 return {
                     'status': 'error',
                     'message': f'Order failed with status: {getattr(order, "status", "UNKNOWN")}',
@@ -564,17 +633,50 @@ class UniversalFuturesBot(CustomBot):
             
             logger.info(f"✅ Market order placed successfully: {order.status}")
             
-            # Calculate stop loss and take profit prices using actual entry price
+            # Calculate stop loss and take profit prices from Risk Config
+            # Get risk config from bot (developer-configured risk parameters)
+            from core import schemas
+            
+            # Default percentages (fallback if risk config not set)
+            stop_loss_pct = self.stop_loss_pct  # Default from bot config
+            take_profit_pct = self.take_profit_pct  # Default from bot config
+            
+            # Try to get risk config from subscription
+            risk_config_dict = None
+            if subscription and hasattr(subscription, 'bot') and hasattr(subscription.bot, 'risk_config'):
+                risk_config_dict = subscription.bot.risk_config
+            
+            # Override with risk config if available
+            if risk_config_dict:
+                try:
+                    risk_config = schemas.RiskConfig(**risk_config_dict)
+                    if risk_config.stop_loss_percent:
+                        stop_loss_pct = risk_config.stop_loss_percent / 100  # Convert to decimal
+                        logger.info(f"📊 Using Risk Config SL: {risk_config.stop_loss_percent}%")
+                    if risk_config.take_profit_percent:
+                        take_profit_pct = risk_config.take_profit_percent / 100  # Convert to decimal
+                        logger.info(f"📊 Using Risk Config TP: {risk_config.take_profit_percent}%")
+                except Exception as e:
+                    logger.warning(f"Failed to parse risk config, using defaults: {e}")
+            else:
+                logger.info(f"📊 Using default TP/SL from bot config (no risk_config found)")
+            
+            # Calculate TP/SL based on entry price and risk config percentages
             if action.action == "BUY":
-                stop_loss_price = stop_loss_target or (actual_entry_price * (1 - self.stop_loss_pct))
-                take_profit_price = take_profit_target or (actual_entry_price * (1 + self.take_profit_pct))
+                stop_loss_price = actual_entry_price * (1 - stop_loss_pct)
+                take_profit_price = actual_entry_price * (1 + take_profit_pct)
                 sl_side = "SELL"
                 tp_side = "SELL"
             else:  # SELL
-                stop_loss_price = stop_loss_target or (actual_entry_price * (1 + self.stop_loss_pct))
-                take_profit_price = take_profit_target or (actual_entry_price * (1 - self.take_profit_pct))
+                stop_loss_price = actual_entry_price * (1 + stop_loss_pct)
+                take_profit_price = actual_entry_price * (1 - take_profit_pct)
                 sl_side = "BUY"
                 tp_side = "BUY"
+            
+            logger.info(f"💰 Calculated from Risk Config:")
+            logger.info(f"   Entry: ${actual_entry_price:.2f}")
+            logger.info(f"   Stop Loss: ${stop_loss_price:.2f} ({stop_loss_pct*100:.1f}%)")
+            logger.info(f"   Take Profit: ${take_profit_price:.2f} ({take_profit_pct*100:.1f}%)")
             
             # Place managed orders (stop loss + take profit)
             sl_order = None
@@ -648,12 +750,14 @@ class UniversalFuturesBot(CustomBot):
                 'stop_loss': {
                     'price': stop_loss_price,
                     'order_id': sl_order.get('order_id') if sl_order else None,
-                    'source': 'recommendation' if stop_loss_target else 'percentage'
+                    'source': 'risk_config',
+                    'percent': stop_loss_pct * 100
                 },
                 'take_profit': {
                     'price': take_profit_price,
                     'order_ids': [tp.get('order_id') for tp in tp_orders] if tp_orders else [None],
-                    'source': 'recommendation' if take_profit_target else 'percentage'
+                    'source': 'risk_config',
+                    'percent': take_profit_pct * 100
                 },
                 'confidence': action.value,
                 'reason': action.reason,
@@ -1438,228 +1542,7 @@ class UniversalFuturesBot(CustomBot):
             return Action(action="HOLD", value=0.0, reason=f"Signal error: {e}")
     
     # ==================== POSITION SETUP ====================
-    
-    async def setup_position(self, action: Action, analysis: Dict[str, Any]) -> Dict[str, Any]:
-        """Setup futures position with capital management"""
-        try:
-            if action.action == "HOLD":
-                return {
-                    'status': 'success',
-                    'action': 'HOLD',
-                    'reason': action.reason,
-                    'exchange': self.exchange_name
-                }
-            
-            self.trading_pair = self.trading_pair.replace('/', '')
-            
-            # Get account info
-            account_info = self.futures_client.get_account_info()
-            available_balance = float(account_info.get('availableBalance', 0))
-            
-            if available_balance <= 0:
-                return {'status': 'error', 'message': 'No available balance', 'exchange': self.exchange_name}
-            
-            # Calculate risk metrics
-            risk_metrics = self.capital_manager.calculate_risk_metrics(account_info)
-            
-            market_data = {
-                'current_price': analysis.get('current_price', 0),
-                'atr': analysis.get('primary_analysis', {}).get('atr', 0),
-                'volatility': risk_metrics.volatility
-            }
-            
-            # Get optimal position size
-            logger.info("🧠 Calculating optimal position size...")
-            position_recommendation = self.capital_manager.calculate_position_size(
-                signal_confidence=action.value,
-                risk_metrics=risk_metrics,
-                market_data=market_data,
-                llm_service=self.llm_service
-            )
-            
-            logger.info(f"💰 Capital Management:")
-            logger.info(f"   Recommended Size: {position_recommendation.recommended_size_pct*100:.2f}%")
-            logger.info(f"   Risk Level: {position_recommendation.risk_level}")
-            logger.info(f"   Method: {position_recommendation.sizing_method}")
-            
-            optimal_position_size_pct = position_recommendation.recommended_size_pct
-            
-            if optimal_position_size_pct <= 0:
-                return {
-                    'status': 'info',
-                    'action': 'HOLD',
-                    'reason': f'Capital management recommends no position',
-                    'exchange': self.exchange_name
-                }
-            
-            # Get entry/TP/SL prices
-            entry_price = None
-            take_profit_target = None
-            stop_loss_target = None
-            
-            if action.recommendation:
-                rec = action.recommendation
-                try:
-                    entry_str = rec.get('entry_price', '').replace(',', '').strip()
-                    if entry_str and entry_str != 'Market' and entry_str != 'N/A':
-                        entry_price = float(entry_str)
-                    
-                    tp_str = rec.get('take_profit', '').replace(',', '').strip()
-                    if tp_str and tp_str != 'N/A':
-                        import re
-                        numbers = re.findall(r'\d+\.\d+', tp_str)
-                        if numbers:
-                            take_profit_target = float(numbers[0])
-                    
-                    sl_str = rec.get('stop_loss', '').replace(',', '').strip()
-                    if sl_str and sl_str != 'N/A':
-                        import re
-                        numbers = re.findall(r'\d+\.\d+', sl_str)
-                        if numbers:
-                            stop_loss_target = float(numbers[0])
-                except (ValueError, TypeError) as e:
-                    logger.warning(f"Failed to parse prices: {e}")
-            
-            if not entry_price:
-                current_price = analysis.get('current_price', 0)
-                if current_price <= 0:
-                    return {'status': 'error', 'message': 'Invalid current price', 'exchange': self.exchange_name}
-                entry_price = current_price
-            
-            # Set leverage
-            symbol = self.trading_pair
-            if not self.futures_client.set_leverage(symbol, self.leverage):
-                logger.warning(f"Failed to set leverage on {self.exchange_name}")
-            
-            # Calculate position size
-            position_value = available_balance * optimal_position_size_pct * self.leverage
-            quantity = position_value / entry_price
-            
-            quantity = round(quantity, 3)
-            quantity_str = f"{quantity:.3f}"
-            
-            logger.info(f"🚀 Opening {action.action} position on {self.exchange_name}:")
-            logger.info(f"   Symbol: {symbol}")
-            logger.info(f"   Quantity: {quantity_str}")
-            logger.info(f"   Entry: ${entry_price:.2f}")
-            logger.info(f"   Leverage: {self.leverage}x")
-            
-            # Place market order
-            order = self.futures_client.create_market_order(symbol, action.action, quantity_str)
-            
-            if order.status not in ['FILLED', 'NEW', 'PENDING']:
-                return {
-                    'status': 'error',
-                    'message': f'Order failed: {order.status}',
-                    'exchange': self.exchange_name
-                }
-            
-            logger.info(f"✅ Market order placed on {self.exchange_name}: {order.status}")
-            
-            # Calculate SL/TP prices
-            if action.action == "BUY":
-                stop_loss_price = stop_loss_target if stop_loss_target else entry_price * (1 - self.stop_loss_pct)
-                take_profit_price = take_profit_target if take_profit_target else entry_price * (1 + self.take_profit_pct)
-                sl_side = "SELL"
-                tp_side = "SELL"
-            else:  # SELL
-                stop_loss_price = stop_loss_target if stop_loss_target else entry_price * (1 + self.stop_loss_pct)
-                take_profit_price = take_profit_target if take_profit_target else entry_price * (1 - self.take_profit_pct)
-                sl_side = "BUY"
-                tp_side = "BUY"
-            
-            # Place managed orders (SL + TP)
-            try:
-                current_ticker = self.futures_client.get_ticker(symbol)
-                current_market_price = float(current_ticker['price'])
-                
-                # Validate and adjust prices
-                min_distance = current_market_price * 0.001
-                adjusted_stop_price = stop_loss_price
-                adjusted_tp_price = take_profit_price
-                
-                if action.action == "BUY":
-                    if stop_loss_price >= current_market_price:
-                        adjusted_stop_price = current_market_price * (1 - max(self.stop_loss_pct, 0.005))
-                        logger.warning(f"⚠️ SL adjusted: {stop_loss_price:.2f} → {adjusted_stop_price:.2f}")
-                    
-                    if current_market_price - adjusted_stop_price < min_distance:
-                        adjusted_stop_price = current_market_price - min_distance
-                    
-                    if take_profit_price <= current_market_price:
-                        adjusted_tp_price = current_market_price * (1 + max(self.take_profit_pct, 0.01))
-                        logger.warning(f"⚠️ TP adjusted: {take_profit_price:.2f} → {adjusted_tp_price:.2f}")
-                else:  # SELL
-                    if stop_loss_price <= current_market_price:
-                        adjusted_stop_price = current_market_price * (1 + max(self.stop_loss_pct, 0.005))
-                        logger.warning(f"⚠️ SL adjusted: {stop_loss_price:.2f} → {adjusted_stop_price:.2f}")
-                    
-                    if take_profit_price >= current_market_price:
-                        adjusted_tp_price = current_market_price * (1 - max(self.take_profit_pct, 0.01))
-                        logger.warning(f"⚠️ TP adjusted: {take_profit_price:.2f} → {adjusted_tp_price:.2f}")
-                
-                managed_orders = self.futures_client.create_managed_orders(
-                    symbol=symbol,
-                    side=sl_side,
-                    quantity=quantity_str,
-                    stop_price=f"{adjusted_stop_price:.2f}",
-                    take_profit_price=f"{adjusted_tp_price:.2f}",
-                    reduce_only=True
-                )
-                
-                sl_order = managed_orders['stop_loss_order']
-                tp_orders = managed_orders['take_profit_orders']
-                
-                logger.info(f"✅ Managed orders placed on {self.exchange_name}")
-                
-            except Exception as e:
-                logger.error(f"Failed to place managed orders: {e}")
-                sl_order = None
-                tp_orders = None
-            
-            result = {
-                'status': 'success',
-                'action': action.action,
-                'exchange': self.exchange_name,
-                'symbol': symbol,
-                'quantity': quantity_str,
-                'entry_price': entry_price,
-                'leverage': self.leverage,
-                'position_value': position_value,
-                'main_order_id': order.order_id,
-                'stop_loss': {
-                    'price': stop_loss_price,
-                    'order_id': sl_order.get('order_id') if sl_order else None,
-                    'source': 'recommendation' if stop_loss_target else 'percentage'
-                },
-                'take_profit': {
-                    'price': take_profit_price,
-                    'order_ids': [tp.get('order_id') for tp in tp_orders] if tp_orders else [None],
-                    'source': 'recommendation' if take_profit_target else 'percentage'
-                },
-                'confidence': action.value,
-                'reason': action.reason,
-                'timestamp': datetime.now().isoformat(),
-                'capital_management': {
-                    'recommended_size_pct': position_recommendation.recommended_size_pct * 100,
-                    'risk_level': position_recommendation.risk_level,
-                    'method': position_recommendation.sizing_method
-                }
-            }
-            
-            if action.recommendation:
-                result['recommendation_used'] = True
-                result['strategy'] = action.recommendation.get('strategy', 'N/A')
-            
-            return result
-            
-        except Exception as e:
-            logger.error(f"Error setting up position: {e}")
-            return {
-                'status': 'error',
-                'message': f'Position setup error: {e}',
-                'exchange': self.exchange_name
-            }
+    # Note: Main setup_position method is defined earlier (line ~401) with subscription parameter
     
     # ==================== TRADE EXECUTION ====================
     

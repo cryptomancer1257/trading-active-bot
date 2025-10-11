@@ -30,6 +30,7 @@ const botSchema = z.object({
   // bot_mode is auto-set based on template type
   exchange_type: z.enum(['BINANCE', 'KRAKEN', 'BYBIT', 'HUOBI', 'MULTI', 'OKX', 'BITGET']),
   trading_pair: z.string().default('BTC/USDT'),
+  secondary_trading_pairs: z.array(z.string()).default([]),
   timeframe: z.string().default('1h'),
   timeframes: z.array(z.string()).default(['1h']),
   version: z.string().default('1.0.0'),
@@ -217,6 +218,7 @@ export default function ForgePage() {
       // bot_mode is auto-set based on template
       exchange_type: 'BINANCE',
       trading_pair: 'BTC/USDT',
+      secondary_trading_pairs: [],
       timeframe: '1h',
       timeframes: ['1h'],
       version: '1.0.0',
@@ -1050,12 +1052,154 @@ export default function ForgePage() {
                     </div>
                     
                     <div>
-                      <label className="form-label">Trading Pair</label>
+                      <label className="form-label">Primary Trading Pair</label>
                       <input
                         {...register('trading_pair')}
                         className="form-input"
                         placeholder="BTC/USDT"
                       />
+                      <p className="mt-1 text-xs text-gray-500">
+                        🎯 Main trading pair (highest priority)
+                      </p>
+                    </div>
+                    
+                    {/* Secondary Trading Pairs */}
+                    <div className="mt-4">
+                      <label className="form-label">Secondary Trading Pairs (Optional)</label>
+                      <p className="mt-1 text-sm text-gray-400 mb-3">
+                        📊 Bot will trade these pairs when primary is busy (priority order)
+                      </p>
+                      
+                      {/* Add New Pair Input */}
+                      <div className="flex gap-2 mb-3">
+                        <input
+                          type="text"
+                          placeholder="e.g., ETH/USDT"
+                          className="form-input flex-1"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault()
+                              const input = e.currentTarget
+                              const value = input.value.trim().toUpperCase()
+                              if (value && !watch('secondary_trading_pairs')?.includes(value) && value !== watch('trading_pair')) {
+                                setValue('secondary_trading_pairs', [...(watch('secondary_trading_pairs') || []), value])
+                                input.value = ''
+                              }
+                            }
+                          }}
+                          id="secondary-pair-input"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const input = document.getElementById('secondary-pair-input') as HTMLInputElement
+                            const value = input.value.trim().toUpperCase()
+                            if (value && !watch('secondary_trading_pairs')?.includes(value) && value !== watch('trading_pair')) {
+                              setValue('secondary_trading_pairs', [...(watch('secondary_trading_pairs') || []), value])
+                              input.value = ''
+                            }
+                          }}
+                          className="px-4 py-2 bg-quantum-500/20 border border-quantum-500 text-quantum-400 rounded-md hover:bg-quantum-500/30 transition-colors text-sm font-medium"
+                        >
+                          + Add
+                        </button>
+                      </div>
+                      
+                      {/* List of Secondary Pairs with Reordering */}
+                      {watch('secondary_trading_pairs') && watch('secondary_trading_pairs').length > 0 && (
+                        <div className="space-y-2">
+                          {watch('secondary_trading_pairs').map((pair, index) => (
+                            <div
+                              key={index}
+                              className="flex items-center gap-2 bg-dark-700/50 border border-gray-600 rounded-md p-3"
+                            >
+                              {/* Priority Badge */}
+                              <div className="flex items-center justify-center w-8 h-8 rounded-full bg-quantum-500/20 text-quantum-400 text-sm font-bold">
+                                {index + 2}
+                              </div>
+                              
+                              {/* Pair Name */}
+                              <div className="flex-1 text-white font-medium">
+                                {pair}
+                              </div>
+                              
+                              {/* Reorder Buttons */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (index > 0) {
+                                    const pairs = [...watch('secondary_trading_pairs')]
+                                    ;[pairs[index - 1], pairs[index]] = [pairs[index], pairs[index - 1]]
+                                    setValue('secondary_trading_pairs', pairs)
+                                  }
+                                }}
+                                disabled={index === 0}
+                                className={`p-1 rounded ${
+                                  index === 0
+                                    ? 'text-gray-600 cursor-not-allowed'
+                                    : 'text-gray-400 hover:text-quantum-400 hover:bg-quantum-500/10'
+                                }`}
+                                title="Move up"
+                              >
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                                </svg>
+                              </button>
+                              
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (index < watch('secondary_trading_pairs').length - 1) {
+                                    const pairs = [...watch('secondary_trading_pairs')]
+                                    ;[pairs[index], pairs[index + 1]] = [pairs[index + 1], pairs[index]]
+                                    setValue('secondary_trading_pairs', pairs)
+                                  }
+                                }}
+                                disabled={index === watch('secondary_trading_pairs').length - 1}
+                                className={`p-1 rounded ${
+                                  index === watch('secondary_trading_pairs').length - 1
+                                    ? 'text-gray-600 cursor-not-allowed'
+                                    : 'text-gray-400 hover:text-quantum-400 hover:bg-quantum-500/10'
+                                }`}
+                                title="Move down"
+                              >
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                </svg>
+                              </button>
+                              
+                              {/* Remove Button */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const pairs = watch('secondary_trading_pairs').filter((_, i) => i !== index)
+                                  setValue('secondary_trading_pairs', pairs)
+                                }}
+                                className="p-1 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded"
+                                title="Remove"
+                              >
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                              </button>
+                            </div>
+                          ))}
+                          
+                          {/* Summary */}
+                          <div className="mt-2 text-sm text-gray-500 bg-dark-800/50 rounded p-3 border border-quantum-500/20">
+                            <div className="font-medium text-quantum-400 mb-1">Trading Priority Order:</div>
+                            <div className="space-y-0.5">
+                              <div>1️⃣ {watch('trading_pair')} <span className="text-xs text-gray-600">(Primary)</span></div>
+                              {watch('secondary_trading_pairs').map((pair, idx) => (
+                                <div key={idx}>{idx + 2}️⃣ {pair}</div>
+                              ))}
+                            </div>
+                            <div className="mt-2 text-xs text-gray-600">
+                              💡 Bot checks pairs in order and trades the first available one without open position
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                     
                     <div>
