@@ -351,7 +351,8 @@ class Subscription(Base):
     is_testnet = Column(Boolean, default=False)  # True for testnet subscriptions
     is_trial = Column(Boolean, default=False)    # True for trial subscriptions
     trial_expires_at = Column(DateTime)          # Trial expiration (can be different from expires_at)
-    trading_pair = Column(String(20))  # Trading pair like BTC/USDT
+    trading_pair = Column(String(20))  # Primary trading pair like BTC/USDT
+    secondary_trading_pairs = Column(JSON)  # List of secondary trading pairs (priority order) e.g. ["ETH/USDT", "BNB/USDT"]
 
     # New fields for marketplace bot registration
     user_principal_id = Column(String(255))  # ICP Principal ID

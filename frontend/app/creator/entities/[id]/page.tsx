@@ -9,13 +9,15 @@ import {
   SparklesIcon,
   ChartBarIcon,
   DocumentTextIcon,
-  ExclamationTriangleIcon
+  ExclamationTriangleIcon,
+  UserGroupIcon
 } from '@heroicons/react/24/outline'
 import { CheckCircleIcon, ClockIcon, XCircleIcon, ArchiveBoxIcon } from '@heroicons/react/24/solid'
 import Link from 'next/link'
 import BotPromptsTab from '@/components/BotPromptsTab'
 import RiskManagementTab from '@/components/RiskManagementTab'
 import BotAnalytics from '@/components/BotAnalytics'
+import BotSubscriptions from '@/components/BotSubscriptions'
 import toast from 'react-hot-toast'
 import config from '@/lib/config'
 import { useAuth } from '@/contexts/AuthContext'
@@ -73,7 +75,7 @@ interface BotLog {
   signal_data?: any
 }
 
-type TabType = 'overview' | 'prompts' | 'risk-management' | 'settings' | 'analytics'
+type TabType = 'overview' | 'prompts' | 'risk-management' | 'settings' | 'analytics' | 'subscriptions'
 
 export default function BotDetailPage() {
   const router = useRouter()
@@ -97,6 +99,7 @@ export default function BotDetailPage() {
   const [isStartingTrial, setIsStartingTrial] = useState(false)
   const [trialConfig, setTrialConfig] = useState({
     tradingPair: 'BTC/USDT',
+    secondaryTradingPairs: [] as string[],
     networkType: 'TESTNET'
   })
   const [botLogs, setBotLogs] = useState<BotLog[]>([])
@@ -187,6 +190,7 @@ export default function BotDetailPage() {
         subscription_end: endDate.toISOString(),
         is_testnet: trialConfig.networkType === 'TESTNET',
         trading_pair: trialConfig.tradingPair,
+        secondary_trading_pairs: trialConfig.secondaryTradingPairs, // Multi-pair trading
         trading_network: trialConfig.networkType,
         payment_method: 'TRIAL'
       }
@@ -288,7 +292,7 @@ export default function BotDetailPage() {
               
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Trading Pair
+                  Primary Trading Pair
                 </label>
                 <select
                   value={trialConfig.tradingPair}
@@ -302,9 +306,145 @@ export default function BotDetailPage() {
                   <option value="SOL/USDT">SOL/USDT</option>
                 </select>
                 <p className="text-xs text-gray-400 mt-1">
-                  Choose the trading pair for your bot trial
+                  🎯 Main trading pair (highest priority)
                 </p>
               </div>
+            </div>
+            
+            {/* Secondary Trading Pairs */}
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Secondary Trading Pairs (Optional)
+              </label>
+              <p className="text-xs text-gray-400 mb-3">
+                📊 Bot will trade these pairs when primary is busy (priority order)
+              </p>
+              
+              {/* Add New Pair Dropdown */}
+              <div className="flex gap-2 mb-3">
+                <select
+                  className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  onChange={(e) => {
+                    const value = e.target.value
+                    if (value && !trialConfig.secondaryTradingPairs.includes(value) && value !== trialConfig.tradingPair) {
+                      setTrialConfig(prev => ({
+                        ...prev,
+                        secondaryTradingPairs: [...prev.secondaryTradingPairs, value]
+                      }))
+                      e.target.value = '' // Reset select
+                    }
+                  }}
+                  defaultValue=""
+                >
+                  <option value="" disabled>Select pair to add...</option>
+                  <option value="BTC/USDT">BTC/USDT</option>
+                  <option value="ETH/USDT">ETH/USDT</option>
+                  <option value="BNB/USDT">BNB/USDT</option>
+                  <option value="ADA/USDT">ADA/USDT</option>
+                  <option value="SOL/USDT">SOL/USDT</option>
+                  <option value="XRP/USDT">XRP/USDT</option>
+                  <option value="DOGE/USDT">DOGE/USDT</option>
+                  <option value="DOT/USDT">DOT/USDT</option>
+                  <option value="MATIC/USDT">MATIC/USDT</option>
+                  <option value="AVAX/USDT">AVAX/USDT</option>
+                </select>
+              </div>
+              
+              {/* List of Secondary Pairs */}
+              {trialConfig.secondaryTradingPairs.length > 0 && (
+                <div className="space-y-2">
+                  {trialConfig.secondaryTradingPairs.map((pair, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center gap-2 bg-gray-700/50 border border-gray-600 rounded-md p-2"
+                    >
+                      {/* Priority Badge */}
+                      <div className="flex items-center justify-center w-7 h-7 rounded-full bg-purple-500/20 text-purple-400 text-sm font-bold">
+                        {index + 2}
+                      </div>
+                      
+                      {/* Pair Name */}
+                      <div className="flex-1 text-white font-medium text-sm">
+                        {pair}
+                      </div>
+                      
+                      {/* Reorder Buttons */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (index > 0) {
+                            const pairs = [...trialConfig.secondaryTradingPairs]
+                            ;[pairs[index - 1], pairs[index]] = [pairs[index], pairs[index - 1]]
+                            setTrialConfig(prev => ({ ...prev, secondaryTradingPairs: pairs }))
+                          }
+                        }}
+                        disabled={index === 0}
+                        className={`p-1 rounded ${
+                          index === 0
+                            ? 'text-gray-600 cursor-not-allowed'
+                            : 'text-gray-400 hover:text-purple-400'
+                        }`}
+                        title="Move up"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                        </svg>
+                      </button>
+                      
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (index < trialConfig.secondaryTradingPairs.length - 1) {
+                            const pairs = [...trialConfig.secondaryTradingPairs]
+                            ;[pairs[index], pairs[index + 1]] = [pairs[index + 1], pairs[index]]
+                            setTrialConfig(prev => ({ ...prev, secondaryTradingPairs: pairs }))
+                          }
+                        }}
+                        disabled={index === trialConfig.secondaryTradingPairs.length - 1}
+                        className={`p-1 rounded ${
+                          index === trialConfig.secondaryTradingPairs.length - 1
+                            ? 'text-gray-600 cursor-not-allowed'
+                            : 'text-gray-400 hover:text-purple-400'
+                        }`}
+                        title="Move down"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </button>
+                      
+                      {/* Remove Button */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const pairs = trialConfig.secondaryTradingPairs.filter((_, i) => i !== index)
+                          setTrialConfig(prev => ({ ...prev, secondaryTradingPairs: pairs }))
+                        }}
+                        className="p-1 text-red-400 hover:text-red-300 rounded"
+                        title="Remove"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+                  
+                  {/* Summary */}
+                  <div className="mt-2 text-xs text-gray-500 bg-gray-800/50 rounded p-2 border border-purple-500/20">
+                    <div className="font-medium text-purple-400 mb-1">Trading Priority Order:</div>
+                    <div className="space-y-0.5">
+                      <div>1️⃣ {trialConfig.tradingPair} <span className="text-gray-600">(Primary)</span></div>
+                      {trialConfig.secondaryTradingPairs.map((pair, idx) => (
+                        <div key={idx}>{idx + 2}️⃣ {pair}</div>
+                      ))}
+                    </div>
+                    <div className="mt-1 text-gray-600">
+                      💡 Bot trades first available pair without open position
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -613,6 +753,8 @@ export default function BotDetailPage() {
         return <RiskManagementTab botId={bot.id} />
       case 'analytics':
         return <BotAnalytics botId={bot.id} />
+      case 'subscriptions':
+        return <BotSubscriptions botId={bot.id} />
       default:
         return null
     }
@@ -687,6 +829,17 @@ export default function BotDetailPage() {
             >
               <ChartBarIcon className="h-5 w-5 inline-block mr-2" />
               Analytics
+            </button>
+            <button
+              onClick={() => setActiveTab('subscriptions')}
+              className={`whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'subscriptions'
+                  ? 'border-purple-500 text-purple-400'
+                  : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-300'
+              }`}
+            >
+              <UserGroupIcon className="h-5 w-5 inline-block mr-2" />
+              Subscriptions
             </button>
           </nav>
         </div>

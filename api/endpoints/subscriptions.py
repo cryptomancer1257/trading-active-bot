@@ -362,6 +362,7 @@ def create_marketplace_subscription(
             bot_id=marketplace_sub.bot_id,
             exchange_type=marketplace_sub.exchange_type,
             trading_pair=marketplace_sub.trading_pair,
+            secondary_trading_pairs=marketplace_sub.secondary_trading_pairs or [],
             timeframe=marketplace_sub.timeframe,
             strategy_config=marketplace_sub.strategy_config,
             execution_config=marketplace_sub.execution_config,

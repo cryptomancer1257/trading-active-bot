@@ -2849,35 +2849,87 @@ async def run_advanced_futures_workflow(bot, subscription_id: int, subscription_
             from bots.bot_sdk.Action import Action
             return Action(action="HOLD", value=0.0, reason="Subscription not found"), None, None
         
-        # 0. CHECK FOR OPEN POSITIONS BEFORE LLM CALL (Prevent duplicate orders)
-        logger.info("🔍 Step 0: Checking for existing OPEN positions...")
-        trading_pair = subscription_config.get('trading_pair') or subscription.trading_pair
-        # Normalize trading pair: Remove '/' for DB query (BTC/USDT -> BTCUSDT)
-        trading_pair_normalized = trading_pair.replace('/', '') if trading_pair else trading_pair
+        # 0. MULTI-PAIR PRIORITY LOGIC: Find first available trading pair without OPEN position
+        logger.info("=" * 80)
+        logger.info("🎯 Step 0: MULTI-PAIR TRADING - Finding available trading pair...")
+        logger.info("=" * 80)
         
-        # Use SELECT FOR UPDATE to prevent race conditions
-        open_positions = db.query(models.Transaction).filter(
-            models.Transaction.subscription_id == subscription_id,
-            models.Transaction.symbol == trading_pair_normalized,
-            models.Transaction.status == 'OPEN'
-        ).with_for_update().all()
+        # Build list of trading pairs in priority order: [primary, secondary1, secondary2, ...]
+        primary_pair = subscription_config.get('trading_pair') or subscription.trading_pair
+        secondary_pairs = subscription.secondary_trading_pairs or []
         
-        if open_positions:
+        # Ensure secondary_pairs is a list
+        if isinstance(secondary_pairs, str):
+            import json
+            try:
+                secondary_pairs = json.loads(secondary_pairs)
+            except:
+                secondary_pairs = []
+        
+        all_trading_pairs = [primary_pair] + (secondary_pairs if secondary_pairs else [])
+        
+        logger.info(f"📋 Trading Pairs Priority List:")
+        logger.info(f"   1️⃣ Primary: {primary_pair}")
+        if secondary_pairs:
+            for idx, pair in enumerate(secondary_pairs, start=2):
+                logger.info(f"   {idx}️⃣ Secondary: {pair}")
+        else:
+            logger.info(f"   ℹ️  No secondary pairs configured")
+        logger.info(f"   📊 Total pairs to check: {len(all_trading_pairs)}")
+        
+        # Find first available pair (no OPEN position)
+        selected_trading_pair = None
+        
+        for idx, trading_pair in enumerate(all_trading_pairs, start=1):
+            # Normalize trading pair: Remove '/' for DB query (BTC/USDT -> BTCUSDT)
+            trading_pair_normalized = trading_pair.replace('/', '') if trading_pair else trading_pair
+            
+            logger.info(f"\n🔍 Checking pair {idx}/{len(all_trading_pairs)}: {trading_pair} (DB: {trading_pair_normalized})")
+            
+            # Use SELECT FOR UPDATE to prevent race conditions
+            open_positions = db.query(models.Transaction).filter(
+                models.Transaction.subscription_id == subscription_id,
+                models.Transaction.symbol == trading_pair_normalized,
+                models.Transaction.status == 'OPEN'
+            ).with_for_update().all()
+            
+            if open_positions:
+                logger.info(f"   ⏭️  SKIP: {len(open_positions)} OPEN position(s) found")
+                for pos in open_positions:
+                    logger.info(f"      - Position #{pos.id}: {pos.action} {pos.quantity} @ ${pos.entry_price}, P&L: ${pos.unrealized_pnl:.2f}")
+                # Continue to next pair
+                continue
+            else:
+                # Found available pair!
+                selected_trading_pair = trading_pair
+                logger.info(f"   ✅ AVAILABLE: No OPEN positions")
+                logger.info(f"   🎯 SELECTED for trading: {trading_pair}")
+                break
+        
+        # Check if all pairs have OPEN positions
+        if selected_trading_pair is None:
+            logger.warning("\n" + "=" * 80)
+            logger.warning("⏸️  ALL TRADING PAIRS HAVE OPEN POSITIONS")
             logger.warning("=" * 80)
-            logger.warning(f"⏸️  SKIPPING TRADE: OPEN POSITION EXISTS")
-            logger.warning(f"   Trading Pair: {trading_pair}")
-            logger.warning(f"   Open Positions: {len(open_positions)}")
-            for pos in open_positions:
-                logger.warning(f"   - Position #{pos.id}: {pos.action} {pos.quantity} @ ${pos.entry_price}")
-                logger.warning(f"     P&L: ${pos.unrealized_pnl:.2f}, Status: {pos.status}")
-            logger.warning(f"   💡 Will trade again when all positions are CLOSED")
+            logger.warning(f"   Checked {len(all_trading_pairs)} pair(s): {', '.join(all_trading_pairs)}")
+            logger.warning(f"   All pairs currently have active positions")
+            logger.warning(f"   💡 Will trade again when any position is CLOSED")
             logger.warning("=" * 80)
             db.commit()  # Release lock
             from bots.bot_sdk.Action import Action
-            return Action(action="HOLD", value=0.0, reason=f"OPEN position exists for {trading_pair}"), None, None
+            return Action(action="HOLD", value=0.0, reason=f"All {len(all_trading_pairs)} trading pairs have OPEN positions"), None, None
+        
+        # Update subscription_config with selected pair
+        subscription_config['trading_pair'] = selected_trading_pair
+        bot.trading_pair = selected_trading_pair.replace('/', '')  # Update bot instance
         
         db.commit()  # Release lock before proceeding
-        logger.info(f"✅ No OPEN positions found for {trading_pair_normalized} (query: '{trading_pair}' -> '{trading_pair_normalized}'), proceeding with LLM analysis...")
+        logger.info("\n" + "=" * 80)
+        logger.info(f"🎯 SELECTED TRADING PAIR: {selected_trading_pair}")
+        logger.info("=" * 80)
+        logger.info(f"   Priority: {all_trading_pairs.index(selected_trading_pair) + 1} of {len(all_trading_pairs)}")
+        logger.info(f"   Proceeding with LLM analysis for {selected_trading_pair}...")
+        logger.info("=" * 80)
         
         # 1. Check account status (like main_execution)
         logger.info("💰 Step 1: Checking account status...")
@@ -3060,34 +3112,86 @@ async def run_advanced_futures_rpa_workflow(bot, subscription_id: int, subscript
             logger.error(f"Subscription {subscription_id} not found")
             return Action(action="HOLD", value=0.0, reason="Subscription not found"), None, None
         
-        # 0. CHECK FOR OPEN POSITIONS BEFORE RPA + LLM CALL (Prevent duplicate orders)
-        logger.info("🔍 Step 0: Checking for existing OPEN positions...")
-        trading_pair = subscription_config.get('trading_pair') or subscription.trading_pair
-        # Normalize trading pair: Remove '/' for DB query (BTC/USDT -> BTCUSDT)
-        trading_pair_normalized = trading_pair.replace('/', '') if trading_pair else trading_pair
+        # 0. MULTI-PAIR PRIORITY LOGIC: Find first available trading pair without OPEN position
+        logger.info("=" * 80)
+        logger.info("🎯 Step 0: MULTI-PAIR TRADING (RPA) - Finding available trading pair...")
+        logger.info("=" * 80)
         
-        # Use SELECT FOR UPDATE to prevent race conditions
-        open_positions = db.query(models.Transaction).filter(
-            models.Transaction.subscription_id == subscription_id,
-            models.Transaction.symbol == trading_pair_normalized,
-            models.Transaction.status == 'OPEN'
-        ).with_for_update().all()
+        # Build list of trading pairs in priority order: [primary, secondary1, secondary2, ...]
+        primary_pair = subscription_config.get('trading_pair') or subscription.trading_pair
+        secondary_pairs = subscription.secondary_trading_pairs or []
         
-        if open_positions:
+        # Ensure secondary_pairs is a list
+        if isinstance(secondary_pairs, str):
+            import json
+            try:
+                secondary_pairs = json.loads(secondary_pairs)
+            except:
+                secondary_pairs = []
+        
+        all_trading_pairs = [primary_pair] + (secondary_pairs if secondary_pairs else [])
+        
+        logger.info(f"📋 Trading Pairs Priority List:")
+        logger.info(f"   1️⃣ Primary: {primary_pair}")
+        if secondary_pairs:
+            for idx, pair in enumerate(secondary_pairs, start=2):
+                logger.info(f"   {idx}️⃣ Secondary: {pair}")
+        else:
+            logger.info(f"   ℹ️  No secondary pairs configured")
+        logger.info(f"   📊 Total pairs to check: {len(all_trading_pairs)}")
+        
+        # Find first available pair (no OPEN position)
+        selected_trading_pair = None
+        
+        for idx, trading_pair in enumerate(all_trading_pairs, start=1):
+            # Normalize trading pair: Remove '/' for DB query (BTC/USDT -> BTCUSDT)
+            trading_pair_normalized = trading_pair.replace('/', '') if trading_pair else trading_pair
+            
+            logger.info(f"\n🔍 Checking pair {idx}/{len(all_trading_pairs)}: {trading_pair} (DB: {trading_pair_normalized})")
+            
+            # Use SELECT FOR UPDATE to prevent race conditions
+            open_positions = db.query(models.Transaction).filter(
+                models.Transaction.subscription_id == subscription_id,
+                models.Transaction.symbol == trading_pair_normalized,
+                models.Transaction.status == 'OPEN'
+            ).with_for_update().all()
+            
+            if open_positions:
+                logger.info(f"   ⏭️  SKIP: {len(open_positions)} OPEN position(s) found")
+                for pos in open_positions:
+                    logger.info(f"      - Position #{pos.id}: {pos.action} {pos.quantity} @ ${pos.entry_price}, P&L: ${pos.unrealized_pnl:.2f}")
+                # Continue to next pair
+                continue
+            else:
+                # Found available pair!
+                selected_trading_pair = trading_pair
+                logger.info(f"   ✅ AVAILABLE: No OPEN positions")
+                logger.info(f"   🎯 SELECTED for RPA trading: {trading_pair}")
+                break
+        
+        # Check if all pairs have OPEN positions
+        if selected_trading_pair is None:
+            logger.warning("\n" + "=" * 80)
+            logger.warning("⏸️  ALL TRADING PAIRS HAVE OPEN POSITIONS (RPA)")
             logger.warning("=" * 80)
-            logger.warning(f"⏸️  SKIPPING RPA TRADE: OPEN POSITION EXISTS")
-            logger.warning(f"   Trading Pair: {trading_pair}")
-            logger.warning(f"   Open Positions: {len(open_positions)}")
-            for pos in open_positions:
-                logger.warning(f"   - Position #{pos.id}: {pos.action} {pos.quantity} @ ${pos.entry_price}")
-                logger.warning(f"     P&L: ${pos.unrealized_pnl:.2f}, Status: {pos.status}")
-            logger.warning(f"   💡 Will trade again when all positions are CLOSED")
+            logger.warning(f"   Checked {len(all_trading_pairs)} pair(s): {', '.join(all_trading_pairs)}")
+            logger.warning(f"   All pairs currently have active positions")
+            logger.warning(f"   💡 Will trade again when any position is CLOSED")
             logger.warning("=" * 80)
             db.commit()  # Release lock
-            return Action(action="HOLD", value=0.0, reason=f"OPEN position exists for {trading_pair}"), None, None
+            return Action(action="HOLD", value=0.0, reason=f"All {len(all_trading_pairs)} trading pairs have OPEN positions"), None, None
+        
+        # Update subscription_config with selected pair
+        subscription_config['trading_pair'] = selected_trading_pair
+        bot.trading_pair = selected_trading_pair.replace('/', '_')  # RPA uses underscore format
         
         db.commit()  # Release lock before proceeding
-        logger.info(f"✅ No OPEN positions found for {trading_pair_normalized} (query: '{trading_pair}' -> '{trading_pair_normalized}'), proceeding with RPA + LLM analysis...")
+        logger.info("\n" + "=" * 80)
+        logger.info(f"🎯 SELECTED TRADING PAIR (RPA): {selected_trading_pair}")
+        logger.info("=" * 80)
+        logger.info(f"   Priority: {all_trading_pairs.index(selected_trading_pair) + 1} of {len(all_trading_pairs)}")
+        logger.info(f"   Proceeding with RPA + LLM analysis for {selected_trading_pair}...")
+        logger.info("=" * 80)
         
         # 1. Check account status
         logger.info("💰 Step 1: Checking account status...")
