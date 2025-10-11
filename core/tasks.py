@@ -2377,7 +2377,7 @@ def run_futures_bot_trading(self, user_principal_id: str = None, config: Dict[st
                 trade_result = None
                 if signal.action != "HOLD":
                     logger.info(f"🚀 AUTO-EXECUTING {signal.action} trade via Celery...")
-                    trade_result = await bot.setup_position(signal, analysis)
+                    trade_result = await bot.setup_position(signal, analysis, subscription)
                     
                     # Save transaction if successful
                     if trade_result.get('status') == 'success':
@@ -2700,9 +2700,15 @@ def apply_risk_management(subscription, signal, analysis, account_status, db):
                 rec = signal.recommendation
                 logger.info(f"  Recommendation data: {rec}")
                 
-                if rec and 'risk_reward' in rec:
+            if rec and 'risk_reward' in rec:
+                rr_value = rec.get('risk_reward')
+                
+                # Skip if risk_reward is N/A or invalid
+                if rr_value in ['N/A', 'n/a', None, '']:
+                    logger.info(f"  ⏭️ Risk/Reward is '{rr_value}' - Skipping R/R check (TP/SL from risk_config will be used)")
+                else:
                     try:
-                        rr = float(rec['risk_reward'])
+                        rr = float(rr_value)
                         logger.info(f"  Current R/R Ratio: {rr:.2f}:1")
                         logger.info(f"  Minimum Required: {risk_config.min_risk_reward_ratio}:1")
                         
@@ -2725,11 +2731,12 @@ def apply_risk_management(subscription, signal, analysis, account_status, db):
                         else:
                             logger.info(f"  ✅ R/R ratio acceptable")
                     except (ValueError, TypeError) as e:
-                        logger.warning(f"  ⚠️ Could not parse risk_reward: {rec.get('risk_reward')} - Error: {e}")
-                else:
-                    logger.warning(f"  ⚠️ Recommendation exists but no 'risk_reward' field found")
-                    logger.info(f"     Available fields: {list(rec.keys()) if rec else 'None'}")
-                    logger.warning(f"  ⏭️ Skipping check")
+                        logger.warning(f"  ⚠️ Could not parse risk_reward: {rr_value} - Error: {e}")
+                        logger.info(f"  ⏭️ Skipping R/R check (TP/SL from risk_config will be used)")
+            else:
+                logger.warning(f"  ⚠️ Recommendation exists but no 'risk_reward' field found")
+                logger.info(f"     Available fields: {list(rec.keys()) if rec else 'None'}")
+                logger.warning(f"  ⏭️ Skipping check")
         else:
             logger.info("  ⏭️ Min R/R ratio not configured in risk config")
         
@@ -2924,7 +2931,7 @@ async def run_advanced_futures_workflow(bot, subscription_id: int, subscription_
             logger.info("🤖 AUTO-CONFIRMED via Celery (no user confirmation required)")
             
             # Use advanced setup_position with capital management, stop loss, take profit
-            trade_result = await bot.setup_position(signal, analysis)
+            trade_result = await bot.setup_position(signal, analysis, subscription)
             
             if trade_result.get('status') == 'success':
                 logger.info(f"✅ Advanced trade executed successfully!")
@@ -3005,7 +3012,7 @@ async def run_advanced_futures_workflow(bot, subscription_id: int, subscription_
         import traceback
         logger.error(traceback.format_exc())
         from bots.bot_sdk.Action import Action
-        return Action(action="HOLD", value=0.0, reason=f"Advanced workflow error: {e}")
+        return Action(action="HOLD", value=0.0, reason=f"Advanced workflow error: {e}"), None, None
 
 async def run_advanced_futures_rpa_workflow(bot, subscription_id: int, subscription_config: Dict[str, Any], db):
     """
@@ -3108,7 +3115,7 @@ async def run_advanced_futures_rpa_workflow(bot, subscription_id: int, subscript
             logger.info("🤖 AUTO-CONFIRMED via Celery (no user confirmation required)")
             
             # Use advanced setup_position with capital management, stop loss, take profit
-            trade_result = await bot.setup_position(action)
+            trade_result = await bot.setup_position(action, None, subscription)
             
             if trade_result.get('status') == 'success':
                 logger.info(f"✅ Advanced trade executed successfully!")
@@ -3254,7 +3261,7 @@ async def run_advanced_futures_rpa_workflow(bot, subscription_id: int, subscript
         except Exception as log_error:
             logger.error(f"❌ Failed to log error: {log_error}")
         
-        return Action(action="HOLD", value=0.0, reason=f"Advanced RPA workflow error: {e}"), None
+        return Action(action="HOLD", value=0.0, reason=f"Advanced RPA workflow error: {e}"), None, None
 
 @app.task(bind=True, max_retries=3)
 def create_subscription_from_paypal_task(self, payment_id: str):
@@ -3646,3 +3653,59 @@ def update_risk_management_performance(self, bot_id: int):
         logger.error(f"❌ Failed to analyze risk management for {bot_id}: {e}")
         logger.error(traceback.format_exc())
         raise self.retry(exc=e, countdown=60)
+
+
+@app.task(bind=True)
+def sync_open_positions_realtime(self):
+    """
+    Real-time position sync task
+    - Fetches position status from exchange APIs
+    - Updates transactions with real-time data
+    - Auto-detects closed positions
+    - Updates P&L, prices, exit info
+    
+    Features:
+    - Multi-exchange support (Bybit, Binance, OKX, Bitget, Huobi, Kraken)
+    - Real-time unrealized P&L calculation
+    - Auto-close detection
+    - Configurable interval (default: 10s)
+    
+    Schedule: Run every 10 seconds (configurable in beat_schedule)
+    """
+    try:
+        from core.database import SessionLocal
+        from services.position_sync_service import PositionSyncService
+        
+        logger.info("🔄 Starting real-time position sync...")
+        
+        # Get database session
+        db = SessionLocal()
+        
+        try:
+            # Initialize sync service
+            sync_service = PositionSyncService(db)
+            
+            # Sync all open positions
+            results = sync_service.sync_all_open_positions()
+            
+            # Log summary
+            if results["total"] > 0:
+                logger.info(f"✅ Position sync complete:")
+                logger.info(f"   📊 Total: {results['total']}")
+                logger.info(f"   ✅ Updated: {results['updated']}")
+                logger.info(f"   🔒 Closed: {results['closed']}")
+                if results['errors'] > 0:
+                    logger.warning(f"   ❌ Errors: {results['errors']}")
+            else:
+                logger.debug("No open positions to sync")
+            
+            return results
+            
+        finally:
+            db.close()
+            
+    except Exception as e:
+        logger.error(f"❌ Position sync task failed: {e}")
+        logger.error(traceback.format_exc())
+        # Retry with backoff (30 seconds)
+        raise self.retry(exc=e, countdown=30)

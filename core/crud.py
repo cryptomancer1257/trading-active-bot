@@ -194,7 +194,8 @@ def create_bot(db: Session, bot: schemas.BotCreate, developer_id: int, status: s
         'name', 'description', 'category_id', 'version', 'bot_type', 'price_per_month', 
         'is_free', 'config_schema', 'default_config', 'model_metadata', 'timeframes', 
         'timeframe', 'bot_mode', 'trading_pair', 'exchange_type', 'strategy_config', 
-        'image_url', 'code_path', 'code_path_rpa', 'version_rpa'
+        'image_url', 'code_path', 'code_path_rpa', 'version_rpa', 
+        'risk_config', 'risk_management_mode'  # Risk management fields
     }
     filtered_bot_dict = {k: v for k, v in bot_dict.items() if k in valid_fields and v is not None}
     
@@ -212,6 +213,31 @@ def create_bot(db: Session, bot: schemas.BotCreate, developer_id: int, status: s
             filtered_bot_dict['strategy_config'] = {}
         filtered_bot_dict['strategy_config'].update(llm_config)
         logger.info(f"Creating bot with LLM config: {llm_config}")
+    
+    # 🛡️ Handle Risk Management Configuration - Map to risk_config
+    risk_fields = ['leverage', 'risk_percentage', 'stop_loss_percentage', 'take_profit_percentage']
+    risk_config = {}
+    
+    for field in risk_fields:
+        if field in bot_dict and bot_dict[field] is not None:
+            # Map frontend fields to risk_config fields
+            if field == 'leverage':
+                risk_config['max_leverage'] = bot_dict[field]
+            elif field == 'risk_percentage':
+                risk_config['risk_per_trade_percent'] = bot_dict[field]
+                risk_config['max_position_size'] = bot_dict[field]  # Use same value for max position
+            elif field == 'stop_loss_percentage':
+                risk_config['stop_loss_percent'] = bot_dict[field]
+            elif field == 'take_profit_percentage':
+                risk_config['take_profit_percent'] = bot_dict[field]
+    
+    # Save risk_config to bot if any risk fields were provided
+    if risk_config:
+        # Add default mode
+        risk_config['mode'] = 'DEFAULT'
+        filtered_bot_dict['risk_config'] = risk_config
+        filtered_bot_dict['risk_management_mode'] = 'DEFAULT'
+        logger.info(f"✅ Creating bot with Risk Config: {risk_config}")
     
     # 🎯 AUTO-SET CODE_PATH for template bots (local files)
     template = bot_dict.get('template') or bot_dict.get('templateFile')
@@ -346,14 +372,15 @@ def get_bot_analytics(db: Session, bot_id: int, developer_id: int, days: int = 3
         models.Subscription.bot_id == bot_id
     )
     
-    # Filter by date range
+    # Filter by date range (only CLOSED transactions for accurate analytics)
     transactions_in_period = transactions_query.filter(
-        models.Transaction.created_at >= start_date
+        models.Transaction.created_at >= start_date,
+        models.Transaction.status == 'CLOSED'  # Only count closed transactions
     ).all()
     
     total_transactions = len(transactions_in_period)
     
-    # Calculate P&L and win rate
+    # Calculate P&L and win rate (from closed transactions only)
     total_pnl = 0.0
     winning_trades = 0
     losing_trades = 0
@@ -368,7 +395,7 @@ def get_bot_analytics(db: Session, bot_id: int, developer_id: int, days: int = 3
     
     win_rate = (winning_trades / total_transactions * 100) if total_transactions > 0 else 0
     
-    # Get transactions grouped by date for chart
+    # Get transactions grouped by date for chart (CLOSED transactions only)
     daily_stats = db.query(
         func.date(models.Transaction.created_at).label('date'),
         func.count(models.Transaction.id).label('count'),
@@ -378,7 +405,8 @@ def get_bot_analytics(db: Session, bot_id: int, developer_id: int, days: int = 3
         models.Subscription.id == models.Transaction.subscription_id
     ).filter(
         models.Subscription.bot_id == bot_id,
-        models.Transaction.created_at >= start_date
+        models.Transaction.created_at >= start_date,
+        models.Transaction.status == 'CLOSED'  # Only count closed transactions for chart
     ).group_by(
         func.date(models.Transaction.created_at)
     ).order_by(
@@ -394,7 +422,7 @@ def get_bot_analytics(db: Session, bot_id: int, developer_id: int, days: int = 3
             'pnl': float(stat.pnl) if stat.pnl else 0
         })
     
-    # Get recent transactions (last 10)
+    # Get recent transactions (last 10 - show both OPEN and CLOSED)
     recent_transactions = db.query(
         models.Transaction
     ).join(
@@ -406,9 +434,15 @@ def get_bot_analytics(db: Session, bot_id: int, developer_id: int, days: int = 3
         models.Transaction.created_at.desc()
     ).limit(10).all()
     
-    # Format recent transactions
+    # Format recent transactions (include both OPEN and CLOSED)
     recent_txs = []
     for tx in recent_transactions:
+        # Determine P&L based on status
+        if tx.status == 'CLOSED':
+            pnl = float(tx.realized_pnl) if tx.realized_pnl is not None else 0
+        else:  # OPEN
+            pnl = float(tx.unrealized_pnl) if tx.unrealized_pnl is not None else 0
+            
         recent_txs.append({
             'id': tx.id,
             'trading_pair': tx.symbol,  # Transaction model uses 'symbol' field
@@ -416,7 +450,10 @@ def get_bot_analytics(db: Session, bot_id: int, developer_id: int, days: int = 3
             'quantity': float(tx.quantity) if tx.quantity else 0,
             'entry_price': float(tx.entry_price) if tx.entry_price else 0,
             'exit_price': float(tx.exit_price) if tx.exit_price else 0,
-            'realized_pnl': float(tx.realized_pnl) if tx.realized_pnl else 0,
+            'realized_pnl': pnl,  # Use realized_pnl for CLOSED, unrealized_pnl for OPEN
+            'status': tx.status,  # NEW: Include status (OPEN/CLOSED)
+            'unrealized_pnl': float(tx.unrealized_pnl) if tx.unrealized_pnl is not None else 0,  # NEW
+            'last_updated_price': float(tx.last_updated_price) if tx.last_updated_price else 0,  # NEW
             'created_at': tx.created_at.isoformat() if tx.created_at else None,
             'closed_at': tx.exit_time.isoformat() if tx.exit_time else None  # Use exit_time instead of closed_at
         })
@@ -483,6 +520,50 @@ def update_bot(db: Session, bot_id: int, bot_update: schemas.BotUpdate):
             
             logger.info(f"🔸 New strategy_config: {db_bot.strategy_config}")
             logger.info(f"✅ Updated bot {bot_id} LLM config: {llm_config}")
+        
+        # 🛡️ Handle Risk Management Configuration - Map to risk_config
+        risk_fields = ['leverage', 'risk_percentage', 'stop_loss_percentage', 'take_profit_percentage']
+        risk_updates = {}
+        
+        for field in risk_fields:
+            if field in update_data:
+                value = update_data.pop(field)
+                # Map frontend fields to risk_config fields
+                if field == 'leverage':
+                    risk_updates['max_leverage'] = value
+                elif field == 'risk_percentage':
+                    risk_updates['risk_per_trade_percent'] = value
+                    risk_updates['max_position_size'] = value  # Use same value
+                elif field == 'stop_loss_percentage':
+                    risk_updates['stop_loss_percent'] = value
+                elif field == 'take_profit_percentage':
+                    risk_updates['take_profit_percent'] = value
+        
+        # Merge risk updates into risk_config
+        if risk_updates:
+            from sqlalchemy.orm.attributes import flag_modified
+            
+            if db_bot.risk_config is None:
+                db_bot.risk_config = {}
+            
+            logger.info(f"🔹 Old risk_config: {db_bot.risk_config}")
+            
+            # Create a new dict to ensure SQLAlchemy detects the change
+            new_risk_config = dict(db_bot.risk_config)
+            new_risk_config.update(risk_updates)
+            
+            # Ensure mode is set
+            if 'mode' not in new_risk_config:
+                new_risk_config['mode'] = 'DEFAULT'
+            
+            db_bot.risk_config = new_risk_config
+            db_bot.risk_management_mode = 'DEFAULT'
+            
+            # Explicitly mark as modified for SQLAlchemy
+            flag_modified(db_bot, 'risk_config')
+            
+            logger.info(f"🔸 New risk_config: {db_bot.risk_config}")
+            logger.info(f"✅ Updated bot {bot_id} risk config: {risk_updates}")
         
         # Apply remaining updates
         for key, value in update_data.items():

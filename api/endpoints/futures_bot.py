@@ -428,100 +428,32 @@ async def get_bot_logs(bot_id: int, limit: int = 50):
             }
             logs.append(log_entry)
         
-        # Cache for current prices (avoid duplicate API calls)
-        price_cache = {}
+        # NOTE: No longer calling exchange APIs - data synced by Celery task every 10s
+        # Real-time P&L is now stored in database by sync_open_positions_realtime task
         
-        # Helper function to fetch current price from exchange (with caching)
-        def get_current_price(symbol: str, exchange: str = "BYBIT") -> float:
-            """Fetch current market price from exchange API (cached per request)"""
-            # Check cache first
-            cache_key = f"{exchange}:{symbol}"
-            if cache_key in price_cache:
-                return price_cache[cache_key]
-            
-            try:
-                if exchange == "BYBIT":
-                    import requests
-                    # Use MAINNET for real prices (not testnet fake prices)
-                    url = "https://api.bybit.com/v5/market/tickers"
-                    params = {"category": "linear", "symbol": symbol.replace("/", "")}
-                    response = requests.get(url, params=params, timeout=3)
-                    if response.status_code == 200:
-                        data = response.json()
-                        if data.get("result") and data["result"].get("list"):
-                            price = float(data["result"]["list"][0]["lastPrice"])
-                            # Cache the price
-                            price_cache[cache_key] = price
-                            # Only log once per symbol (first fetch)
-                            logger.debug(f"💰 Fetched current price for {symbol}: ${price:.2f}")
-                            return price
-                else:
-                    # Add other exchanges here
-                    pass
-            except Exception as e:
-                logger.warning(f"Failed to fetch current price for {symbol}: {e}")
-            return None
-        
-        # Helper function to calculate realtime P&L for open positions
-        def calculate_realtime_pnl(transaction):
-            """Calculate realtime P&L and funding fees for open positions"""
-            try:
-                # Only calculate for OPEN positions
-                if transaction.status != "OPEN":
-                    return None, None, None
-                
-                entry_price = float(transaction.entry_price)
-                quantity = float(transaction.quantity)
-                leverage = transaction.leverage or 1
-                symbol = transaction.symbol or "BTCUSDT"
-                
-                # Fetch current market price from exchange (cached)
-                current_price = get_current_price(symbol, "BYBIT")
-                
-                # Calculate unrealized P&L if we have current price
-                unrealized_pnl = None
-                unrealized_pnl_pct = None
-                if current_price:
-                    if transaction.action == "BUY":
-                        pnl = (current_price - entry_price) * quantity * leverage
-                        pnl_pct = ((current_price - entry_price) / entry_price) * 100 * leverage
-                    else:  # SELL
-                        pnl = (entry_price - current_price) * quantity * leverage
-                        pnl_pct = ((entry_price - current_price) / entry_price) * 100 * leverage
-                    
-                    unrealized_pnl = round(pnl, 2)
-                    unrealized_pnl_pct = round(pnl_pct, 2)
-                
-                # Calculate funding fees (simplified - 0.01% per 8 hours)
-                from datetime import datetime, timezone
-                try:
-                    entry_time = transaction.created_at.replace(tzinfo=timezone.utc)
-                    now = datetime.now(timezone.utc)
-                    hours_held = (now - entry_time).total_seconds() / 3600
-                    funding_periods = int(hours_held / 8)
-                    funding_rate = 0.0001  # 0.01% per period
-                    position_value = entry_price * quantity * leverage
-                    funding_fees = position_value * funding_rate * funding_periods
-                    funding_fees = round(funding_fees, 2)
-                except:
-                    funding_fees = 0.0
-                
-                return unrealized_pnl, unrealized_pnl_pct, funding_fees
-                
-            except Exception as e:
-                logger.error(f"Error calculating P&L for transaction {transaction.id}: {e}")
-                return None, None, None
-        
-        # Add transaction logs with comprehensive trading details + realtime P&L
+        # Add transaction logs with comprehensive trading details (from DB)
         for transaction in transactions:
-            # Calculate realtime P&L for open positions
-            unrealized_pnl, unrealized_pnl_pct, funding_fees = calculate_realtime_pnl(transaction)
+            # Build comprehensive message with status info
+            status_suffix = f" ({transaction.leverage}x)" if transaction.leverage else ""
+            message = f"{transaction.action} {transaction.quantity} {transaction.symbol} at ${transaction.entry_price}{status_suffix}"
+            
+            # Add P&L info to message
+            if transaction.status == "OPEN" and transaction.unrealized_pnl is not None:
+                pnl_sign = "+" if transaction.unrealized_pnl >= 0 else ""
+                message += f" | P&L: ${pnl_sign}{transaction.unrealized_pnl:.2f}"
+                if transaction.pnl_percentage:
+                    message += f" ({pnl_sign}{transaction.pnl_percentage:.2f}%)"
+            elif transaction.status == "CLOSED" and transaction.realized_pnl is not None:
+                pnl_sign = "+" if transaction.realized_pnl >= 0 else ""
+                message += f" | Realized: ${pnl_sign}{transaction.realized_pnl:.2f}"
+                if transaction.pnl_percentage:
+                    message += f" ({pnl_sign}{transaction.pnl_percentage:.2f}%)"
             
             log_entry = {
                 "timestamp": transaction.created_at.isoformat(),
                 "execution_time": transaction.created_at.strftime("%Y-%m-%d %H:%M:%S UTC"),
                 "type": "transaction",
-                "message": f"{transaction.action} {transaction.quantity} {transaction.symbol} at ${transaction.entry_price}",
+                "message": message,
                 "level": "info",
                 
                 # Core Trading Information
@@ -529,19 +461,35 @@ async def get_bot_logs(bot_id: int, limit: int = 50):
                 "symbol": transaction.symbol,
                 "quantity": float(transaction.quantity),
                 "entry_price": float(transaction.entry_price),
+                "entry_time": transaction.entry_time.strftime("%Y-%m-%d %H:%M:%S UTC") if transaction.entry_time else None,
                 "leverage": transaction.leverage,
                 "status": transaction.status,
                 "order_id": transaction.order_id,
+                "position_side": transaction.position_side,
                 
                 # Risk Management
                 "stop_loss": float(transaction.stop_loss) if transaction.stop_loss else None,
                 "take_profit": float(transaction.take_profit) if transaction.take_profit else None,
                 
-                # Realtime P&L (only for OPEN positions)
-                "unrealized_pnl": unrealized_pnl,
-                "unrealized_pnl_pct": unrealized_pnl_pct,
-                "funding_fees": funding_fees,
-                "needs_price_update": transaction.status == "OPEN",  # Frontend should fetch current price
+                # Real-time P&L from DB (synced by Celery task every 10s)
+                "unrealized_pnl": float(transaction.unrealized_pnl) if transaction.unrealized_pnl is not None else None,
+                "realized_pnl": float(transaction.realized_pnl) if transaction.realized_pnl is not None else None,
+                "pnl_usd": float(transaction.pnl_usd) if transaction.pnl_usd is not None else None,
+                "pnl_percentage": float(transaction.pnl_percentage) if transaction.pnl_percentage is not None else None,
+                "is_winning": transaction.is_winning,
+                
+                # Current Price & Exit Info
+                "last_updated_price": float(transaction.last_updated_price) if transaction.last_updated_price else None,
+                "exit_price": float(transaction.exit_price) if transaction.exit_price else None,
+                "exit_time": transaction.exit_time.strftime("%Y-%m-%d %H:%M:%S UTC") if transaction.exit_time else None,
+                "exit_reason": transaction.exit_reason,
+                
+                # Additional Metrics
+                "fees_paid": float(transaction.fees_paid) if transaction.fees_paid else None,
+                "trade_duration_minutes": transaction.trade_duration_minutes,
+                "risk_reward_ratio": float(transaction.risk_reward_ratio) if transaction.risk_reward_ratio else None,
+                "actual_rr_ratio": float(transaction.actual_rr_ratio) if transaction.actual_rr_ratio else None,
+                "strategy_used": transaction.strategy_used,
                 
                 # Analysis Information
                 "confidence": float(transaction.confidence) if transaction.confidence else None,
@@ -557,11 +505,6 @@ async def get_bot_logs(bot_id: int, limit: int = 50):
                 "bot_id": transaction.bot_id
             }
             logs.append(log_entry)
-        
-        # Log price fetch summary (only once, not for each transaction)
-        if price_cache:
-            symbols_fetched = list(price_cache.keys())
-            logger.info(f"💰 Fetched current prices for {len(symbols_fetched)} symbols: {', '.join([k.split(':')[1] for k in symbols_fetched])}")
         
         # Add trade logs with P&L information
         for trade in trades:

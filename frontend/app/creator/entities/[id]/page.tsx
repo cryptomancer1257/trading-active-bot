@@ -32,15 +32,41 @@ interface BotLog {
   symbol?: string
   quantity?: number
   entry_price?: number
+  entry_time?: string | null
   leverage?: number
   status?: string
   order_id?: string
-  stop_loss?: number
-  take_profit?: number
+  position_side?: string
+  
+  // Risk Management
+  stop_loss?: number | null
+  take_profit?: number | null
+  
+  // P&L (synced from exchange by Celery every 10s)
   unrealized_pnl?: number | null
+  realized_pnl?: number | null
+  pnl_usd?: number | null
+  pnl_percentage?: number | null
+  is_winning?: boolean | null
+  
+  // Price & Exit Info
+  last_updated_price?: number | null
+  exit_price?: number | null
+  exit_time?: string | null
+  exit_reason?: string | null
+  
+  // Additional Metrics
+  fees_paid?: number | null
+  trade_duration_minutes?: number | null
+  risk_reward_ratio?: number | null
+  actual_rr_ratio?: number | null
+  strategy_used?: string | null
+  
+  // Legacy fields (deprecated)
   unrealized_pnl_pct?: number | null
   funding_fees?: number
   needs_price_update?: boolean
+  
   confidence?: number
   reason?: string
   details?: string
@@ -421,9 +447,24 @@ export default function BotDetailPage() {
                       const entryPrice = log.entry_price
                       const tradingPair = log.symbol
                       const status = log.status
+                      
+                      // P&L fields (synced from exchange every 10s by Celery)
                       const unrealizedPnl = log.unrealized_pnl
-                      const unrealizedPnlPct = log.unrealized_pnl_pct
-                      const fundingFees = log.funding_fees
+                      const realizedPnl = log.realized_pnl
+                      const pnlUsd = log.pnl_usd
+                      const pnlPercentage = log.pnl_percentage
+                      const isWinning = log.is_winning
+                      
+                      // Price & Exit info
+                      const lastUpdatedPrice = log.last_updated_price
+                      const exitPrice = log.exit_price
+                      const exitTime = log.exit_time
+                      const exitReason = log.exit_reason
+                      
+                      // Additional metrics
+                      const feesPaid = log.fees_paid
+                      const tradeDuration = log.trade_duration_minutes
+                      const strategyUsed = log.strategy_used
                       
                       // Status badge color
                       const getStatusBadge = (status: string) => {
@@ -452,32 +493,71 @@ export default function BotDetailPage() {
                                     )}
                                     
                                     {/* Risk Management + P&L Info */}
-                                    {(stopLoss || takeProfit || unrealizedPnl !== undefined) && (
-                                      <div className="ml-8 mt-1 text-sm space-y-1">
-                                        {(stopLoss || takeProfit) && (
-                                          <div className="text-gray-400">
-                                            {stopLoss && <span className="mr-4">🛑 SL: ${typeof stopLoss === 'number' ? stopLoss.toFixed(2) : stopLoss}</span>}
-                                            {takeProfit && <span>🎯 TP: ${typeof takeProfit === 'number' ? takeProfit.toFixed(2) : takeProfit}</span>}
-                                          </div>
-                                        )}
-                                        
-                                        {/* Realtime P&L for OPEN positions */}
-                                        {status === 'OPEN' && (
-                                          <div className={getPnlColor(unrealizedPnl)}>
-                                            {unrealizedPnl !== null && unrealizedPnlPct !== null ? (
+                                    <div className="ml-8 mt-1 text-sm space-y-1">
+                                      {/* Risk Management */}
+                                      {(stopLoss || takeProfit) && (
+                                        <div className="text-gray-400">
+                                          {stopLoss && <span className="mr-4">🛡️ SL: ${typeof stopLoss === 'number' ? stopLoss.toFixed(2) : stopLoss}</span>}
+                                          {takeProfit && <span>💚 TP: ${typeof takeProfit === 'number' ? takeProfit.toFixed(2) : takeProfit}</span>}
+                                        </div>
+                                      )}
+                                      
+                                      {/* OPEN Position - Show Unrealized P&L */}
+                                      {status === 'OPEN' && (
+                                        <>
+                                          {lastUpdatedPrice && (
+                                            <div className="text-gray-400">
+                                              💰 Current: ${lastUpdatedPrice.toFixed(2)}
+                                            </div>
+                                          )}
+                                          <div className={getPnlColor(unrealizedPnl ?? null)}>
+                                            {unrealizedPnl !== null && unrealizedPnl !== undefined && pnlPercentage !== null && pnlPercentage !== undefined ? (
                                               <>
-                                                💹 P&L: ${unrealizedPnl.toFixed(2)} ({unrealizedPnlPct >= 0 ? '+' : ''}{unrealizedPnlPct.toFixed(2)}%)
-                                                {fundingFees !== undefined && fundingFees !== 0 && (
-                                                  <span className="ml-4 text-yellow-400">💸 Fees: ${fundingFees.toFixed(2)}</span>
+                                                💵 P&L: ${unrealizedPnl >= 0 ? '+' : ''}{unrealizedPnl.toFixed(2)} ({pnlPercentage >= 0 ? '+' : ''}{pnlPercentage.toFixed(2)}%)
+                                                {feesPaid !== undefined && feesPaid !== null && feesPaid !== 0 && (
+                                                  <span className="ml-4 text-yellow-400">💸 Fees: -${feesPaid.toFixed(2)}</span>
                                                 )}
                                               </>
                                             ) : (
-                                              <span className="text-gray-500">💹 P&L: Calculating...</span>
+                                              <span className="text-gray-500">💵 P&L: Syncing...</span>
                                             )}
                                           </div>
-                                        )}
-                                      </div>
-                                    )}
+                                        </>
+                                      )}
+                                      
+                                      {/* CLOSED Position - Show Realized P&L */}
+                                      {status === 'CLOSED' && (
+                                        <>
+                                          {exitPrice && (
+                                            <div className="text-gray-400">
+                                              🚪 Exit: ${exitPrice.toFixed(2)}
+                                              {exitReason && (
+                                                <span className="ml-2 px-1.5 py-0.5 text-xs bg-gray-800 rounded">
+                                                  {exitReason === 'TP_HIT' && '✅ TP'}
+                                                  {exitReason === 'SL_HIT' && '❌ SL'}
+                                                  {exitReason === 'MANUAL' && '👤 Manual'}
+                                                  {exitReason === 'LIQUIDATION' && '⚠️ Liq'}
+                                                  {!['TP_HIT', 'SL_HIT', 'MANUAL', 'LIQUIDATION'].includes(exitReason) && exitReason}
+                                                </span>
+                                              )}
+                                            </div>
+                                          )}
+                                          {realizedPnl !== null && realizedPnl !== undefined && pnlPercentage !== null && pnlPercentage !== undefined && (
+                                            <div className={getPnlColor(realizedPnl ?? null)}>
+                                              {isWinning ? '✅' : '❌'} Realized: ${realizedPnl >= 0 ? '+' : ''}{realizedPnl.toFixed(2)} ({pnlPercentage >= 0 ? '+' : ''}{pnlPercentage.toFixed(2)}%)
+                                              {tradeDuration && (
+                                                <span className="ml-4 text-gray-500">⏱️ {tradeDuration < 60 ? `${tradeDuration}m` : `${(tradeDuration / 60).toFixed(1)}h`}</span>
+                                              )}
+                                            </div>
+                                          )}
+                                          {exitTime && (
+                                            <div className="text-xs text-gray-500">
+                                              Closed: {new Date(exitTime).toLocaleString()}
+                                            </div>
+                                          )}
+                                        </>
+                                      )}
+                                    </div>
                                   </>
                                 )
                               : (log.details || log.message || `${log.action} ${log.symbol}`)

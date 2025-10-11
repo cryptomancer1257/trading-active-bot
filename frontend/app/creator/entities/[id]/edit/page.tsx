@@ -125,10 +125,28 @@ export default function EditBotPage() {
         setImagePreview((bot as any).image_url)
       }
       
-      setValue('leverage', (bot as any).leverage || 10)
-      setValue('risk_percentage', (bot as any).risk_percentage || 2)
-      setValue('stop_loss_percentage', (bot as any).stop_loss_percentage || 5)
-      setValue('take_profit_percentage', (bot as any).take_profit_percentage || 10)
+      // Load risk fields from risk_config (stored as JSON)
+      const riskConfig = (bot as any).risk_config || {}
+      
+      console.log('🔍 DEBUG - Full bot object:', bot)
+      console.log('🔍 DEBUG - risk_config from bot:', riskConfig)
+      console.log('🔍 DEBUG - risk_config keys:', Object.keys(riskConfig))
+      console.log('🔍 DEBUG - max_leverage:', riskConfig.max_leverage)
+      console.log('🔍 DEBUG - risk_per_trade_percent:', riskConfig.risk_per_trade_percent)
+      console.log('🔍 DEBUG - stop_loss_percent:', riskConfig.stop_loss_percent)
+      console.log('🔍 DEBUG - take_profit_percent:', riskConfig.take_profit_percent)
+      
+      setValue('leverage', riskConfig.max_leverage || (bot as any).leverage || 10)
+      setValue('risk_percentage', riskConfig.risk_per_trade_percent || riskConfig.max_position_size || (bot as any).risk_percentage || 2)
+      setValue('stop_loss_percentage', riskConfig.stop_loss_percent || (bot as any).stop_loss_percentage || 5)
+      setValue('take_profit_percentage', riskConfig.take_profit_percent || (bot as any).take_profit_percentage || 10)
+      
+      console.log('✅ After setValue:')
+      console.log('   leverage:', watch('leverage'))
+      console.log('   risk_percentage:', watch('risk_percentage'))
+      console.log('   stop_loss_percentage:', watch('stop_loss_percentage'))
+      console.log('   take_profit_percentage:', watch('take_profit_percentage'))
+      
       // Load LLM config from strategy_config (stored as JSON)
       const strategyConfig = (bot as any).strategy_config || {}
       const llmProvider = strategyConfig.llm_provider || (bot as any).llm_provider || ''

@@ -11,6 +11,7 @@ import {
   CogIcon,
   ShieldCheckIcon
 } from '@heroicons/react/24/outline'
+import ActivityFeed from '@/components/ActivityFeed'
 
 export default function DashboardPage() {
   const { user, loading } = useAuthGuard({ requireAuth: true })
@@ -267,28 +268,7 @@ export default function DashboardPage() {
             📊 Neural Activity Monitor
             <span className="ml-2 w-2 h-2 bg-cyber-500 rounded-full animate-neural-pulse" style={{ animationDelay: '1s' }}></span>
           </h3>
-          <div className="text-center py-12 text-gray-400">
-            <div className="relative mx-auto h-16 w-16 mb-4">
-              <ChartBarIcon className="h-16 w-16 text-gray-600 animate-neural-pulse" />
-              <div className="absolute inset-0 bg-gradient-to-r from-quantum-500/20 to-cyber-500/20 rounded-full blur-xl"></div>
-            </div>
-            <p className="text-gray-300 font-medium">Neural Network Initializing...</p>
-            <p className="text-sm mt-1 text-gray-500">Begin by forging your first AI entity or scanning the arsenal</p>
-            <div className="mt-6 flex justify-center space-x-4">
-              <Link 
-                href="/creator/forge" 
-                className="btn btn-primary px-6 py-2 text-sm"
-              >
-                🧠 Forge Entity
-              </Link>
-              <Link 
-                href="/arsenal" 
-                className="btn btn-secondary px-6 py-2 text-sm"
-              >
-                🔍 Scan Arsenal
-              </Link>
-            </div>
-          </div>
+          <ActivityFeed />
         </div>
       </div>
     </div>

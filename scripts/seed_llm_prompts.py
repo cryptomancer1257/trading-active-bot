@@ -105,38 +105,24 @@ STOP-LOSS CALCULATION:
         2. Above Upper Bollinger Band, OR
         3. 2-3% above entry (whichever is closer)
 
-TAKE-PROFIT TARGETS (Multiple levels recommended):
-    - Provide 2-3 take-profit levels with size distribution
-    BUY Targets (in ascending order):
-        - TP1: First resistance OR 1.5x stop distance (50% position)
-        - TP2: Next resistance OR Upper BB (30% position)
-        - TP3: Major resistance OR 3x stop distance (20% position)
-    SELL Targets (in descending order):
-        - TP1: First support OR 1.5x stop distance (50% position)
-        - TP2: Next support OR Lower BB (30% position)
-        - TP3: Major support OR 3x stop distance (20% position)
-    Size percentages must total 100%
-    MINIMUM R:R RATIO: 1.5:1 (prefer 2:1+)
+RISK MANAGEMENT:
+    - Stop Loss and Take Profit are automatically calculated from Risk Config
+    - Focus on identifying high-probability entry points
+    - Risk:Reward ratio is managed by system configuration
+    - Your job: Identify the BEST entry timing and market direction
 
 OUTPUT FORMAT (STRICT JSON SCHEMA):
 {
   "recommendation": {
     "action": "BUY" | "SELL" | "HOLD",
     "entry_price": "<string | null>",
-    "stop_loss": "<string | null>",
-    "take_profit": [
-      {
-        "level": "<string>",           // ví dụ: "TP1", "TP2", "TP3"
-        "price": "<string>",           // ví dụ: "124500"
-        "size_pct": "<number>"         // phần trăm vị thế, ví dụ: 50, 30, 20
-      }
-    ],
     "strategy": "<MA, MACD, RSI, BollingerBands, Fibonacci_Retracement hoặc kết hợp>",
-    "risk_reward": "<string | null>",  // ví dụ: "1:3"
     "confidence": "<number 0-100>",
     "reasoning": "<ngắn gọn 1-2 câu giải thích tại sao>"
   }
 }
+
+NOTE: Stop Loss and Take Profit are automatically calculated from Risk Config (developer-configured parameters), not from LLM.
 
 OUTPUT RULES:
     HOLD actions: All price fields = null
