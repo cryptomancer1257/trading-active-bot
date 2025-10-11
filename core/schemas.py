@@ -561,7 +561,8 @@ class SubscriptionBase(BaseModel):
     instance_name: str
     bot_id: int
     exchange_type: ExchangeType = ExchangeType.BINANCE
-    trading_pair: str
+    trading_pair: str  # Primary trading pair
+    secondary_trading_pairs: Optional[List[str]] = []  # Secondary pairs in priority order
     timeframe: str = Field(..., pattern="^(1m|5m|15m|1h|2h|4h|6h|8h|12h|1d|1w)$")
     strategy_config: Dict[str, Any] = {}
     execution_config: ExecutionConfig
@@ -589,6 +590,7 @@ class MarketplaceSubscriptionCreate(BaseModel):
     bot_id: int
     exchange_type: ExchangeType = ExchangeType.BINANCE
     trading_pair: str = "BTCUSDT"
+    secondary_trading_pairs: Optional[List[str]] = []  # Multi-pair trading
     timeframe: str = "1h"
     is_testnet: bool = True  # Default to testnet for safety
     
@@ -623,6 +625,7 @@ class MarketplaceSubscriptionCreateV2(BaseModel):
     # Trading configuration
     is_testnet: bool = True
     trading_pair: Optional[str] = Field(None, description="Trading pair like BTC/USDT")
+    secondary_trading_pairs: Optional[List[str]] = []  # Multi-pair trading
     trading_network: Optional[str] = Field(None, description="Trading network like MAINNET, TESTNET")
     payment_method:  Optional[str] = None
     paypal_payment_id: Optional[str] = None

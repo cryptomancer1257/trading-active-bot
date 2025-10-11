@@ -533,6 +533,159 @@ def get_bot_analytics(db: Session, bot_id: int, developer_id: int, days: int = 3
         }
     }
 
+def get_bot_subscriptions(
+    db: Session,
+    bot_id: int,
+    developer_id: int,
+    page: int = 1,
+    limit: int = 20,
+    principal_id: Optional[str] = None,
+    user_id: Optional[int] = None,
+    trading_pair: Optional[str] = None,
+    status: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    search: Optional[str] = None
+):
+    """
+    Get all subscriptions for a bot with advanced filtering and pagination
+    """
+    from datetime import datetime
+    
+    # Verify bot belongs to developer
+    bot = db.query(models.Bot).filter(
+        models.Bot.id == bot_id,
+        models.Bot.developer_id == developer_id
+    ).first()
+    
+    if not bot:
+        raise HTTPException(status_code=404, detail="Bot not found")
+    
+    # Build base query
+    query = db.query(models.Subscription).filter(
+        models.Subscription.bot_id == bot_id
+    )
+    
+    # Apply filters
+    if principal_id:
+        query = query.filter(models.Subscription.user_principal_id == principal_id)
+    
+    if user_id:
+        query = query.filter(models.Subscription.user_id == user_id)
+    
+    if trading_pair:
+        query = query.filter(models.Subscription.trading_pair == trading_pair)
+    
+    if status:
+        try:
+            status_enum = models.SubscriptionStatus[status.upper()]
+            query = query.filter(models.Subscription.status == status_enum)
+        except KeyError:
+            pass  # Invalid status, ignore filter
+    
+    if start_date:
+        try:
+            start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+            query = query.filter(models.Subscription.started_at >= start_dt)
+        except ValueError:
+            pass  # Invalid date format, ignore filter
+    
+    if end_date:
+        try:
+            end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+            query = query.filter(models.Subscription.expires_at <= end_dt)
+        except ValueError:
+            pass  # Invalid date format, ignore filter
+    
+    # Apply search (search in principal_id, instance_name, or trading_pair)
+    if search:
+        search_pattern = f"%{search}%"
+        query = query.filter(
+            or_(
+                models.Subscription.user_principal_id.like(search_pattern),
+                models.Subscription.instance_name.like(search_pattern),
+                models.Subscription.trading_pair.like(search_pattern)
+            )
+        )
+    
+    # Get total count for pagination
+    total_count = query.count()
+    
+    # Calculate pagination
+    offset = (page - 1) * limit
+    total_pages = (total_count + limit - 1) // limit if limit > 0 else 0
+    
+    # Get subscriptions with pagination
+    subscriptions = query.order_by(
+        models.Subscription.started_at.desc()
+    ).offset(offset).limit(limit).all()
+    
+    # Format subscriptions
+    subscriptions_list = []
+    for sub in subscriptions:
+        # Get transaction stats for this subscription
+        transactions = db.query(models.Transaction).filter(
+            models.Transaction.subscription_id == sub.id
+        ).all()
+        
+        total_trades = len(transactions)
+        open_positions = sum(1 for tx in transactions if tx.status == 'OPEN')
+        closed_positions = sum(1 for tx in transactions if tx.status == 'CLOSED')
+        
+        total_pnl = 0.0
+        for tx in transactions:
+            if tx.status == 'CLOSED' and tx.realized_pnl:
+                total_pnl += float(tx.realized_pnl)
+            elif tx.status == 'OPEN' and tx.unrealized_pnl:
+                total_pnl += float(tx.unrealized_pnl)
+        
+        subscriptions_list.append({
+            'id': sub.id,
+            'instance_name': sub.instance_name,
+            'user_principal_id': sub.user_principal_id,
+            'user_id': sub.user_id,
+            'status': sub.status.value if sub.status else None,
+            'trading_pair': sub.trading_pair,
+            'secondary_trading_pairs': sub.secondary_trading_pairs or [],
+            'timeframe': sub.bot.timeframe if sub.bot else None,
+            'timeframes': sub.bot.timeframes if sub.bot else [],
+            'is_testnet': sub.is_testnet,
+            'network_type': sub.network_type.value if sub.network_type else None,
+            'started_at': sub.started_at.isoformat() if sub.started_at else None,
+            'expires_at': sub.expires_at.isoformat() if sub.expires_at else None,
+            'last_run_at': sub.last_run_at.isoformat() if sub.last_run_at else None,
+            'next_run_at': sub.next_run_at.isoformat() if sub.next_run_at else None,
+            'payment_method': sub.payment_method.value if sub.payment_method else None,
+            # Stats
+            'total_trades': total_trades,
+            'open_positions': open_positions,
+            'closed_positions': closed_positions,
+            'total_pnl': round(total_pnl, 2)
+        })
+    
+    return {
+        'bot_id': bot_id,
+        'bot_name': bot.name,
+        'subscriptions': subscriptions_list,
+        'pagination': {
+            'current_page': page,
+            'total_pages': total_pages,
+            'total_items': total_count,
+            'items_per_page': limit,
+            'has_next': page < total_pages,
+            'has_prev': page > 1
+        },
+        'filters_applied': {
+            'principal_id': principal_id,
+            'user_id': user_id,
+            'trading_pair': trading_pair,
+            'status': status,
+            'start_date': start_date,
+            'end_date': end_date,
+            'search': search
+        }
+    }
+
 def get_all_bots(db: Session, skip: int = 0, limit: int = 100, status_filter: Optional[schemas.BotStatus] = None):
     query = db.query(models.Bot)
     
@@ -895,6 +1048,7 @@ def create_subscription(db: Session, sub: schemas.SubscriptionCreate, user_id: i
         bot_id=sub.bot_id,
         instance_name=sub.instance_name,
         trading_pair=sub.trading_pair,
+        secondary_trading_pairs=sub.secondary_trading_pairs or [],
         timeframe=sub.timeframe,
         strategy_config=sub.strategy_config,
         execution_config=sub.execution_config.dict(),

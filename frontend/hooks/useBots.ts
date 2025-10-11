@@ -36,6 +36,7 @@ export interface CreateBotRequest {
   bot_mode: string
   exchange_type: string
   trading_pair: string
+  secondary_trading_pairs?: string[] // Multi-pair trading support
   timeframe: string
   timeframes: string[]
   version: string
