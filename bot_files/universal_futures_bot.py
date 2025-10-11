@@ -231,6 +231,11 @@ class UniversalFuturesBot(CustomBot):
                 if llm_model:
                     logger.info(f"🎯 Bot configured to use specific model: {llm_model}")
                 
+                # If no specific model, use provider name as model identifier
+                if not llm_model and preferred_provider:
+                    llm_model = preferred_provider
+                    logger.info(f"ℹ️  No specific model configured, using provider: {preferred_provider}")
+                
                 # Build LLM config with defaults
                 llm_config = {
                     'openai_api_key': os.getenv('OPENAI_API_KEY'),

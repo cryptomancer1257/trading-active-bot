@@ -193,7 +193,7 @@ def create_bot(db: Session, bot: schemas.BotCreate, developer_id: int, status: s
     valid_fields = {
         'name', 'description', 'category_id', 'version', 'bot_type', 'price_per_month', 
         'is_free', 'config_schema', 'default_config', 'model_metadata', 'timeframes', 
-        'timeframe', 'bot_mode', 'trading_pair', 'exchange_type', 'strategy_config', 
+        'timeframe', 'bot_mode', 'trading_pair', 'trading_pairs', 'exchange_type', 'strategy_config', 
         'image_url', 'code_path', 'code_path_rpa', 'version_rpa', 
         'risk_config', 'risk_management_mode'  # Risk management fields
     }

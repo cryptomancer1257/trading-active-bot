@@ -9,7 +9,8 @@ export interface Bot {
   bot_mode: string
   status: string
   exchange_type: string
-  trading_pair: string
+  trading_pair: string  // Legacy: single pair
+  trading_pairs?: string[]  // List of supported trading pairs (developer config)
   timeframe: string
   version: string
   created_at: string
@@ -35,8 +36,7 @@ export interface CreateBotRequest {
   bot_type: string
   bot_mode: string
   exchange_type: string
-  trading_pair: string
-  secondary_trading_pairs?: string[] // Multi-pair trading support
+  trading_pairs: string[] // List of supported trading pairs (developer config)
   timeframe: string
   timeframes: string[]
   version: string
