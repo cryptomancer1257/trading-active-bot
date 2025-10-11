@@ -587,11 +587,13 @@ class UniversalFuturesBot(CustomBot):
                 # Check if account has enough balance for minimum order
                 required_balance = notional_value / leverage_to_use
                 if required_balance > available_balance:
+                    # Extract base asset from trading pair (e.g., BTCUSDT -> BTC)
+                    base_asset = self.trading_pair.replace('USDT', '').replace('/', '')
                     return {
                         'status': 'error',
                         'message': f'Insufficient balance: ${available_balance:.2f} USDT. ' +
                                  f'Minimum order requires ${required_balance:.2f} USDT ' +
-                                 f'({min_qty} {self.base_asset} @ ${actual_entry_price:.2f} with {leverage_to_use}x leverage)',
+                                 f'({min_qty} {base_asset} @ ${actual_entry_price:.2f} with {leverage_to_use}x leverage)',
                         'exchange': self.exchange_name,
                         'min_balance_required': required_balance,
                         'current_balance': available_balance

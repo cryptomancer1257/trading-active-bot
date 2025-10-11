@@ -488,6 +488,9 @@ export default function BotDetailPage() {
                                     <span className="font-semibold">{log.action}</span> {quantity} {tradingPair} at ${typeof entryPrice === 'number' ? entryPrice.toFixed(2) : entryPrice} 
                                     {leverage && <span className="text-purple-400"> ({leverage}x)</span>}
                                     {status && getStatusBadge(status)}
+                                    {log.subscription_id && (
+                                      <span className="text-gray-500 ml-2 text-xs">Sub#{log.subscription_id}</span>
+                                    )}
                                     {confidence && (
                                       <span className="text-gray-500 ml-2">(Confidence: {(confidence * 100).toFixed(1)}%)</span>
                                     )}

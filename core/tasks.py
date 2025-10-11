@@ -2838,7 +2838,7 @@ async def run_advanced_futures_workflow(bot, subscription_id: int, subscription_
     """
     try:
         from datetime import datetime
-        from core import crud
+        from core import crud, models
         trade_result = None
         logger.info(f"🎯 Starting ADVANCED FUTURES WORKFLOW for subscription {subscription_id}")
         
@@ -2848,6 +2848,36 @@ async def run_advanced_futures_workflow(bot, subscription_id: int, subscription_
             logger.error(f"Subscription {subscription_id} not found")
             from bots.bot_sdk.Action import Action
             return Action(action="HOLD", value=0.0, reason="Subscription not found"), None, None
+        
+        # 0. CHECK FOR OPEN POSITIONS BEFORE LLM CALL (Prevent duplicate orders)
+        logger.info("🔍 Step 0: Checking for existing OPEN positions...")
+        trading_pair = subscription_config.get('trading_pair') or subscription.trading_pair
+        # Normalize trading pair: Remove '/' for DB query (BTC/USDT -> BTCUSDT)
+        trading_pair_normalized = trading_pair.replace('/', '') if trading_pair else trading_pair
+        
+        # Use SELECT FOR UPDATE to prevent race conditions
+        open_positions = db.query(models.Transaction).filter(
+            models.Transaction.subscription_id == subscription_id,
+            models.Transaction.symbol == trading_pair_normalized,
+            models.Transaction.status == 'OPEN'
+        ).with_for_update().all()
+        
+        if open_positions:
+            logger.warning("=" * 80)
+            logger.warning(f"⏸️  SKIPPING TRADE: OPEN POSITION EXISTS")
+            logger.warning(f"   Trading Pair: {trading_pair}")
+            logger.warning(f"   Open Positions: {len(open_positions)}")
+            for pos in open_positions:
+                logger.warning(f"   - Position #{pos.id}: {pos.action} {pos.quantity} @ ${pos.entry_price}")
+                logger.warning(f"     P&L: ${pos.unrealized_pnl:.2f}, Status: {pos.status}")
+            logger.warning(f"   💡 Will trade again when all positions are CLOSED")
+            logger.warning("=" * 80)
+            db.commit()  # Release lock
+            from bots.bot_sdk.Action import Action
+            return Action(action="HOLD", value=0.0, reason=f"OPEN position exists for {trading_pair}"), None, None
+        
+        db.commit()  # Release lock before proceeding
+        logger.info(f"✅ No OPEN positions found for {trading_pair_normalized} (query: '{trading_pair}' -> '{trading_pair_normalized}'), proceeding with LLM analysis...")
         
         # 1. Check account status (like main_execution)
         logger.info("💰 Step 1: Checking account status...")
@@ -3020,7 +3050,7 @@ async def run_advanced_futures_rpa_workflow(bot, subscription_id: int, subscript
     """
     try:
         from bots.bot_sdk.Action import Action
-        from core import crud
+        from core import crud, models
         logger.info(f"🎯 Starting ADVANCED FUTURES RPA WORKFLOW for subscription {subscription_id}")
         trade_result = None
         
@@ -3029,6 +3059,35 @@ async def run_advanced_futures_rpa_workflow(bot, subscription_id: int, subscript
         if not subscription:
             logger.error(f"Subscription {subscription_id} not found")
             return Action(action="HOLD", value=0.0, reason="Subscription not found"), None, None
+        
+        # 0. CHECK FOR OPEN POSITIONS BEFORE RPA + LLM CALL (Prevent duplicate orders)
+        logger.info("🔍 Step 0: Checking for existing OPEN positions...")
+        trading_pair = subscription_config.get('trading_pair') or subscription.trading_pair
+        # Normalize trading pair: Remove '/' for DB query (BTC/USDT -> BTCUSDT)
+        trading_pair_normalized = trading_pair.replace('/', '') if trading_pair else trading_pair
+        
+        # Use SELECT FOR UPDATE to prevent race conditions
+        open_positions = db.query(models.Transaction).filter(
+            models.Transaction.subscription_id == subscription_id,
+            models.Transaction.symbol == trading_pair_normalized,
+            models.Transaction.status == 'OPEN'
+        ).with_for_update().all()
+        
+        if open_positions:
+            logger.warning("=" * 80)
+            logger.warning(f"⏸️  SKIPPING RPA TRADE: OPEN POSITION EXISTS")
+            logger.warning(f"   Trading Pair: {trading_pair}")
+            logger.warning(f"   Open Positions: {len(open_positions)}")
+            for pos in open_positions:
+                logger.warning(f"   - Position #{pos.id}: {pos.action} {pos.quantity} @ ${pos.entry_price}")
+                logger.warning(f"     P&L: ${pos.unrealized_pnl:.2f}, Status: {pos.status}")
+            logger.warning(f"   💡 Will trade again when all positions are CLOSED")
+            logger.warning("=" * 80)
+            db.commit()  # Release lock
+            return Action(action="HOLD", value=0.0, reason=f"OPEN position exists for {trading_pair}"), None, None
+        
+        db.commit()  # Release lock before proceeding
+        logger.info(f"✅ No OPEN positions found for {trading_pair_normalized} (query: '{trading_pair}' -> '{trading_pair_normalized}'), proceeding with RPA + LLM analysis...")
         
         # 1. Check account status
         logger.info("💰 Step 1: Checking account status...")
@@ -3482,10 +3541,11 @@ def update_bot_performance_metrics(self, bot_id: int):
             bot = db.query(models.Bot).filter(models.Bot.id == bot_id).first()
             if bot:
                 # Store in metadata JSON
-                if not bot.metadata:
-                    bot.metadata = {}
+                # SQLAlchemy JSON field: Need to copy, modify, reassign
+                from sqlalchemy.orm.attributes import flag_modified
                 
-                bot.metadata['performance'] = {
+                metadata_dict = dict(bot.metadata) if bot.metadata else {}
+                metadata_dict['performance'] = {
                     'total_trades': total_trades,
                     'winning_trades': winning_trades,
                     'losing_trades': losing_trades,
@@ -3497,6 +3557,8 @@ def update_bot_performance_metrics(self, bot_id: int):
                     'profit_factor': round(profit_factor, 2),
                     'last_updated': datetime.now().isoformat()
                 }
+                bot.metadata = metadata_dict
+                flag_modified(bot, 'metadata')
                 
                 db.commit()
             

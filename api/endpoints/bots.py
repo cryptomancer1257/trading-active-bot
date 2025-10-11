@@ -703,11 +703,13 @@ def get_developer_analytics_overview(
 def get_bot_analytics(
     bot_id: int,
     days: int = 30,
+    page: int = 1,
+    limit: int = 10,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(security.get_current_active_developer)
 ):
-    """Get bot analytics including transactions, subscribers, and performance metrics"""
-    return crud.get_bot_analytics(db, bot_id=bot_id, developer_id=current_user.id, days=days)
+    """Get bot analytics including transactions, subscribers, and performance metrics with pagination"""
+    return crud.get_bot_analytics(db, bot_id=bot_id, developer_id=current_user.id, days=days, page=page, limit=limit)
 
 @router.get("/validate-bot-key/{api_key}", response_model=schemas.BotMarketplaceRegistrationInDB)
 def validate_bot_api_key(
