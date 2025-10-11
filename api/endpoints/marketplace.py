@@ -233,6 +233,41 @@ async def create_marketplace_subscription_v2(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="API key does not match the requested bot",
             )
+        
+        # Validate trading pairs against bot's configured pairs
+        if request.trading_pair:  # Only validate if trading_pair is provided
+            if bot.trading_pairs:
+                # Primary trading pair must be in bot's trading_pairs
+                if request.trading_pair not in bot.trading_pairs:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Primary trading pair '{request.trading_pair}' is not supported by this bot. "
+                               f"Supported pairs: {', '.join(bot.trading_pairs)}"
+                    )
+                
+                # Secondary trading pairs must also be in bot's trading_pairs
+                if request.secondary_trading_pairs:
+                    invalid_pairs = [pair for pair in request.secondary_trading_pairs if pair not in bot.trading_pairs]
+                    if invalid_pairs:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"Secondary trading pairs {invalid_pairs} are not supported by this bot. "
+                                   f"Supported pairs: {', '.join(bot.trading_pairs)}"
+                        )
+                    
+                    # Ensure primary pair is not in secondary pairs
+                    if request.trading_pair in request.secondary_trading_pairs:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"Primary trading pair '{request.trading_pair}' cannot be in secondary trading pairs"
+                        )
+            else:
+                # Legacy bot without trading_pairs configured - use the bot's single trading_pair
+                if bot.trading_pair and request.trading_pair != bot.trading_pair:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"This bot only supports trading pair: {bot.trading_pair}"
+                    )
 
         # Auto-detect trade_mode from bot type (using string comparison)
         if bot.bot_type and bot.bot_type.upper() == "FUTURES":
@@ -399,6 +434,41 @@ async def create_marketplace_subscription_v2(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="API key does not match the requested bot",
             )
+        
+        # Validate trading pairs against bot's configured pairs
+        if request.trading_pair:  # Only validate if trading_pair is provided
+            if bot.trading_pairs:
+                # Primary trading pair must be in bot's trading_pairs
+                if request.trading_pair not in bot.trading_pairs:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Primary trading pair '{request.trading_pair}' is not supported by this bot. "
+                               f"Supported pairs: {', '.join(bot.trading_pairs)}"
+                    )
+                
+                # Secondary trading pairs must also be in bot's trading_pairs
+                if request.secondary_trading_pairs:
+                    invalid_pairs = [pair for pair in request.secondary_trading_pairs if pair not in bot.trading_pairs]
+                    if invalid_pairs:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"Secondary trading pairs {invalid_pairs} are not supported by this bot. "
+                                   f"Supported pairs: {', '.join(bot.trading_pairs)}"
+                        )
+                    
+                    # Ensure primary pair is not in secondary pairs
+                    if request.trading_pair in request.secondary_trading_pairs:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"Primary trading pair '{request.trading_pair}' cannot be in secondary trading pairs"
+                        )
+            else:
+                # Legacy bot without trading_pairs configured - use the bot's single trading_pair
+                if bot.trading_pair and request.trading_pair != bot.trading_pair:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"This bot only supports trading pair: {bot.trading_pair}"
+                    )
         
         principal_mapping = db.query(models.UserPrincipal).filter(
                 models.UserPrincipal.principal_id == request.user_principal_id,

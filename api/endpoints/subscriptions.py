@@ -76,6 +76,40 @@ def create_subscription(
         if not bot or bot.status != schemas.BotStatus.APPROVED:
             raise HTTPException(status_code=404, detail="Bot not found or not approved for use")
 
+        # Validate trading pairs against bot's configured pairs
+        if bot.trading_pairs:
+            # Primary trading pair must be in bot's trading_pairs
+            if sub_in.trading_pair not in bot.trading_pairs:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Primary trading pair '{sub_in.trading_pair}' is not supported by this bot. "
+                           f"Supported pairs: {', '.join(bot.trading_pairs)}"
+                )
+            
+            # Secondary trading pairs must also be in bot's trading_pairs
+            if sub_in.secondary_trading_pairs:
+                invalid_pairs = [pair for pair in sub_in.secondary_trading_pairs if pair not in bot.trading_pairs]
+                if invalid_pairs:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Secondary trading pairs {invalid_pairs} are not supported by this bot. "
+                               f"Supported pairs: {', '.join(bot.trading_pairs)}"
+                    )
+                
+                # Ensure primary pair is not in secondary pairs
+                if sub_in.trading_pair in sub_in.secondary_trading_pairs:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Primary trading pair '{sub_in.trading_pair}' cannot be in secondary trading pairs"
+                    )
+        else:
+            # Legacy bot without trading_pairs configured - only allow the bot's single trading_pair
+            if bot.trading_pair and sub_in.trading_pair != bot.trading_pair:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"This bot only supports trading pair: {bot.trading_pair}"
+                )
+
         # Check if user has API credentials
         if not current_user.api_key or not current_user.api_secret:
             raise HTTPException(

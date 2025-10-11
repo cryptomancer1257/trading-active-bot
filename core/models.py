@@ -256,7 +256,8 @@ class Bot(Base):
 
     #exchange
     exchange_type = Column(Enum(ExchangeType), default=ExchangeType.BINANCE)
-    trading_pair = Column(String(10), default="BTC/USDT")
+    trading_pair = Column(String(10), default="BTC/USDT")  # Legacy: keep for backward compatibility
+    trading_pairs = Column(JSON)  # List of supported trading pairs e.g., ["BTC/USDT", "ETH/USDT"]
     strategy_config = Column(JSON, default=dict)  # Strategy configuration overrides
 
     # Legacy pricing (keep for backward compatibility)
