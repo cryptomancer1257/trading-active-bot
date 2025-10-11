@@ -274,7 +274,8 @@ class BotBase(BaseModel):
     timeframes: Optional[List[str]] = None
     timeframe: Optional[str] = None
     bot_mode: Optional[BotMode] = None
-    trading_pair: Optional[str] = None
+    trading_pair: Optional[str] = None  # Legacy: keep for backward compatibility
+    trading_pairs: Optional[List[str]] = None  # List of supported trading pairs
     exchange_type: Optional[ExchangeType] = None
     strategy_config: Optional[Any] = None
     image_url: Optional[str] = None
@@ -328,7 +329,8 @@ class BotUpdate(BaseModel):
     timeframes: Optional[List[str]] = None
     timeframe: Optional[str] = None
     bot_mode: Optional[BotMode] = None
-    trading_pair: Optional[str] = None
+    trading_pair: Optional[str] = None  # Legacy
+    trading_pairs: Optional[List[str]] = None  # List of supported trading pairs
     exchange_type: Optional[ExchangeType] = None
     strategy_config: Optional[Any] = None
     image_url: Optional[str] = None

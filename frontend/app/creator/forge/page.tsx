@@ -29,8 +29,7 @@ const botSchema = z.object({
   bot_type: z.enum(['TECHNICAL', 'ML', 'DL', 'LLM', 'FUTURES', 'FUTURES_RPA', 'SPOT']),
   // bot_mode is auto-set based on template type
   exchange_type: z.enum(['BINANCE', 'KRAKEN', 'BYBIT', 'HUOBI', 'MULTI', 'OKX', 'BITGET']),
-  trading_pair: z.string().default('BTC/USDT'),
-  secondary_trading_pairs: z.array(z.string()).default([]),
+  trading_pairs: z.array(z.string()).min(1, 'At least one trading pair is required').default(['BTC/USDT']),
   timeframe: z.string().default('1h'),
   timeframes: z.array(z.string()).default(['1h']),
   version: z.string().default('1.0.0'),
@@ -174,6 +173,30 @@ const timeframeOptions = [
   '1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '6h', '8h', '12h', '1d', '3d', '1w', '1M'
 ]
 
+// Top 20 trading pairs from CoinMarketCap (against USDT)
+const topTradingPairs = [
+  { symbol: 'BTC/USDT', name: 'Bitcoin', rank: 1 },
+  { symbol: 'ETH/USDT', name: 'Ethereum', rank: 2 },
+  { symbol: 'BNB/USDT', name: 'BNB', rank: 3 },
+  { symbol: 'SOL/USDT', name: 'Solana', rank: 4 },
+  { symbol: 'XRP/USDT', name: 'Ripple', rank: 5 },
+  { symbol: 'DOGE/USDT', name: 'Dogecoin', rank: 6 },
+  { symbol: 'ADA/USDT', name: 'Cardano', rank: 7 },
+  { symbol: 'TRX/USDT', name: 'TRON', rank: 8 },
+  { symbol: 'AVAX/USDT', name: 'Avalanche', rank: 9 },
+  { symbol: 'SHIB/USDT', name: 'Shiba Inu', rank: 10 },
+  { symbol: 'DOT/USDT', name: 'Polkadot', rank: 11 },
+  { symbol: 'LINK/USDT', name: 'Chainlink', rank: 12 },
+  { symbol: 'MATIC/USDT', name: 'Polygon', rank: 13 },
+  { symbol: 'BCH/USDT', name: 'Bitcoin Cash', rank: 14 },
+  { symbol: 'LTC/USDT', name: 'Litecoin', rank: 15 },
+  { symbol: 'UNI/USDT', name: 'Uniswap', rank: 16 },
+  { symbol: 'ATOM/USDT', name: 'Cosmos', rank: 17 },
+  { symbol: 'ETC/USDT', name: 'Ethereum Classic', rank: 18 },
+  { symbol: 'XLM/USDT', name: 'Stellar', rank: 19 },
+  { symbol: 'FIL/USDT', name: 'Filecoin', rank: 20 }
+]
+
 export default function ForgePage() {
   const { user, loading } = useAuthGuard({ 
     requireAuth: true,
@@ -217,8 +240,7 @@ export default function ForgePage() {
     defaultValues: {
       // bot_mode is auto-set based on template
       exchange_type: 'BINANCE',
-      trading_pair: 'BTC/USDT',
-      secondary_trading_pairs: [],
+      trading_pairs: ['BTC/USDT'],
       timeframe: '1h',
       timeframes: ['1h'],
       version: '1.0.0',
@@ -394,7 +416,7 @@ export default function ForgePage() {
           bot_type: templateType, // Use template type
           bot_mode: autoBotMode, // Auto-set based on template type
           exchange_type: data.exchange_type,
-          trading_pair: data.trading_pair,
+          trading_pairs: data.trading_pairs, // Multiple trading pairs
           timeframe: data.timeframe,
           timeframes: data.timeframes,
           version: data.version,
@@ -1051,154 +1073,127 @@ export default function ForgePage() {
                       </select>
                     </div>
                     
+                    {/* Trading Pairs */}
                     <div>
-                      <label className="form-label">Primary Trading Pair</label>
-                      <input
-                        {...register('trading_pair')}
-                        className="form-input"
-                        placeholder="BTC/USDT"
-                      />
-                      <p className="mt-1 text-xs text-gray-500">
-                        🎯 Main trading pair (highest priority)
-                      </p>
-                    </div>
-                    
-                    {/* Secondary Trading Pairs */}
-                    <div className="mt-4">
-                      <label className="form-label">Secondary Trading Pairs (Optional)</label>
+                      <label className="form-label">Trading Pairs</label>
                       <p className="mt-1 text-sm text-gray-400 mb-3">
-                        📊 Bot will trade these pairs when primary is busy (priority order)
+                        📊 Select from top 20 CoinMarketCap coins. Users will choose from your selection when subscribing.
                       </p>
                       
-                      {/* Add New Pair Input */}
-                      <div className="flex gap-2 mb-3">
-                        <input
-                          type="text"
-                          placeholder="e.g., ETH/USDT"
-                          className="form-input flex-1"
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault()
-                              const input = e.currentTarget
-                              const value = input.value.trim().toUpperCase()
-                              if (value && !watch('secondary_trading_pairs')?.includes(value) && value !== watch('trading_pair')) {
-                                setValue('secondary_trading_pairs', [...(watch('secondary_trading_pairs') || []), value])
-                                input.value = ''
-                              }
-                            }
-                          }}
-                          id="secondary-pair-input"
-                        />
+                      {/* Quick Add Top Coins */}
+                      <div className="mb-3">
                         <button
                           type="button"
                           onClick={() => {
-                            const input = document.getElementById('secondary-pair-input') as HTMLInputElement
-                            const value = input.value.trim().toUpperCase()
-                            if (value && !watch('secondary_trading_pairs')?.includes(value) && value !== watch('trading_pair')) {
-                              setValue('secondary_trading_pairs', [...(watch('secondary_trading_pairs') || []), value])
-                              input.value = ''
-                            }
+                            const top5 = topTradingPairs.slice(0, 5).map(p => p.symbol)
+                            const currentPairs = watch('trading_pairs') || []
+                            // Deduplicate using Set
+                            const uniquePairs = Array.from(new Set([...currentPairs, ...top5]))
+                            setValue('trading_pairs', uniquePairs)
                           }}
-                          className="px-4 py-2 bg-quantum-500/20 border border-quantum-500 text-quantum-400 rounded-md hover:bg-quantum-500/30 transition-colors text-sm font-medium"
+                          className="w-full px-4 py-2 bg-gradient-to-r from-blue-500/20 to-purple-500/20 border border-blue-500/50 text-blue-400 rounded-md hover:from-blue-500/30 hover:to-purple-500/30 transition-all text-sm font-medium"
                         >
-                          + Add
+                          ⚡ Quick Add Top 5 Coins (BTC, ETH, BNB, SOL, XRP)
                         </button>
                       </div>
                       
-                      {/* List of Secondary Pairs with Reordering */}
-                      {watch('secondary_trading_pairs') && watch('secondary_trading_pairs').length > 0 && (
+                      {/* Add New Pair Dropdown */}
+                      <div className="flex gap-2 mb-3">
+                        <select
+                          className="form-input flex-1"
+                          onChange={(e) => {
+                            const value = e.target.value
+                            if (value && !watch('trading_pairs')?.includes(value)) {
+                              setValue('trading_pairs', [...(watch('trading_pairs') || []), value])
+                              e.target.value = '' // Reset select
+                            }
+                          }}
+                          defaultValue=""
+                        >
+                          <option value="" disabled>Select a trading pair...</option>
+                          {topTradingPairs
+                            .filter(pair => !watch('trading_pairs')?.includes(pair.symbol))
+                            .map((pair) => (
+                              <option key={pair.symbol} value={pair.symbol}>
+                                #{pair.rank} {pair.symbol} - {pair.name}
+                              </option>
+                            ))}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const select = document.querySelector('select[class*="form-input"]') as HTMLSelectElement
+                            if (select && select.value && !watch('trading_pairs')?.includes(select.value)) {
+                              setValue('trading_pairs', [...(watch('trading_pairs') || []), select.value])
+                              select.value = ''
+                            }
+                          }}
+                          className="px-4 py-2 bg-quantum-500/20 border border-quantum-500 text-quantum-400 rounded-md hover:bg-quantum-500/30 transition-colors text-sm font-medium whitespace-nowrap"
+                        >
+                          ➕ Add
+                        </button>
+                      </div>
+                      
+                      {/* List of Trading Pairs */}
+                      {watch('trading_pairs') && watch('trading_pairs').length > 0 && (
                         <div className="space-y-2">
-                          {watch('secondary_trading_pairs').map((pair, index) => (
-                            <div
-                              key={index}
-                              className="flex items-center gap-2 bg-dark-700/50 border border-gray-600 rounded-md p-3"
-                            >
-                              {/* Priority Badge */}
-                              <div className="flex items-center justify-center w-8 h-8 rounded-full bg-quantum-500/20 text-quantum-400 text-sm font-bold">
-                                {index + 2}
+                          {watch('trading_pairs').map((pair, index) => {
+                            const pairInfo = topTradingPairs.find(p => p.symbol === pair)
+                            return (
+                              <div
+                                key={index}
+                                className="flex items-center gap-3 bg-dark-700/50 border border-gray-600 rounded-md p-3"
+                              >
+                                {/* Rank Badge */}
+                                {pairInfo && (
+                                  <div className="flex items-center justify-center w-8 h-8 rounded-full bg-quantum-500/20 text-quantum-400 text-xs font-bold">
+                                    #{pairInfo.rank}
+                                  </div>
+                                )}
+                                
+                                {/* Pair Info */}
+                                <div className="flex-1">
+                                  <div className="text-white font-bold">{pair}</div>
+                                  {pairInfo && (
+                                    <div className="text-xs text-gray-400">{pairInfo.name}</div>
+                                  )}
+                                </div>
+                                
+                                {/* Remove Button */}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const pairs = watch('trading_pairs').filter((_, i) => i !== index)
+                                    setValue('trading_pairs', pairs.length > 0 ? pairs : ['BTC/USDT'])
+                                  }}
+                                  disabled={watch('trading_pairs').length === 1}
+                                  className={`p-1 rounded ${
+                                    watch('trading_pairs').length === 1
+                                      ? 'text-gray-600 cursor-not-allowed'
+                                      : 'text-red-400 hover:text-red-300 hover:bg-red-500/10'
+                                  }`}
+                                  title={watch('trading_pairs').length === 1 ? 'At least one pair required' : 'Remove'}
+                                >
+                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                  </svg>
+                                </button>
                               </div>
-                              
-                              {/* Pair Name */}
-                              <div className="flex-1 text-white font-medium">
-                                {pair}
-                              </div>
-                              
-                              {/* Reorder Buttons */}
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  if (index > 0) {
-                                    const pairs = [...watch('secondary_trading_pairs')]
-                                    ;[pairs[index - 1], pairs[index]] = [pairs[index], pairs[index - 1]]
-                                    setValue('secondary_trading_pairs', pairs)
-                                  }
-                                }}
-                                disabled={index === 0}
-                                className={`p-1 rounded ${
-                                  index === 0
-                                    ? 'text-gray-600 cursor-not-allowed'
-                                    : 'text-gray-400 hover:text-quantum-400 hover:bg-quantum-500/10'
-                                }`}
-                                title="Move up"
-                              >
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                                </svg>
-                              </button>
-                              
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  if (index < watch('secondary_trading_pairs').length - 1) {
-                                    const pairs = [...watch('secondary_trading_pairs')]
-                                    ;[pairs[index], pairs[index + 1]] = [pairs[index + 1], pairs[index]]
-                                    setValue('secondary_trading_pairs', pairs)
-                                  }
-                                }}
-                                disabled={index === watch('secondary_trading_pairs').length - 1}
-                                className={`p-1 rounded ${
-                                  index === watch('secondary_trading_pairs').length - 1
-                                    ? 'text-gray-600 cursor-not-allowed'
-                                    : 'text-gray-400 hover:text-quantum-400 hover:bg-quantum-500/10'
-                                }`}
-                                title="Move down"
-                              >
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                </svg>
-                              </button>
-                              
-                              {/* Remove Button */}
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const pairs = watch('secondary_trading_pairs').filter((_, i) => i !== index)
-                                  setValue('secondary_trading_pairs', pairs)
-                                }}
-                                className="p-1 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded"
-                                title="Remove"
-                              >
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                              </button>
-                            </div>
-                          ))}
+                            )
+                          })}
                           
                           {/* Summary */}
                           <div className="mt-2 text-sm text-gray-500 bg-dark-800/50 rounded p-3 border border-quantum-500/20">
-                            <div className="font-medium text-quantum-400 mb-1">Trading Priority Order:</div>
-                            <div className="space-y-0.5">
-                              <div>1️⃣ {watch('trading_pair')} <span className="text-xs text-gray-600">(Primary)</span></div>
-                              {watch('secondary_trading_pairs').map((pair, idx) => (
-                                <div key={idx}>{idx + 2}️⃣ {pair}</div>
-                              ))}
-                            </div>
-                            <div className="mt-2 text-xs text-gray-600">
-                              💡 Bot checks pairs in order and trades the first available one without open position
+                            <div className="font-medium text-quantum-400 mb-1">📋 Supported Trading Pairs: {watch('trading_pairs').length}</div>
+                            <div className="text-xs text-gray-600 mt-1">
+                              💡 Users will select 1 primary + optional secondary pairs from this list when subscribing
                             </div>
                           </div>
                         </div>
+                      )}
+                      
+                      {errors.trading_pairs && (
+                        <p className="mt-1 text-sm text-red-500">{errors.trading_pairs.message}</p>
                       )}
                     </div>
                     

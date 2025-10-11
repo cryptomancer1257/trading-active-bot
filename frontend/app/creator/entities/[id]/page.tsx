@@ -299,14 +299,16 @@ export default function BotDetailPage() {
                   onChange={(e) => setTrialConfig(prev => ({ ...prev, tradingPair: e.target.value }))}
                   className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
                 >
-                  <option value="BTC/USDT">BTC/USDT</option>
-                  <option value="ETH/USDT">ETH/USDT</option>
-                  <option value="BNB/USDT">BNB/USDT</option>
-                  <option value="ADA/USDT">ADA/USDT</option>
-                  <option value="SOL/USDT">SOL/USDT</option>
+                  {bot.trading_pairs && bot.trading_pairs.length > 0 ? (
+                    bot.trading_pairs.map((pair: string) => (
+                      <option key={pair} value={pair}>{pair}</option>
+                    ))
+                  ) : (
+                    <option value="BTC/USDT">BTC/USDT</option>
+                  )}
                 </select>
                 <p className="text-xs text-gray-400 mt-1">
-                  🎯 Main trading pair (highest priority)
+                  🎯 Select from pairs configured by developer
                 </p>
               </div>
             </div>
@@ -337,16 +339,13 @@ export default function BotDetailPage() {
                   defaultValue=""
                 >
                   <option value="" disabled>Select pair to add...</option>
-                  <option value="BTC/USDT">BTC/USDT</option>
-                  <option value="ETH/USDT">ETH/USDT</option>
-                  <option value="BNB/USDT">BNB/USDT</option>
-                  <option value="ADA/USDT">ADA/USDT</option>
-                  <option value="SOL/USDT">SOL/USDT</option>
-                  <option value="XRP/USDT">XRP/USDT</option>
-                  <option value="DOGE/USDT">DOGE/USDT</option>
-                  <option value="DOT/USDT">DOT/USDT</option>
-                  <option value="MATIC/USDT">MATIC/USDT</option>
-                  <option value="AVAX/USDT">AVAX/USDT</option>
+                  {bot.trading_pairs && bot.trading_pairs.length > 0 ? (
+                    bot.trading_pairs
+                      .filter((pair: string) => pair !== trialConfig.tradingPair && !trialConfig.secondaryTradingPairs.includes(pair))
+                      .map((pair: string) => (
+                        <option key={pair} value={pair}>{pair}</option>
+                      ))
+                  ) : null}
                 </select>
               </div>
               
