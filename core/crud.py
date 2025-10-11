@@ -336,8 +336,8 @@ def get_bots_by_developer(db: Session, developer_id: int):
     
     return bots
 
-def get_bot_analytics(db: Session, bot_id: int, developer_id: int, days: int = 30):
-    """Get comprehensive analytics for a bot"""
+def get_bot_analytics(db: Session, bot_id: int, developer_id: int, days: int = 30, page: int = 1, limit: int = 10):
+    """Get comprehensive analytics for a bot with paginated recent transactions"""
     from sqlalchemy import func, and_, case
     from datetime import datetime, timedelta
     
@@ -372,41 +372,70 @@ def get_bot_analytics(db: Session, bot_id: int, developer_id: int, days: int = 3
         models.Subscription.bot_id == bot_id
     )
     
-    # Filter by date range (only CLOSED transactions for accurate analytics)
-    transactions_in_period = transactions_query.filter(
-        models.Transaction.created_at >= start_date,
-        models.Transaction.status == 'CLOSED'  # Only count closed transactions
+    # Get ALL transactions in period (OPEN + CLOSED)
+    all_transactions_in_period = transactions_query.filter(
+        models.Transaction.created_at >= start_date
     ).all()
     
-    total_transactions = len(transactions_in_period)
+    total_transactions = len(all_transactions_in_period)
     
-    # Calculate P&L and win rate (from closed transactions only)
+    # Calculate P&L (realized + unrealized) and win rate
     total_pnl = 0.0
+    total_realized_pnl = 0.0
+    total_unrealized_pnl = 0.0
     winning_trades = 0
     losing_trades = 0
+    open_positions = 0
+    closed_positions = 0
     
-    for tx in transactions_in_period:
-        pnl = float(tx.realized_pnl or 0)
-        total_pnl += pnl
-        if pnl > 0:
-            winning_trades += 1
-        elif pnl < 0:
-            losing_trades += 1
+    for tx in all_transactions_in_period:
+        if tx.status == 'CLOSED':
+            closed_positions += 1
+            realized = float(tx.realized_pnl or 0)
+            total_realized_pnl += realized
+            total_pnl += realized
+            if realized > 0:
+                winning_trades += 1
+            elif realized < 0:
+                losing_trades += 1
+        else:  # OPEN
+            open_positions += 1
+            unrealized = float(tx.unrealized_pnl or 0)
+            total_unrealized_pnl += unrealized
+            total_pnl += unrealized  # Include unrealized in total P&L
     
-    win_rate = (winning_trades / total_transactions * 100) if total_transactions > 0 else 0
+    # Win rate only from CLOSED trades (can't determine if OPEN will win/lose)
+    win_rate = (winning_trades / closed_positions * 100) if closed_positions > 0 else 0
     
-    # Get transactions grouped by date for chart (CLOSED transactions only)
+    # Get transactions grouped by date for chart (ALL transactions - OPEN + CLOSED)
+    # Use CASE statement to sum realized_pnl for CLOSED and unrealized_pnl for OPEN
     daily_stats = db.query(
         func.date(models.Transaction.created_at).label('date'),
         func.count(models.Transaction.id).label('count'),
-        func.sum(models.Transaction.realized_pnl).label('pnl')
+        func.sum(
+            case(
+                (models.Transaction.status == 'CLOSED', models.Transaction.realized_pnl),
+                else_=models.Transaction.unrealized_pnl
+            )
+        ).label('pnl'),
+        func.sum(
+            case(
+                (models.Transaction.status == 'CLOSED', models.Transaction.realized_pnl),
+                else_=0
+            )
+        ).label('realized_pnl'),
+        func.sum(
+            case(
+                (models.Transaction.status == 'OPEN', models.Transaction.unrealized_pnl),
+                else_=0
+            )
+        ).label('unrealized_pnl')
     ).join(
         models.Subscription,
         models.Subscription.id == models.Transaction.subscription_id
     ).filter(
         models.Subscription.bot_id == bot_id,
-        models.Transaction.created_at >= start_date,
-        models.Transaction.status == 'CLOSED'  # Only count closed transactions for chart
+        models.Transaction.created_at >= start_date
     ).group_by(
         func.date(models.Transaction.created_at)
     ).order_by(
@@ -419,10 +448,23 @@ def get_bot_analytics(db: Session, bot_id: int, developer_id: int, days: int = 3
         chart_data.append({
             'date': stat.date.isoformat() if stat.date else None,
             'transactions': stat.count,
-            'pnl': float(stat.pnl) if stat.pnl else 0
+            'pnl': float(stat.pnl) if stat.pnl else 0,
+            'realized_pnl': float(stat.realized_pnl) if stat.realized_pnl else 0,
+            'unrealized_pnl': float(stat.unrealized_pnl) if stat.unrealized_pnl else 0
         })
     
-    # Get recent transactions (last 10 - show both OPEN and CLOSED)
+    # Get total count of transactions for pagination
+    total_transactions_count = db.query(func.count(models.Transaction.id)).join(
+        models.Subscription,
+        models.Subscription.id == models.Transaction.subscription_id
+    ).filter(
+        models.Subscription.bot_id == bot_id
+    ).scalar() or 0
+    
+    # Calculate pagination offset
+    offset = (page - 1) * limit
+    
+    # Get recent transactions with pagination (show both OPEN and CLOSED)
     recent_transactions = db.query(
         models.Transaction
     ).join(
@@ -432,7 +474,7 @@ def get_bot_analytics(db: Session, bot_id: int, developer_id: int, days: int = 3
         models.Subscription.bot_id == bot_id
     ).order_by(
         models.Transaction.created_at.desc()
-    ).limit(10).all()
+    ).offset(offset).limit(limit).all()
     
     # Format recent transactions (include both OPEN and CLOSED)
     recent_txs = []
@@ -445,6 +487,7 @@ def get_bot_analytics(db: Session, bot_id: int, developer_id: int, days: int = 3
             
         recent_txs.append({
             'id': tx.id,
+            'subscription_id': tx.subscription_id,  # NEW: Include subscription ID
             'trading_pair': tx.symbol,  # Transaction model uses 'symbol' field
             'action': tx.action,
             'quantity': float(tx.quantity) if tx.quantity else 0,
@@ -458,6 +501,9 @@ def get_bot_analytics(db: Session, bot_id: int, developer_id: int, days: int = 3
             'closed_at': tx.exit_time.isoformat() if tx.exit_time else None  # Use exit_time instead of closed_at
         })
     
+    # Calculate total pages
+    total_pages = (total_transactions_count + limit - 1) // limit if limit > 0 else 0
+    
     return {
         'bot_id': bot_id,
         'bot_name': bot.name,
@@ -466,13 +512,25 @@ def get_bot_analytics(db: Session, bot_id: int, developer_id: int, days: int = 3
             'total_subscriptions': total_subscriptions,
             'active_subscriptions': active_subscriptions,
             'total_transactions': total_transactions,
+            'open_positions': open_positions,
+            'closed_positions': closed_positions,
             'winning_trades': winning_trades,
             'losing_trades': losing_trades,
             'win_rate': round(win_rate, 2),
-            'total_pnl': round(total_pnl, 2)
+            'total_pnl': round(total_pnl, 2),
+            'realized_pnl': round(total_realized_pnl, 2),
+            'unrealized_pnl': round(total_unrealized_pnl, 2)
         },
         'chart_data': chart_data,
-        'recent_transactions': recent_txs
+        'recent_transactions': recent_txs,
+        'pagination': {
+            'current_page': page,
+            'total_pages': total_pages,
+            'total_items': total_transactions_count,
+            'items_per_page': limit,
+            'has_next': page < total_pages,
+            'has_prev': page > 1
+        }
     }
 
 def get_all_bots(db: Session, skip: int = 0, limit: int = 100, status_filter: Optional[schemas.BotStatus] = None):
