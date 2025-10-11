@@ -47,6 +47,7 @@ app.conf.update(
         'core.tasks.send_telegram_beauty_notification': {'queue': 'notifications'},
         'core.tasks.send_discord_notification': {'queue': 'notifications'},
         'core.tasks.monitor_open_positions_task': {'queue': 'monitoring'},
+        'core.tasks.sync_open_positions_realtime': {'queue': 'monitoring'},
         'core.tasks.update_bot_performance_metrics': {'queue': 'analytics'},
         'core.tasks.update_prompt_performance_metrics': {'queue': 'analytics'},
         'core.tasks.update_risk_management_performance': {'queue': 'analytics'},
@@ -75,6 +76,10 @@ app.conf.update(
         'monitor-open-positions': {
             'task': 'core.tasks.monitor_open_positions_task',
             'schedule': 180.0,  # Run every 3 minutes to check TP/SL and update P&L
+        },
+        'sync-open-positions-realtime': {
+            'task': 'core.tasks.sync_open_positions_realtime',
+            'schedule': 10.0,  # Run every 10 seconds for real-time position sync
         },
     },
 )

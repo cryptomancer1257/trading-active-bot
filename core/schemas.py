@@ -281,7 +281,7 @@ class BotBase(BaseModel):
     code_path_rpa: Optional[str] = None
     version_rpa: Optional[str] = None
     
-    # Template-related fields
+    # Template-related fields (legacy - kept for backward compatibility)
     template: Optional[str] = None
     templateFile: Optional[str] = None
     leverage: Optional[int] = None
@@ -292,6 +292,10 @@ class BotBase(BaseModel):
     llm_model: Optional[str] = None  # Specific model to use (e.g., "claude-3-5-sonnet-20241022")
     enable_image_analysis: Optional[bool] = False
     enable_sentiment_analysis: Optional[bool] = False
+    
+    # Risk Management (new system)
+    risk_config: Optional[Dict[str, Any]] = None
+    risk_management_mode: Optional[str] = None
 
 class PayLoadAnalysis(BaseModel):
     bot_name: str = ""

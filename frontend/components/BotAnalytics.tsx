@@ -38,6 +38,9 @@ interface AnalyticsData {
     entry_price: number
     exit_price: number
     realized_pnl: number
+    status: string  // NEW: OPEN or CLOSED
+    unrealized_pnl?: number  // NEW
+    last_updated_price?: number  // NEW
     created_at: string
     closed_at: string | null
   }>
@@ -284,58 +287,84 @@ export default function BotAnalytics({ botId }: BotAnalyticsProps) {
                   <th className="py-3 px-4 text-left">Date</th>
                   <th className="py-3 px-4 text-left">Pair</th>
                   <th className="py-3 px-4 text-center">Action</th>
+                  <th className="py-3 px-4 text-center">Status</th>
                   <th className="py-3 px-4 text-right">Quantity</th>
                   <th className="py-3 px-4 text-right">Entry</th>
-                  <th className="py-3 px-4 text-right">Exit</th>
+                  <th className="py-3 px-4 text-right">Current/Exit</th>
                   <th className="py-3 px-4 text-right">P&L</th>
                 </tr>
               </thead>
               <tbody className="text-sm">
-                {recent_transactions.map((tx) => (
-                  <tr key={tx.id} className="border-b border-gray-700 hover:bg-gray-700/50">
-                    <td className="py-3 px-4 text-gray-300">
-                      {new Date(tx.created_at).toLocaleString()}
-                    </td>
-                    <td className="py-3 px-4 text-white font-mono">
-                      {tx.trading_pair}
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      <span
-                        className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium ${
-                          tx.action === 'BUY'
-                            ? 'bg-green-900/50 text-green-400'
-                            : 'bg-red-900/50 text-red-400'
-                        }`}
-                      >
-                        {tx.action === 'BUY' ? (
-                          <CheckCircleIcon className="h-3 w-3 mr-1" />
+                {recent_transactions.map((tx) => {
+                  const isOpen = tx.status === 'OPEN'
+                  const currentPrice = isOpen ? (tx.last_updated_price || 0) : (tx.exit_price || 0)
+                  const pnl = tx.realized_pnl
+                  
+                  return (
+                    <tr key={tx.id} className="border-b border-gray-700 hover:bg-gray-700/50">
+                      <td className="py-3 px-4 text-gray-300">
+                        {new Date(tx.created_at).toLocaleString()}
+                      </td>
+                      <td className="py-3 px-4 text-white font-mono">
+                        {tx.trading_pair}
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        <span
+                          className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium ${
+                            tx.action === 'BUY'
+                              ? 'bg-green-900/50 text-green-400'
+                              : 'bg-red-900/50 text-red-400'
+                          }`}
+                        >
+                          {tx.action === 'BUY' ? (
+                            <CheckCircleIcon className="h-3 w-3 mr-1" />
+                          ) : (
+                            <XCircleIcon className="h-3 w-3 mr-1" />
+                          )}
+                          {tx.action}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        <span
+                          className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium ${
+                            isOpen
+                              ? 'bg-yellow-900/50 text-yellow-400'
+                              : 'bg-gray-700 text-gray-300'
+                          }`}
+                        >
+                          {isOpen ? '🔄 OPEN' : '✓ CLOSED'}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-right text-gray-300">
+                        {tx.quantity.toFixed(4)}
+                      </td>
+                      <td className="py-3 px-4 text-right text-gray-300">
+                        ${tx.entry_price.toFixed(2)}
+                      </td>
+                      <td className="py-3 px-4 text-right text-gray-300">
+                        {currentPrice > 0 ? (
+                          <>
+                            ${currentPrice.toFixed(2)}
+                            {isOpen && <span className="ml-1 text-xs text-yellow-400">📊</span>}
+                          </>
                         ) : (
-                          <XCircleIcon className="h-3 w-3 mr-1" />
+                          '-'
                         )}
-                        {tx.action}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-right text-gray-300">
-                      {tx.quantity.toFixed(4)}
-                    </td>
-                    <td className="py-3 px-4 text-right text-gray-300">
-                      ${tx.entry_price.toFixed(2)}
-                    </td>
-                    <td className="py-3 px-4 text-right text-gray-300">
-                      {tx.exit_price > 0 ? `$${tx.exit_price.toFixed(2)}` : '-'}
-                    </td>
-                    <td className="py-3 px-4 text-right font-semibold">
-                      <span
-                        className={
-                          tx.realized_pnl >= 0 ? 'text-green-400' : 'text-red-400'
-                        }
-                      >
-                        {tx.realized_pnl >= 0 ? '+' : ''}$
-                        {tx.realized_pnl.toFixed(2)}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="py-3 px-4 text-right font-semibold">
+                        <span
+                          className={
+                            pnl >= 0 ? 'text-green-400' : 'text-red-400'
+                          }
+                        >
+                          {pnl >= 0 ? '+' : ''}$
+                          {pnl.toFixed(2)}
+                          {isOpen && <span className="ml-1 text-xs text-gray-500">(unrealized)</span>}
+                        </span>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>

@@ -36,7 +36,7 @@ export default function NewPromptPage() {
 
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showTemplates, setShowTemplates] = useState(false)
-  const [activeCategory, setActiveCategory] = useState<string>('all')
+  const [activeCategory, setActiveCategory] = useState<string>('Trading')
 
   const createMutation = useCreatePrompt()
   

@@ -24,8 +24,8 @@ router = APIRouter()
 @router.get("/bots/{bot_id}/risk-config", response_model=schemas.RiskConfig)
 async def get_bot_risk_config(
     bot_id: int,
-    db: Session = Depends(get_db)
-    # TODO: Re-enable authentication: current_user: models.User = Depends(get_current_user)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
 ):
     """Get default risk configuration for a bot"""
     bot = crud.get_bot_by_id(db, bot_id)
@@ -36,13 +36,12 @@ async def get_bot_risk_config(
             detail="Bot not found"
         )
     
-    # TODO: Re-enable ownership check
     # Check ownership (only bot creator can view bot risk config)
-    # if bot.developer_id != current_user.id:
-    #     raise HTTPException(
-    #         status_code=status.HTTP_403_FORBIDDEN,
-    #         detail="Not authorized to access this bot's configuration"
-    #     )
+    if bot.developer_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access this bot's configuration"
+        )
     
     risk_config_dict = bot.risk_config or {}
     return schemas.RiskConfig(**risk_config_dict) if risk_config_dict else schemas.RiskConfig()
@@ -52,8 +51,8 @@ async def get_bot_risk_config(
 async def update_bot_risk_config(
     bot_id: int,
     risk_config: schemas.RiskConfig,
-    db: Session = Depends(get_db)
-    # TODO: Re-enable authentication: current_user: models.User = Depends(get_current_user)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
 ):
     """Update default risk configuration for a bot (used by all subscriptions unless overridden)"""
     bot = crud.get_bot_by_id(db, bot_id)
@@ -64,13 +63,12 @@ async def update_bot_risk_config(
             detail="Bot not found"
         )
     
-    # TODO: Re-enable ownership check
     # Check ownership (only bot creator can modify bot risk config)
-    # if bot.developer_id != current_user.id:
-    #     raise HTTPException(
-    #         status_code=status.HTTP_403_FORBIDDEN,
-    #         detail="Not authorized to modify this bot's configuration"
-    #     )
+    if bot.developer_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to modify this bot's configuration"
+        )
     
     # Validate AI prompt if AI mode is selected
     if risk_config.mode == schemas.RiskManagementMode.AI_PROMPT:

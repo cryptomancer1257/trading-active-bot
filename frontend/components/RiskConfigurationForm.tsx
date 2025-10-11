@@ -68,7 +68,7 @@ export default function RiskConfigurationForm({
       } else if (botId) {
         // Load bot-level config from API
         try {
-          const token = localStorage.getItem('token')
+          const token = localStorage.getItem('access_token')
           console.log('🔑 Token being sent:', token ? `${token.substring(0, 20)}...` : 'NO TOKEN')
           
           const response = await fetch(`/api/v1/risk-management/bots/${botId}/risk-config`, {
@@ -89,7 +89,7 @@ export default function RiskConfigurationForm({
         try {
           const response = await fetch(`/api/v1/risk-management/subscriptions/${subscriptionId}/risk-config`, {
             headers: {
-              'Authorization': `Bearer ${localStorage.getItem('token')}`
+              'Authorization': `Bearer ${localStorage.getItem('access_token')}`
             }
           })
           
@@ -218,7 +218,7 @@ export default function RiskConfigurationForm({
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
+            'Authorization': `Bearer ${localStorage.getItem('access_token')}`
           },
           body: JSON.stringify(config)
         })
@@ -235,7 +235,7 @@ export default function RiskConfigurationForm({
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
+            'Authorization': `Bearer ${localStorage.getItem('access_token')}`
           },
           body: JSON.stringify(config)
         })
@@ -289,7 +289,7 @@ export default function RiskConfigurationForm({
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`
         },
         body: JSON.stringify(testScenario)
       })
@@ -387,7 +387,7 @@ export default function RiskConfigurationForm({
       {/* Mode Selector */}
       <div className="bg-gray-800 border border-gray-700 rounded-lg p-6">
         <h3 className="text-lg font-semibold text-white mb-4">Risk Management Mode</h3>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4">
           <button
             onClick={() => setMode('DEFAULT')}
             className={`p-4 rounded-lg border-2 transition-all ${
@@ -408,7 +408,8 @@ export default function RiskConfigurationForm({
             </div>
           </button>
           
-          <button
+          {/* AI_PROMPT Mode - Temporarily hidden until fully implemented */}
+          {/* <button
             onClick={() => setMode('AI_PROMPT')}
             className={`p-4 rounded-lg border-2 transition-all ${
               mode === 'AI_PROMPT'
@@ -426,7 +427,7 @@ export default function RiskConfigurationForm({
                 <span className="text-xs bg-purple-900/50 text-purple-300 px-2 py-1 rounded">Advanced</span>
               </div>
             </div>
-          </button>
+          </button> */}
         </div>
       </div>
 

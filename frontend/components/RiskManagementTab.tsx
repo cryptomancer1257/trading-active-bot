@@ -130,8 +130,8 @@ export default function RiskManagementTab({ botId, subscriptionId }: RiskManagem
 
   return (
     <div className="space-y-6">
-      {/* Tab Navigation */}
-      <div className="border-b border-gray-700">
+      {/* Tab Navigation - AI Prompts temporarily hidden */}
+      {/* <div className="border-b border-gray-700">
         <nav className="flex space-x-8">
           <button
             onClick={() => setActiveTab('configuration')}
@@ -161,18 +161,16 @@ export default function RiskManagementTab({ botId, subscriptionId }: RiskManagem
             )}
           </button>
         </nav>
-      </div>
+      </div> */}
 
-      {/* Configuration Tab */}
-      {activeTab === 'configuration' && (
-        <RiskConfigurationForm 
-          botId={botId}
-          subscriptionId={subscriptionId}
-        />
-      )}
+      {/* Configuration Tab - Always show (no tabs) */}
+      <RiskConfigurationForm 
+        botId={botId}
+        subscriptionId={subscriptionId}
+      />
 
-      {/* Prompts Tab */}
-      {activeTab === 'prompts' && (
+      {/* Prompts Tab - Temporarily hidden */}
+      {false && activeTab === 'prompts' && (
         <div className="space-y-6">
       {/* Attached Risk Management Prompts */}
       <div>

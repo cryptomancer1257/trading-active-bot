@@ -932,7 +932,7 @@ class BinanceFuturesRPABot(CustomBot):
                 except Exception as e:
                     logger.warning(f"Failed to clean up image {img_path}: {e}")
     
-    async def setup_position(self, action: Action, analysis: Dict[str, Any] = None) -> Dict[str, Any]:
+    async def setup_position(self, action: Action, analysis: Dict[str, Any] = None, subscription = None) -> Dict[str, Any]:
         """Setup futures position with intelligent capital management and stop loss/take profit"""
         try:
             if action.action == "HOLD":
@@ -984,6 +984,28 @@ class BinanceFuturesRPABot(CustomBot):
             # Use recommended position size instead of hardcoded percentage
             optimal_position_size_pct = position_recommendation.recommended_size_pct
             
+            # Apply Risk Config limits to Capital Management recommendation
+            if subscription and hasattr(subscription, 'bot') and hasattr(subscription.bot, 'risk_config'):
+                risk_config_dict = subscription.bot.risk_config
+                if risk_config_dict:
+                    try:
+                        from core import schemas
+                        risk_config = schemas.RiskConfig(**risk_config_dict)
+                        
+                        # Enforce max_position_size limit
+                        if risk_config.max_position_size:
+                            max_size_decimal = risk_config.max_position_size / 100  # Convert % to decimal
+                            if optimal_position_size_pct > max_size_decimal:
+                                logger.warning(f"⚠️ Position size capped by Risk Config (RPA):")
+                                logger.warning(f"   Capital Mgmt Recommended: {optimal_position_size_pct*100:.2f}%")
+                                logger.warning(f"   Risk Config Max: {risk_config.max_position_size}%")
+                                logger.warning(f"   Using: {risk_config.max_position_size}%")
+                                optimal_position_size_pct = max_size_decimal
+                        
+                        logger.info(f"✅ Final Position Size: {optimal_position_size_pct*100:.2f}% (after risk config limits) (RPA)")
+                    except Exception as e:
+                        logger.warning(f"Failed to apply risk config limits (RPA): {e}")
+            
             if optimal_position_size_pct <= 0:
                 return {
                     'status': 'info',
@@ -991,55 +1013,21 @@ class BinanceFuturesRPABot(CustomBot):
                     'reason': f'Capital management recommends no position: {position_recommendation.reasoning}'
                 }
             
-            # Get entry price - use recommendation if available, fallback to current price
+            # Get entry price from recommendation if available
             entry_price = None
-            take_profit_targets = []  # Array of {price, size_pct}
-            stop_loss_target = None
             
-            # First, try to get from recommendation
+            # Try to get entry price from recommendation
             if action.recommendation:
                 rec = action.recommendation
                 try:
-                    # Parse entry price
+                    # Parse entry price only (TP/SL will be calculated from risk config)
                     entry_str = rec.get('entry_price', '').replace(',', '').strip()
                     if entry_str and entry_str != 'Market' and entry_str != 'N/A':
                         entry_price = float(entry_str)
-                    
-                    # Parse take profit (handle both array and legacy string format)
-                    tp = rec.get('take_profit')
-                    if isinstance(tp, list) and len(tp) > 0:
-                        # New array format
-                        for tp_level in tp:
-                            try:
-                                price_str = str(tp_level.get('price', '')).replace(',', '').strip()
-                                size_pct = float(tp_level.get('size_pct', 0))
-                                if price_str and price_str != 'N/A':
-                                    price = float(price_str)
-                                    # Normalize price
-                                    price = normalize_price(price, current_price)
-                                    take_profit_targets.append({'price': price, 'size_pct': size_pct})
-                            except (ValueError, TypeError):
-                                continue
-                        logger.info(f"📊 Parsed {len(take_profit_targets)} TP levels from LLM (RPA)")
-                    else:
-                        # Legacy string format fallback
-                        tp_str = str(tp).replace(',', '').strip() if tp else ''
-                        if tp_str and tp_str != 'N/A':
-                            price = float(tp_str)
-                            price = normalize_price(price, current_price)
-                            take_profit_targets = [{'price': price, 'size_pct': 100}]
-                    
-                    # Parse stop loss
-                    sl_str = rec.get('stop_loss', '').replace(',', '').strip()
-                    if sl_str and sl_str != 'N/A':
-                        stop_loss_target = float(sl_str)
+                        entry_price = normalize_price(entry_price, current_price)
                         
                 except (ValueError, TypeError) as e:
-                    logger.warning(f"Failed to parse recommendation prices in setup_position: {e}")
-                if stop_loss_target:
-                    stop_loss_target = normalize_price(stop_loss_target, current_price)
-                if entry_price:
-                    entry_price = normalize_price(entry_price, current_price)
+                    logger.warning(f"Failed to parse recommendation entry price in setup_position: {e}")
             
             # Fallback to current market price
             if not entry_price:
@@ -1047,14 +1035,36 @@ class BinanceFuturesRPABot(CustomBot):
                     return {'status': 'error', 'message': 'Invalid current price'}
                 entry_price = current_price
             
+            # Determine leverage (use risk_config max_leverage if available)
+            leverage_to_use = self.leverage  # Default
+            
+            if subscription and hasattr(subscription, 'bot') and hasattr(subscription.bot, 'risk_config'):
+                risk_config_dict = subscription.bot.risk_config
+                if risk_config_dict:
+                    try:
+                        from core import schemas
+                        risk_config = schemas.RiskConfig(**risk_config_dict)
+                        if risk_config.max_leverage:
+                            # Use the LOWER of bot default and risk config max
+                            leverage_to_use = min(self.leverage, risk_config.max_leverage)
+                            if leverage_to_use < self.leverage:
+                                logger.warning(f"⚠️ Leverage capped by Risk Config (RPA):")
+                                logger.warning(f"   Bot Default: {self.leverage}x")
+                                logger.warning(f"   Risk Config Max: {risk_config.max_leverage}x")
+                                logger.warning(f"   Using: {leverage_to_use}x")
+                            else:
+                                logger.info(f"✅ Using Risk Config Max Leverage: {leverage_to_use}x (RPA)")
+                    except Exception as e:
+                        logger.warning(f"Failed to read risk config leverage (RPA): {e}")
+            
             # Setup leverage
             raw_symbol = self.trading_pair
             symbol = raw_symbol.replace("/", "").replace("_", "").upper()
-            if not self.futures_client.set_leverage(symbol, self.leverage):
+            if not self.futures_client.set_leverage(symbol, leverage_to_use):
                 logger.warning(f"Failed to set leverage, continuing with current leverage")
             
-            # Calculate position size using capital management recommendation
-            position_value = available_balance * optimal_position_size_pct * self.leverage
+            # Calculate position size using capital management recommendation (use leverage_to_use)
+            position_value = available_balance * optimal_position_size_pct * leverage_to_use
             quantity = position_value / entry_price
             
             # Round to proper precision
@@ -1069,7 +1079,7 @@ class BinanceFuturesRPABot(CustomBot):
             logger.info(f"   Entry Price: ${entry_price:.2f}")
             logger.info(f"   Position Size: {optimal_position_size_pct*100:.2f}% of balance")
             logger.info(f"   Position Value: ${position_value:.2f}")
-            logger.info(f"   Leverage: {self.leverage}x")
+            logger.info(f"   Leverage: {leverage_to_use}x")
             logger.info(f"   Available Balance: ${available_balance:.2f}")
             
             # Log recommendation usage
@@ -1079,8 +1089,8 @@ class BinanceFuturesRPABot(CustomBot):
             # Place market order
             order = self.futures_client.create_market_order(symbol, action.action, quantity_str)
             
-            # Market orders are usually filled immediately, check status
-            if order.status not in ['FILLED', 'NEW']:  # NEW can also indicate successful placement
+            # Market orders are usually filled immediately, check status (PENDING is also valid for some exchanges)
+            if order.status not in ['FILLED', 'NEW', 'PENDING']:  # NEW/PENDING can also indicate successful placement
                 return {
                     'status': 'error',
                     'message': f'Order failed with status: {order.status}'
@@ -1088,42 +1098,50 @@ class BinanceFuturesRPABot(CustomBot):
             
             logger.info(f"✅ Market order placed successfully: {order.status}")
             
-            # Calculate stop loss and take profit prices - use recommendation if available
-            # Use first TP target (usually highest %) as primary TP price
-            primary_tp_price = None
-            if take_profit_targets and len(take_profit_targets) > 0:
-                primary_tp_price = take_profit_targets[0]['price']
-                logger.info(f"📊 Using TP1: ${primary_tp_price:.2f} ({take_profit_targets[0]['size_pct']}%) as primary take profit (RPA)")
+            # Calculate stop loss and take profit prices from Risk Config
+            # Get risk config from bot (developer-configured risk parameters)
+            from core import schemas
             
+            # Default percentages (fallback if risk config not set)
+            stop_loss_pct = self.stop_loss_pct  # Default from bot config
+            take_profit_pct = self.take_profit_pct  # Default from bot config
+            
+            # Try to get risk config from subscription
+            risk_config_dict = None
+            if subscription and hasattr(subscription, 'bot') and hasattr(subscription.bot, 'risk_config'):
+                risk_config_dict = subscription.bot.risk_config
+            
+            # Override with risk config if available
+            if risk_config_dict:
+                try:
+                    risk_config = schemas.RiskConfig(**risk_config_dict)
+                    if risk_config.stop_loss_percent:
+                        stop_loss_pct = risk_config.stop_loss_percent / 100  # Convert to decimal
+                        logger.info(f"📊 Using Risk Config SL: {risk_config.stop_loss_percent}% (RPA)")
+                    if risk_config.take_profit_percent:
+                        take_profit_pct = risk_config.take_profit_percent / 100  # Convert to decimal
+                        logger.info(f"📊 Using Risk Config TP: {risk_config.take_profit_percent}% (RPA)")
+                except Exception as e:
+                    logger.warning(f"Failed to parse risk config, using defaults: {e}")
+            else:
+                logger.info(f"📊 Using default TP/SL from bot config (no risk_config found) (RPA)")
+            
+            # Calculate TP/SL based on entry price and risk config percentages
             if action.action == "BUY":
-                # Use recommendation targets or fallback to percentage calculation
-                if stop_loss_target:
-                    stop_loss_price = stop_loss_target
-                else:
-                    stop_loss_price = entry_price * (1 - self.stop_loss_pct)
-                
-                if primary_tp_price:
-                    take_profit_price = primary_tp_price
-                else:
-                    take_profit_price = entry_price * (1 + self.take_profit_pct)
-                
+                stop_loss_price = entry_price * (1 - stop_loss_pct)
+                take_profit_price = entry_price * (1 + take_profit_pct)
                 sl_side = "SELL"
                 tp_side = "SELL"
             else:  # SELL
-                logger.info(f"stop loss target is {stop_loss_target}, take profit target primary is {primary_tp_price}")
-                # Use recommendation targets or fallback to percentage calculation
-                if stop_loss_target:
-                    stop_loss_price = stop_loss_target
-                else:
-                    stop_loss_price = entry_price * (1 + self.stop_loss_pct)
-                
-                if primary_tp_price:
-                    take_profit_price = primary_tp_price
-                else:
-                    take_profit_price = entry_price * (1 - self.take_profit_pct)
-                
+                stop_loss_price = entry_price * (1 + stop_loss_pct)
+                take_profit_price = entry_price * (1 - take_profit_pct)
                 sl_side = "BUY"
                 tp_side = "BUY"
+            
+            logger.info(f"💰 Calculated from Risk Config (RPA):")
+            logger.info(f"   Entry: ${entry_price:.2f}")
+            logger.info(f"   Stop Loss: ${stop_loss_price:.2f} ({stop_loss_pct*100:.1f}%)")
+            logger.info(f"   Take Profit: ${take_profit_price:.2f} ({take_profit_pct*100:.1f}%)")
             logger.info(f"action is {action.action}, side is {sl_side}")
             # 🔗 Place OCO order (One-Cancels-Other) with STOP_MARKET and TAKE_PROFIT_MARKET
             try:
