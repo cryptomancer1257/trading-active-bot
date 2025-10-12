@@ -331,7 +331,51 @@ export default function BotPromptsTab({ botId }: BotPromptsTabProps) {
             ))}
           </ul>
         ) : (
-          <p className="text-gray-400">No more prompts to attach.</p>
+          <div className="bg-gradient-to-r from-yellow-900/20 to-orange-900/20 border border-yellow-700/50 rounded-lg p-6">
+            <div className="flex items-start space-x-4">
+              <div className="flex-shrink-0">
+                <SparklesIcon className="h-12 w-12 text-yellow-400" />
+              </div>
+              <div className="flex-1">
+                <h4 className="text-lg font-semibold text-yellow-300 mb-2">
+                  No Prompts Found
+                </h4>
+                <p className="text-gray-300 mb-4">
+                  You haven't created any prompt templates yet. Prompt templates help guide your bot's AI analysis and decision-making process.
+                </p>
+                
+                <div className="bg-gray-800/50 rounded-lg p-4 mb-4">
+                  <h5 className="text-white font-medium mb-3">How to create prompts:</h5>
+                  <ol className="space-y-2 text-sm text-gray-300">
+                    <li className="flex items-start">
+                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-purple-500/20 text-purple-400 flex items-center justify-center mr-2 text-xs font-bold">1</span>
+                      <span>Visit the Prompt Management page</span>
+                    </li>
+                    <li className="flex items-start">
+                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-purple-500/20 text-purple-400 flex items-center justify-center mr-2 text-xs font-bold">2</span>
+                      <span>Click "Create New Prompt Template"</span>
+                    </li>
+                    <li className="flex items-start">
+                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-purple-500/20 text-purple-400 flex items-center justify-center mr-2 text-xs font-bold">3</span>
+                      <span>Configure your prompt with trading strategies</span>
+                    </li>
+                    <li className="flex items-start">
+                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-purple-500/20 text-purple-400 flex items-center justify-center mr-2 text-xs font-bold">4</span>
+                      <span>Return here to attach it to your bot</span>
+                    </li>
+                  </ol>
+                </div>
+                
+                <Link 
+                  href="/creator/prompts"
+                  className="inline-flex items-center px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-md shadow-sm transition-colors"
+                >
+                  <SparklesIcon className="h-5 w-5 mr-2" />
+                  Go to Prompt Management
+                </Link>
+              </div>
+            </div>
+          </div>
         )}
       </div>
 
