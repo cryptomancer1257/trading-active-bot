@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useAuthGuard } from '@/hooks/useAuthGuard'
 import { UserRole } from '@/lib/types'
 import { 
@@ -21,6 +21,7 @@ import { z } from 'zod'
 import toast from 'react-hot-toast'
 import { useCreateBot } from '@/hooks/useBots'
 import { useDefaultCredentials, useCredentials } from '@/hooks/useCredentials'
+import config from '@/lib/config'
 
 // Bot creation schema
 const botSchema = z.object({
@@ -45,10 +46,20 @@ const botSchema = z.object({
   stop_loss_percentage: z.number().min(0.1).max(20).default(5),
   take_profit_percentage: z.number().min(0.5).max(50).default(10),
   // LLM Configuration
-  llm_provider: z.enum(['openai', 'anthropic', 'gemini']).optional(),
+  llm_provider: z.string().optional(),
   llm_model: z.string().optional(),
   enable_image_analysis: z.boolean().default(false),
   enable_sentiment_analysis: z.boolean().default(false),
+}).refine((data) => {
+  // Validate llm_provider is required for AI-powered bots
+  const aiEnabledTypes = ['LLM', 'FUTURES', 'FUTURES_RPA', 'SPOT'];
+  if (aiEnabledTypes.includes(data.bot_type)) {
+    return data.llm_provider && data.llm_provider !== '';
+  }
+  return true;
+}, {
+  message: 'LLM Provider is required for AI-powered entities',
+  path: ['llm_provider'],
 })
 
 type BotFormData = z.infer<typeof botSchema>
@@ -220,6 +231,16 @@ export default function ForgePage() {
   const [isCancellingOrder, setIsCancellingOrder] = useState(false)
   const [isClosingPosition, setIsClosingPosition] = useState(false)
   
+  // Trial & Logs state
+  const [isStartingTrial, setIsStartingTrial] = useState(false)
+  const [trialConfig, setTrialConfig] = useState({
+    networkType: 'TESTNET',
+    tradingPair: 'BTC/USDT',
+    secondaryTradingPairs: [] as string[]
+  })
+  const [botLogs, setBotLogs] = useState<any[]>([])
+  const [isLoadingLogs, setIsLoadingLogs] = useState(false)
+  
   // Credentials management
   const [selectedCredentialsId, setSelectedCredentialsId] = useState<number | null>(null)
   const [showCredentialsModal, setShowCredentialsModal] = useState(false)
@@ -354,6 +375,26 @@ export default function ForgePage() {
       setBalanceData(null)
     }
   }, [useTestnet, step])
+
+  // Fetch bot logs - MUST be before any conditional returns (hooks rules)
+  const fetchBotLogs = useCallback(async () => {
+    if (!createdBotId) return
+    
+    setIsLoadingLogs(true)
+    try {
+      const response = await fetch(`${config.studioBaseUrl}/api/futures-bot/logs/${createdBotId}`)
+      if (response.ok) {
+        const data = await response.json()
+        setBotLogs(data.logs || [])
+      } else {
+        console.error('Failed to fetch bot logs')
+      }
+    } catch (error) {
+      console.error('Error fetching bot logs:', error)
+    } finally {
+      setIsLoadingLogs(false)
+    }
+  }, [createdBotId])
 
   if (loading) {
     return (
@@ -728,6 +769,63 @@ export default function ForgePage() {
       toast.error(`❌ Close position failed: ${error.message}`)
     } finally {
       setIsClosingPosition(false)
+    }
+  }
+
+  // Handle start free trial
+  const handleStartFreeTrial = async () => {
+    if (isStartingTrial || !createdBotId) return
+    
+    setIsStartingTrial(true)
+    
+    try {
+      const startDate = new Date()
+      const endDate = new Date(startDate.getTime() + 24 * 60 * 60 * 1000) // 24 hours later
+      
+      const currentUserId = user?.id || 1
+      
+      const subscriptionData = {
+        user_principal_id: `trial_user_${Date.now()}`,
+        user_id: currentUserId,
+        bot_id: createdBotId,
+        subscription_start: startDate.toISOString(),
+        subscription_end: endDate.toISOString(),
+        is_testnet: trialConfig.networkType === 'TESTNET',
+        trading_pair: trialConfig.tradingPair,
+        secondary_trading_pairs: trialConfig.secondaryTradingPairs,
+        trading_network: trialConfig.networkType,
+        payment_method: 'TRIAL'
+      }
+      
+      const response = await fetch(`${config.studioBaseUrl}${config.endpoints.marketplaceSubscription}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': config.marketplaceApiKey
+        },
+        body: JSON.stringify(subscriptionData)
+      })
+      
+      if (response.ok) {
+        const result = await response.json()
+        toast.success('🎉 24h Free Trial Started! Your bot is now active.')
+        
+        setTimeout(() => {
+          alert(`🚀 Free Trial Activated!\n\nBot ID: ${createdBotId}\nSubscription ID: ${result.subscription_id}\nDuration: 24 hours\nExpires: ${endDate.toLocaleString()}\nStatus: ${result.status}\n\nConfiguration:\n• Network: ${trialConfig.networkType}\n• Trading Pair: ${trialConfig.tradingPair}\n• Environment: ${trialConfig.networkType === 'TESTNET' ? 'Testnet' : 'Mainnet'}\n\nNeed help? Contact us on Telegram or Discord!`)
+        }, 1000)
+        
+        // Start fetching logs
+        fetchBotLogs()
+      } else {
+        const error = await response.json()
+        toast.error(`Failed to start trial: ${error.detail || 'Unknown error'}`)
+      }
+      
+    } catch (error) {
+      console.error('Error starting free trial:', error)
+      toast.error('Failed to start free trial. Please try again.')
+    } finally {
+      setIsStartingTrial(false)
     }
   }
 
@@ -1540,227 +1638,329 @@ export default function ForgePage() {
           </div>
         )}
 
-        {/* Step 4: Exchange Integration Testing */}
+        {/* Step 4: Backtest Your Bot */}
         {step === 4 && (
           <div className="space-y-8">
             <div className="card-quantum p-8">
-              <h2 className="text-2xl font-bold cyber-text mb-6">
-                🔗 {watch('exchange_type')} Integration Testing
-              </h2>
-              <p className="text-gray-400 mb-6">
-                Test your bot's connection to {watch('exchange_type')} exchange. Configure your API credentials and perform test operations.
-                <br />
-                <span className="text-neural-400 text-sm">
-                  💡 Testing is optional - you can skip directly to publishing if you prefer to configure API keys later.
-                </span>
-              </p>
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h2 className="text-2xl font-bold cyber-text mb-2">🧪 Backtest Your Bot</h2>
+                  <p className="text-gray-300">Test your bot's performance with 24h free trial</p>
+                </div>
+                <div className="text-right">
+                  <div className="text-2xl font-bold text-green-400">FREE</div>
+                  <div className="text-sm text-gray-400">24 hours</div>
+                </div>
+              </div>
 
-              <div className="grid md:grid-cols-2 gap-8">
-                {/* API Configuration */}
-                <div className="space-y-6">
-                  <h3 className="text-lg font-semibold text-quantum-400">API Configuration</h3>
-                  
-                  {/* Network Selection */}
-                  <div className="flex items-center">
-                    <input
-                      type="checkbox"
-                      checked={useTestnet}
-                      onChange={(e) => setUseTestnet(e.target.checked)}
-                      className="mr-3"
-                    />
-                    <label className="text-gray-300">Use Testnet (Recommended)</label>
-                  </div>
-
-                  {/* Credentials Selection */}
+              {/* Trial Configuration */}
+              <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700 mb-6">
+                <h4 className="text-lg font-semibold text-white mb-4">⚙️ Trial Configuration</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="form-label">
-                      🔑 Saved Credentials 
-                      <span className="text-sm text-gray-400 ml-2">
-                        ({exchangeType} {credentialType} {networkType})
-                      </span>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Network Type
                     </label>
-                    
-                    {allCredentials && allCredentials.length > 0 ? (
-                      <div className="space-y-3">
-                        <select
-                          value={selectedCredentialsId || ''}
-                          onChange={(e) => {
-                            const credId = e.target.value ? parseInt(e.target.value) : null
-                            setSelectedCredentialsId(credId)
-                            
-                            if (credId) {
-                              const cred = allCredentials.find(c => c.id === credId)
-                              if (cred) {
-                                setExchangeApiKey((cred as any).api_key)
-                                setExchangeSecret((cred as any).api_secret)
-                                toast.success(`✅ Selected: ${cred.name}`)
-                              }
-                            } else {
-                              setExchangeApiKey('')
-                              setExchangeSecret('')
-                            }
-                          }}
-                          className="form-input"
-                        >
-                          <option value="">🔧 Manual Entry</option>
-                          {allCredentials
-                            .filter(cred => 
-                              cred.exchange_type === exchangeType && 
-                              cred.credential_type === credentialType &&
-                              cred.network_type === networkType
-                            )
-                            .map((cred) => (
-                              <option key={cred.id} value={cred.id}>
-                                🔑 {cred.name} {cred.is_default ? '(Default)' : ''}
-                              </option>
-                            ))}
-                        </select>
-                        
-                        {selectedCredentialsId && (
-                          <div className="text-sm text-green-400 flex items-center">
-                            ✅ Using saved credentials: {allCredentials.find(c => c.id === selectedCredentialsId)?.name}
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="text-sm text-yellow-400 bg-yellow-500/10 p-3 rounded border border-yellow-500/20">
-                        ⚠️ No saved credentials found for {exchangeType} {credentialType} {networkType}
-                        <br />
-                        <a 
-                          href="/creator/credentials" 
-                          target="_blank"
-                          className="text-quantum-400 hover:text-quantum-300 underline"
-                        >
-                          → Manage Credentials
-                        </a>
-                      </div>
-                    )}
+                    <select
+                      value={trialConfig.networkType}
+                      onChange={(e) => setTrialConfig(prev => ({ ...prev, networkType: e.target.value }))}
+                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    >
+                      <option value="TESTNET">TESTNET (Safe Testing)</option>
+                      <option value="MAINNET">MAINNET (Real Trading)</option>
+                    </select>
+                    <p className="text-xs text-gray-400 mt-1">
+                      {trialConfig.networkType === 'TESTNET' 
+                        ? '🔒 Safe testing environment with virtual funds' 
+                        : '⚠️ Real trading environment with actual funds'
+                      }
+                    </p>
                   </div>
-
-                  {/* Manual API Key Entry */}
+                  
                   <div>
-                    <label className="form-label">{watch('exchange_type')} API Key</label>
-                    <input
-                      type="text"
-                      value={exchangeApiKey}
-                      onChange={(e) => {
-                        setExchangeApiKey(e.target.value)
-                        if (e.target.value && selectedCredentialsId) {
-                          setSelectedCredentialsId(null) // Clear selection if manually editing
-                        }
-                      }}
-                      className="form-input"
-                      placeholder={exchangeApiKey ? "API Key loaded from credentials" : `Enter your ${watch('exchange_type')} API Key`}
-                    />
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Primary Trading Pair
+                    </label>
+                    <select
+                      value={trialConfig.tradingPair}
+                      onChange={(e) => setTrialConfig(prev => ({ ...prev, tradingPair: e.target.value }))}
+                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    >
+                      {watch('trading_pairs') && watch('trading_pairs').length > 0 ? (
+                        watch('trading_pairs').map((pair: string) => (
+                          <option key={pair} value={pair}>{pair}</option>
+                        ))
+                      ) : (
+                        <option value="BTC/USDT">BTC/USDT</option>
+                      )}
+                    </select>
+                    <p className="text-xs text-gray-400 mt-1">
+                      🎯 Select from pairs configured by developer
+                    </p>
                   </div>
-
-                  <div>
-                    <label className="form-label">{watch('exchange_type')} Secret</label>
-                    <input
-                      type="password"
-                      value={exchangeSecret}
-                      onChange={(e) => {
-                        setExchangeSecret(e.target.value)
-                        if (e.target.value && selectedCredentialsId) {
-                          setSelectedCredentialsId(null) // Clear selection if manually editing
-                        }
-                      }}
-                      className="form-input"
-                      placeholder={exchangeSecret ? "Secret loaded from credentials" : "Enter your API Secret"}
-                    />
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={testExchangeConnection}
-                    disabled={isTestingExchange}
-                    className="btn btn-primary w-full"
-                  >
-                    {isTestingExchange ? (
-                      <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                        Testing {watch('exchange_type')} Connection...
-                      </>
-                    ) : (
-                      <>
-                        <LinkIcon className="h-4 w-4 mr-2" />
-                        🔗 Test {watch('exchange_type')} Connection
-                      </>
-                    )}
-                  </button>
                 </div>
 
-                {/* Balance & Actions */}
-                <div className="space-y-6">
-                  <h3 className="text-lg font-semibold text-quantum-400">Account Information</h3>
+                {/* Secondary Trading Pairs */}
+                <div className="mt-4">
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Secondary Trading Pairs (Optional)
+                  </label>
+                  <p className="text-xs text-gray-400 mb-3">
+                    📊 Bot will trade these pairs when primary is busy (priority order)
+                  </p>
                   
-                  {balanceData ? (
-                    <div className="card-cyber p-4">
-                      <h4 className="font-semibold text-neural-400 mb-3">Account Balance</h4>
-                      <div className="space-y-2 text-sm">
-                        {balanceData.balances?.slice(0, 5).map((balance: any, index: number) => (
-                          <div key={index} className="flex justify-between">
-                            <span>{balance.asset}</span>
-                            <span>{parseFloat(balance.free).toFixed(6)}</span>
+                  {/* Add New Pair Dropdown */}
+                  <div className="flex gap-2 mb-3">
+                    <select
+                      className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      onChange={(e) => {
+                        const value = e.target.value
+                        if (value && !trialConfig.secondaryTradingPairs.includes(value) && value !== trialConfig.tradingPair) {
+                          setTrialConfig(prev => ({
+                            ...prev,
+                            secondaryTradingPairs: [...prev.secondaryTradingPairs, value]
+                          }))
+                          e.target.value = '' // Reset select
+                        }
+                      }}
+                      defaultValue=""
+                    >
+                      <option value="" disabled>Select pair to add...</option>
+                      {watch('trading_pairs') && watch('trading_pairs').length > 0 ? (
+                        watch('trading_pairs')
+                          .filter((pair: string) => pair !== trialConfig.tradingPair && !trialConfig.secondaryTradingPairs.includes(pair))
+                          .map((pair: string) => (
+                            <option key={pair} value={pair}>{pair}</option>
+                          ))
+                      ) : null}
+                    </select>
+                  </div>
+                  
+                  {/* List of Secondary Pairs */}
+                  {trialConfig.secondaryTradingPairs.length > 0 && (
+                    <div className="space-y-2">
+                      {trialConfig.secondaryTradingPairs.map((pair, index) => (
+                        <div
+                          key={index}
+                          className="flex items-center gap-2 bg-gray-700/50 border border-gray-600 rounded-md p-2"
+                        >
+                          {/* Priority Badge */}
+                          <div className="flex items-center justify-center w-7 h-7 rounded-full bg-purple-500/20 text-purple-400 text-sm font-bold">
+                            {index + 2}
                           </div>
-                        ))}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="card-cyber p-4 text-center text-gray-400">
-                      <div className="mb-2">Connect to {watch('exchange_type')} to view account information</div>
-                      <div className="text-xs text-neural-400">
-                        Or skip testing and configure API keys later in production
+                          
+                          {/* Pair Name */}
+                          <div className="flex-1 text-white font-medium text-sm">
+                            {pair}
+                          </div>
+                          
+                          {/* Reorder Buttons */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (index > 0) {
+                                const pairs = [...trialConfig.secondaryTradingPairs]
+                                ;[pairs[index - 1], pairs[index]] = [pairs[index], pairs[index - 1]]
+                                setTrialConfig(prev => ({ ...prev, secondaryTradingPairs: pairs }))
+                              }
+                            }}
+                            disabled={index === 0}
+                            className={`p-1 rounded ${
+                              index === 0
+                                ? 'text-gray-600 cursor-not-allowed'
+                                : 'text-gray-400 hover:text-purple-400'
+                            }`}
+                            title="Move up"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                            </svg>
+                          </button>
+                          
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (index < trialConfig.secondaryTradingPairs.length - 1) {
+                                const pairs = [...trialConfig.secondaryTradingPairs]
+                                ;[pairs[index], pairs[index + 1]] = [pairs[index + 1], pairs[index]]
+                                setTrialConfig(prev => ({ ...prev, secondaryTradingPairs: pairs }))
+                              }
+                            }}
+                            disabled={index === trialConfig.secondaryTradingPairs.length - 1}
+                            className={`p-1 rounded ${
+                              index === trialConfig.secondaryTradingPairs.length - 1
+                                ? 'text-gray-600 cursor-not-allowed'
+                                : 'text-gray-400 hover:text-purple-400'
+                            }`}
+                            title="Move down"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </button>
+                          
+                          {/* Remove Button */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const pairs = trialConfig.secondaryTradingPairs.filter((_, i) => i !== index)
+                              setTrialConfig(prev => ({ ...prev, secondaryTradingPairs: pairs }))
+                            }}
+                            className="p-1 text-red-400 hover:text-red-300 rounded"
+                            title="Remove"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                      ))}
+                      
+                      {/* Summary */}
+                      <div className="mt-2 text-xs text-gray-500 bg-gray-800/50 rounded p-2 border border-purple-500/20">
+                        <div className="font-medium text-purple-400 mb-1">Trading Priority Order:</div>
+                        <div className="space-y-0.5">
+                          <div>1️⃣ {trialConfig.tradingPair} <span className="text-gray-600">(Primary)</span></div>
+                          {trialConfig.secondaryTradingPairs.map((pair, idx) => (
+                            <div key={idx}>{idx + 2}️⃣ {pair}</div>
+                          ))}
+                        </div>
+                        <div className="mt-1 text-gray-600">
+                          💡 Bot trades first available pair without open position
+                        </div>
                       </div>
                     </div>
                   )}
+                </div>
+              </div>
 
-                  {balanceData && (
-                    <div className="space-y-3">
-                      <button 
-                        onClick={testOrder}
-                        disabled={isTestingOrder}
-                        className="btn btn-secondary w-full flex items-center justify-center"
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
+                  <h4 className="text-lg font-semibold text-white mb-2">📊 What You Get</h4>
+                  <ul className="text-gray-300 space-y-1">
+                    <li>• Real-time market analysis</li>
+                    <li>• Historical performance data</li>
+                    <li>• Risk management insights</li>
+                    <li>• Trading signal validation</li>
+                  </ul>
+                </div>
+
+                <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
+                  <h4 className="text-lg font-semibold text-white mb-2">🚀 Quick Start</h4>
+                  <ul className="text-gray-300 space-y-1">
+                    <li>• No setup required</li>
+                    <li>• Instant activation</li>
+                    <li>• Full bot capabilities</li>
+                    <li>• 24/7 monitoring</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-4 items-center justify-between mb-6">
+                <div className="flex items-center space-x-4">
+                  <button
+                    onClick={handleStartFreeTrial}
+                    disabled={isStartingTrial}
+                    className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 disabled:from-gray-600 disabled:to-gray-700 text-white px-6 py-3 rounded-lg font-semibold transition-all duration-200 transform hover:scale-105 disabled:scale-100 disabled:cursor-not-allowed shadow-lg"
+                  >
+                    {isStartingTrial ? (
+                      <span className="flex items-center">
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        Starting Trial...
+                      </span>
+                    ) : (
+                      '🚀 Start 24h Free Trial'
+                    )}
+                  </button>
+                  
+                  <div className="text-center">
+                    <div className="text-sm text-gray-400 mb-1">Need help?</div>
+                    <div className="flex space-x-2">
+                      <a
+                        href="https://t.me/cryptomancer_ai_bot"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-400 hover:text-blue-300 text-sm font-medium"
                       >
-                        {isTestingOrder ? (
-                          <>
-                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                            Creating Test Order...
-                          </>
-                        ) : (
-                          '📊 Test Order (BUY 0.003 BTC @ Market Price)'
-                        )}
-                      </button>
-                      
-                      <button 
-                        onClick={cancelOrder}
-                        disabled={isCancellingOrder || !testOrderId}
-                        className="btn btn-danger w-full flex items-center justify-center disabled:opacity-50"
+                        📱 Telegram
+                      </a>
+                      <span className="text-gray-500">|</span>
+                      <a
+                        href="https://discord.gg/cryptomancer_ai_bot"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-indigo-400 hover:text-indigo-300 text-sm font-medium"
                       >
-                        {isCancellingOrder ? (
-                          <>
-                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                            Cancelling Order...
-                          </>
-                        ) : (
-                          `❌ Cancel Order ${testOrderId ? `(${String(testOrderId).substring(0, 8)}...)` : '(No Active Order)'}`
-                        )}
-                      </button>
-                      
-                      <button 
-                        onClick={closePosition}
-                        disabled={isClosingPosition}
-                        className="btn btn-secondary w-full flex items-center justify-center"
-                      >
-                        {isClosingPosition ? (
-                          <>
-                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                            Closing Position...
-                          </>
-                        ) : (
-                          '🔒 Close Position (BTCUSDT)'
-                        )}
-                      </button>
+                        💬 Discord
+                      </a>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="text-right">
+                  <div className="text-xs text-gray-500">
+                    Trial starts immediately • No credit card required
+                  </div>
+                </div>
+              </div>
+
+              {/* Monitor Logs Section */}
+              <div className="bg-gray-800/50 p-6 rounded-lg border border-gray-700 mb-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className="text-lg font-semibold text-white flex items-center">
+                    📊 Monitor Execution Logs
+                    <span className="ml-2 px-2 py-1 bg-green-500/20 text-green-400 text-xs rounded-full">LIVE</span>
+                  </h4>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={fetchBotLogs}
+                      disabled={isLoadingLogs}
+                      className="px-3 py-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white text-sm rounded-md transition-colors"
+                    >
+                      {isLoadingLogs ? '⏳ Loading...' : '🔄 Refresh'}
+                    </button>
+                    <button
+                      onClick={() => setBotLogs([])}
+                      className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-sm rounded-md transition-colors"
+                    >
+                      🗑️ Clear
+                    </button>
+                  </div>
+                </div>
+
+                <div className="bg-black/50 rounded-lg p-4 h-64 overflow-y-auto">
+                  {isLoadingLogs ? (
+                    <div className="flex items-center justify-center h-full">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-400"></div>
+                      <span className="ml-2 text-gray-400">Loading logs...</span>
+                    </div>
+                  ) : (
+                    <div className="font-mono text-sm space-y-2">
+                      {botLogs.length > 0 ? (
+                        botLogs.map((log, index) => {
+                          const timestamp = new Date(log.timestamp).toLocaleTimeString()
+                          const getLogColor = (type: string) => {
+                            switch (type) {
+                              case 'transaction': return 'text-green-400'
+                              case 'system': return 'text-blue-400'
+                              case 'analysis': return 'text-yellow-400'
+                              case 'error': return 'text-red-400'
+                              default: return 'text-gray-300'
+                            }
+                          }
+                          
+                          return (
+                            <div key={index} className={`${getLogColor(log.type)} py-1 border-b border-gray-800`}>
+                              <span className="text-gray-500">[{timestamp}]</span> {log.message}
+                            </div>
+                          )
+                        })
+                      ) : (
+                        <div className="text-center text-gray-500 mt-8">
+                          <p>No logs available yet</p>
+                          <p className="text-sm mt-2">Start a trial to see bot execution logs</p>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
