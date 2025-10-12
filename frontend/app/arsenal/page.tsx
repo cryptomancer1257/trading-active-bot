@@ -293,21 +293,21 @@ export default function ArsenalPage() {
                 href={`/creator/entities/${bot.id}`} 
                 className="btn btn-primary flex-1 py-2 text-sm text-center"
                 onClick={(e) => {
-                  // Set analytics tab when clicking
+                  // Set analytics tab when clicking View Performance
                   localStorage.setItem('bot-detail-tab', 'analytics')
                 }}
               >
-                🧠 Analyze Entity
+                📊 View Performance
               </Link>
               <Link 
                 href={`/creator/entities/${bot.id}`}
                 className="btn btn-secondary flex-1 py-2 text-sm text-center"
                 onClick={(e) => {
-                  // Set analytics tab for performance view
-                  localStorage.setItem('bot-detail-tab', 'analytics')
+                  // Set subscriptions tab when clicking View Subscriptions
+                  localStorage.setItem('bot-detail-tab', 'subscriptions')
                 }}
               >
-                📊 View Performance
+                👥 View Subscriptions
               </Link>
               <Link 
                 href={`/marketplace/${bot.id}`} 

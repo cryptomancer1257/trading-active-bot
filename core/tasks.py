@@ -3834,9 +3834,9 @@ def sync_open_positions_realtime(self):
     - Multi-exchange support (Bybit, Binance, OKX, Bitget, Huobi, Kraken)
     - Real-time unrealized P&L calculation
     - Auto-close detection
-    - Configurable interval (default: 10s)
+    - Configurable interval (default: 100s)
     
-    Schedule: Run every 10 seconds (configurable in beat_schedule)
+    Schedule: Run every 100 seconds (configurable in beat_schedule)
     """
     try:
         from core.database import SessionLocal
