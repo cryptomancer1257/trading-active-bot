@@ -183,8 +183,8 @@ export default function Navbar() {
                             <Link
                               href="/settings"
                               className={clsx(
-                                active ? 'bg-gray-100' : '',
-                                'flex items-center px-4 py-2 text-sm text-gray-700'
+                                active ? 'bg-quantum-500/20 text-gray-100' : 'text-gray-300',
+                                'flex items-center px-4 py-2 text-sm hover:bg-quantum-500/10 transition-colors duration-200'
                               )}
                             >
                               <CogIcon className="h-4 w-4 mr-2" />
@@ -195,10 +195,13 @@ export default function Navbar() {
                         <Menu.Item>
                           {({ active }) => (
                             <button
-                              onClick={logout}
+                              onClick={() => {
+                                logout()
+                                router.push('/')
+                              }}
                               className={clsx(
-                                active ? 'bg-gray-100' : '',
-                                'flex items-center w-full px-4 py-2 text-sm text-gray-700 text-left'
+                                active ? 'bg-quantum-500/20 text-gray-100' : 'text-gray-300',
+                                'flex items-center w-full px-4 py-2 text-sm hover:bg-quantum-500/10 transition-colors duration-200 text-left'
                               )}
                             >
                               <ArrowRightOnRectangleIcon className="h-4 w-4 mr-2" />
@@ -313,7 +316,10 @@ export default function Navbar() {
                   </Disclosure.Button>
                   <Disclosure.Button
                     as="button"
-                    onClick={logout}
+                    onClick={() => {
+                      logout()
+                      router.push('/')
+                    }}
                     className="block w-full text-left px-4 py-2 text-base font-medium text-gray-500 hover:text-gray-800 hover:bg-gray-100"
                   >
                     Đăng xuất

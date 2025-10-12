@@ -706,10 +706,11 @@ def get_bot_analytics(
     page: int = 1,
     limit: int = 10,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(security.get_current_active_developer)
+    current_user: models.User = Depends(security.get_current_active_user)
 ):
     """Get bot analytics including transactions, subscribers, and performance metrics with pagination"""
-    return crud.get_bot_analytics(db, bot_id=bot_id, developer_id=current_user.id, days=days, page=page, limit=limit)
+    # Allow all authenticated users to view analytics, not just the bot owner
+    return crud.get_bot_analytics(db, bot_id=bot_id, developer_id=None, days=days, page=page, limit=limit)
 
 @router.get("/{bot_id}/subscriptions", response_model=dict)
 def get_bot_subscriptions(
@@ -724,7 +725,7 @@ def get_bot_subscriptions(
     end_date: Optional[str] = None,
     search: Optional[str] = None,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(security.get_current_active_developer)
+    current_user: models.User = Depends(security.get_current_active_user)
 ):
     """
     Get all subscriptions for a bot with advanced filtering and search
@@ -738,10 +739,11 @@ def get_bot_subscriptions(
     - end_date: Filter by subscription end date (YYYY-MM-DD)
     - search: Search in principal_id, instance_name, or trading_pair
     """
+    # Allow all authenticated users to view subscriptions, not just the bot owner
     return crud.get_bot_subscriptions(
         db=db,
         bot_id=bot_id,
-        developer_id=current_user.id,
+        developer_id=None,
         page=page,
         limit=limit,
         principal_id=principal_id,

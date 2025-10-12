@@ -342,16 +342,23 @@ def get_bots_by_developer(db: Session, developer_id: int):
     
     return bots
 
-def get_bot_analytics(db: Session, bot_id: int, developer_id: int, days: int = 30, page: int = 1, limit: int = 10):
+def get_bot_analytics(db: Session, bot_id: int, developer_id: Optional[int] = None, days: int = 30, page: int = 1, limit: int = 10):
     """Get comprehensive analytics for a bot with paginated recent transactions"""
     from sqlalchemy import func, and_, case
     from datetime import datetime, timedelta
     
-    # Verify bot belongs to developer
-    bot = db.query(models.Bot).filter(
-        models.Bot.id == bot_id,
-        models.Bot.developer_id == developer_id
-    ).first()
+    # Verify bot exists (and optionally belongs to developer)
+    if developer_id is not None:
+        # Check ownership if developer_id provided
+        bot = db.query(models.Bot).filter(
+            models.Bot.id == bot_id,
+            models.Bot.developer_id == developer_id
+        ).first()
+    else:
+        # Just check bot exists if no developer_id (public view)
+        bot = db.query(models.Bot).filter(
+            models.Bot.id == bot_id
+        ).first()
     
     if not bot:
         raise HTTPException(status_code=404, detail="Bot not found")
@@ -542,7 +549,7 @@ def get_bot_analytics(db: Session, bot_id: int, developer_id: int, days: int = 3
 def get_bot_subscriptions(
     db: Session,
     bot_id: int,
-    developer_id: int,
+    developer_id: Optional[int] = None,
     page: int = 1,
     limit: int = 20,
     principal_id: Optional[str] = None,
@@ -558,11 +565,18 @@ def get_bot_subscriptions(
     """
     from datetime import datetime
     
-    # Verify bot belongs to developer
-    bot = db.query(models.Bot).filter(
-        models.Bot.id == bot_id,
-        models.Bot.developer_id == developer_id
-    ).first()
+    # Verify bot exists (and optionally belongs to developer)
+    if developer_id is not None:
+        # Check ownership if developer_id provided
+        bot = db.query(models.Bot).filter(
+            models.Bot.id == bot_id,
+            models.Bot.developer_id == developer_id
+        ).first()
+    else:
+        # Just check bot exists if no developer_id (public view)
+        bot = db.query(models.Bot).filter(
+            models.Bot.id == bot_id
+        ).first()
     
     if not bot:
         raise HTTPException(status_code=404, detail="Bot not found")

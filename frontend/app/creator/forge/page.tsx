@@ -1867,46 +1867,64 @@ export default function ForgePage() {
                 </div>
               </div>
 
-              <div className="bg-gradient-to-br from-blue-900/30 to-purple-900/30 p-6 rounded-lg border border-blue-700/50 mb-6">
-                <h4 className="text-lg font-semibold text-white mb-4 flex items-center">
-                  <span className="mr-2">🔑</span>
-                  Exchange Credentials Setup
-                </h4>
-                <div className="text-gray-300 space-y-3">
-                  <p className="text-sm">
-                    Before starting the trial, make sure you have configured your exchange API credentials:
-                  </p>
-                  <ol className="text-sm space-y-2 ml-4">
-                    <li>
-                      <strong className="text-blue-400">1. Go to API Credentials</strong> - Navigate to the API Credentials page to manage your exchange keys
-                    </li>
-                    <li>
-                      <strong className="text-blue-400">2. Add New Credential</strong> - Click "Add New Credential" and enter your exchange API keys (API Key, Secret, Passphrase if required)
-                    </li>
-                    <li>
-                      <strong className="text-blue-400">3. Select Network</strong> - Choose TESTNET for safe testing with virtual funds, or MAINNET for real trading
-                    </li>
-                    <li>
-                      <strong className="text-blue-400">4. Set as Default</strong> - Mark your credential as default for automatic selection when creating trials
-                    </li>
-                  </ol>
-                  <div className="mt-4 p-3 bg-yellow-900/20 border border-yellow-700/50 rounded-md">
-                    <p className="text-sm text-yellow-300">
-                      ⚠️ <strong>Security Tip:</strong> Always start with TESTNET to validate your bot's behavior before using MAINNET with real funds.
-                    </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <div className="bg-gradient-to-br from-purple-900/30 to-purple-800/30 p-5 rounded-lg border border-purple-500/30">
+                  <h4 className="text-lg font-semibold text-white mb-3 flex items-center">
+                    <span className="mr-2">🤖</span>
+                    LLM Providers Setup
+                    <span className="ml-2 px-2 py-0.5 text-xs bg-red-500 text-white rounded-full">REQUIRED</span>
+                  </h4>
+                  <div className="text-gray-300 space-y-2 text-sm">
+                    <p className="text-yellow-400 font-medium mb-2">⚠️ Bot requires LLM Provider to run!</p>
+                    <div className="space-y-1.5">
+                      <div className="flex items-start">
+                        <span className="mr-2">1️⃣</span>
+                        <span>Go to <a href="/creator/llm-providers" className="text-purple-400 hover:text-purple-300 underline" target="_blank" rel="noopener noreferrer">LLM Providers</a></span>
+                      </div>
+                      <div className="flex items-start">
+                        <span className="mr-2">2️⃣</span>
+                        <span>Add your API keys (OpenAI, Anthropic, Google, etc.)</span>
+                      </div>
+                      <div className="flex items-start">
+                        <span className="mr-2">3️⃣</span>
+                        <span>Select default provider for your bot</span>
+                      </div>
+                    </div>
+                    <div className="mt-3 p-2 bg-purple-900/30 border border-purple-500/20 rounded text-xs">
+                      💡 Without LLM Provider, bot cannot analyze market or make trading decisions
+                    </div>
                   </div>
-                  <div className="mt-3">
-                    <a 
-                      href="/creator/credentials" 
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center text-blue-400 hover:text-blue-300 text-sm font-medium"
-                    >
-                      → Go to API Credentials to setup your keys
-                      <svg className="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                      </svg>
-                    </a>
+                </div>
+
+                <div className="bg-gradient-to-br from-blue-900/30 to-blue-800/30 p-5 rounded-lg border border-blue-500/30">
+                  <h4 className="text-lg font-semibold text-white mb-3 flex items-center">
+                    <span className="mr-2">🔑</span>
+                    API Credentials Setup
+                    <span className="ml-2 px-2 py-0.5 text-xs bg-yellow-500 text-black rounded-full">TEST TRIAL</span>
+                  </h4>
+                  <div className="text-gray-300 space-y-2 text-sm">
+                    <p className="text-blue-400 font-medium mb-2">🧪 Required for testing bot trial</p>
+                    <div className="space-y-1.5">
+                      <div className="flex items-start">
+                        <span className="mr-2">1️⃣</span>
+                        <span>Go to <a href="/creator/credentials" className="text-blue-400 hover:text-blue-300 underline" target="_blank" rel="noopener noreferrer">API Credentials</a></span>
+                      </div>
+                      <div className="flex items-start">
+                        <span className="mr-2">2️⃣</span>
+                        <span>Add exchange API keys (Bybit, Binance, etc.)</span>
+                      </div>
+                      <div className="flex items-start">
+                        <span className="mr-2">3️⃣</span>
+                        <span>Choose TESTNET for safe testing</span>
+                      </div>
+                      <div className="flex items-start">
+                        <span className="mr-2">4️⃣</span>
+                        <span>Set as default credential</span>
+                      </div>
+                    </div>
+                    <div className="mt-3 p-2 bg-blue-900/30 border border-blue-500/20 rounded text-xs">
+                      💡 Use TESTNET for risk-free testing with virtual funds
+                    </div>
                   </div>
                 </div>
               </div>

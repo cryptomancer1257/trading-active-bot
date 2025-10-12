@@ -79,7 +79,7 @@ app.conf.update(
         },
         'sync-open-positions-realtime': {
             'task': 'core.tasks.sync_open_positions_realtime',
-            'schedule': 10.0,  # Run every 10 seconds for real-time position sync
+            'schedule': 100.0,  # Run every 100 seconds for position sync
         },
     },
 )
