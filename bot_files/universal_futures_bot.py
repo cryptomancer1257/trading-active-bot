@@ -638,6 +638,11 @@ class UniversalFuturesBot(CustomBot):
             
             logger.info(f"✅ Market order placed successfully: {order.status}")
             
+            # Wait for position to be settled on exchange before placing SL/TP
+            import time
+            time.sleep(1)  # 1 second delay to ensure position is registered
+            logger.info("⏳ Position settled, now placing SL/TP orders...")
+            
             # Calculate stop loss and take profit prices from Risk Config
             # Get risk config from bot (developer-configured risk parameters)
             from core import schemas

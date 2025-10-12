@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { ShieldCheckIcon, BeakerIcon, ChartBarIcon } from '@heroicons/react/24/outline'
+import { ShieldCheckIcon, BeakerIcon, ChartBarIcon, QuestionMarkCircleIcon } from '@heroicons/react/24/outline'
 import toast from 'react-hot-toast'
 
 interface RiskConfigurationFormProps {
@@ -22,11 +22,11 @@ export default function RiskConfigurationForm({
   
   // DEFAULT mode settings
   const [stopLossPercent, setStopLossPercent] = useState<number>(2.0)
-  const [takeProfitPercent, setTakeProfitPercent] = useState<number>(4.0)
-  const [maxPositionSize, setMaxPositionSize] = useState<number>(10.0)
+  const [takeProfitPercent, setTakeProfitPercent] = useState<number>(5.0)
+  const [maxPositionSize, setMaxPositionSize] = useState<number>(5.0)
   const [minRiskRewardRatio, setMinRiskRewardRatio] = useState<number>(2.0)
   const [riskPerTradePercent, setRiskPerTradePercent] = useState<number>(2.0)
-  const [maxLeverage, setMaxLeverage] = useState<number>(10)
+  const [maxLeverage, setMaxLeverage] = useState<number>(5)
   const [maxPortfolioExposure, setMaxPortfolioExposure] = useState<number>(30.0)
   const [dailyLossLimitPercent, setDailyLossLimitPercent] = useState<number>(5.0)
   
@@ -111,11 +111,11 @@ export default function RiskConfigurationForm({
     
     setMode(config.mode || 'DEFAULT')
     setStopLossPercent(config.stop_loss_percent || 2.0)
-    setTakeProfitPercent(config.take_profit_percent || 4.0)
-    setMaxPositionSize(config.max_position_size || 10.0)
+    setTakeProfitPercent(config.take_profit_percent || 5.0)
+    setMaxPositionSize(config.max_position_size || 5.0)
     setMinRiskRewardRatio(config.min_risk_reward_ratio || 2.0)
     setRiskPerTradePercent(config.risk_per_trade_percent || 2.0)
-    setMaxLeverage(config.max_leverage || 10)
+    setMaxLeverage(config.max_leverage || 5)
     setMaxPortfolioExposure(config.max_portfolio_exposure || 30.0)
     setDailyLossLimitPercent(config.daily_loss_limit_percent || 5.0)
     
@@ -320,6 +320,16 @@ export default function RiskConfigurationForm({
   }
 
   const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+  
+  // Tooltip component
+  const Tooltip = ({ text }: { text: string }) => (
+    <div className="group relative inline-block ml-1">
+      <QuestionMarkCircleIcon className="h-4 w-4 text-gray-400 hover:text-blue-400 cursor-help" />
+      <div className="invisible group-hover:visible absolute z-50 w-64 p-2 mt-1 text-sm text-white bg-gray-900 border border-gray-700 rounded-lg shadow-lg left-0 top-full">
+        {text}
+      </div>
+    </div>
+  )
 
   return (
     <div className="space-y-6">
@@ -439,8 +449,9 @@ export default function RiskConfigurationForm({
             <h3 className="text-lg font-semibold text-white mb-4">Basic Risk Parameters</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="flex items-center text-sm font-medium text-gray-300 mb-2">
                   Stop Loss (%)
+                  <Tooltip text="Maximum percentage loss before automatically closing the position to protect your capital. Lower values = tighter risk control." />
                 </label>
                 <input
                   type="number"
@@ -454,8 +465,9 @@ export default function RiskConfigurationForm({
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="flex items-center text-sm font-medium text-gray-300 mb-2">
                   Take Profit (%)
+                  <Tooltip text="Target profit percentage where the position will automatically close to lock in gains. Higher values = more potential profit but longer waiting time." />
                 </label>
                 <input
                   type="number"
@@ -468,8 +480,9 @@ export default function RiskConfigurationForm({
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="flex items-center text-sm font-medium text-gray-300 mb-2">
                   Max Position Size (%)
+                  <Tooltip text="Maximum percentage of your total balance to use in a single trade. Lower values = better diversification and risk control." />
                 </label>
                 <input
                   type="number"
@@ -489,8 +502,9 @@ export default function RiskConfigurationForm({
             <h3 className="text-lg font-semibold text-white mb-4">Advanced Risk Control</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="flex items-center text-sm font-medium text-gray-300 mb-2">
                   Min Risk/Reward Ratio (e.g., 2 = 2:1)
+                  <Tooltip text="Minimum ratio of potential profit to potential loss required to enter a trade. Example: 2 = you risk $1 to potentially gain $2. Higher values = more selective trading." />
                 </label>
                 <input
                   type="number"
@@ -503,8 +517,9 @@ export default function RiskConfigurationForm({
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="flex items-center text-sm font-medium text-gray-300 mb-2">
                   Risk Per Trade (%)
+                  <Tooltip text="Maximum percentage of your total balance that you're willing to risk on a single trade. Example: 2% means if you have $10,000, you can risk losing $200 per trade." />
                 </label>
                 <input
                   type="number"
@@ -518,8 +533,9 @@ export default function RiskConfigurationForm({
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="flex items-center text-sm font-medium text-gray-300 mb-2">
                   Max Leverage (x)
+                  <Tooltip text="Maximum leverage multiplier allowed for trades. Higher leverage = higher potential profits AND losses. Recommended: 5-10x for beginners, 20x+ for experienced traders." />
                 </label>
                 <input
                   type="number"
@@ -533,8 +549,9 @@ export default function RiskConfigurationForm({
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="flex items-center text-sm font-medium text-gray-300 mb-2">
                   Max Portfolio Exposure (%)
+                  <Tooltip text="Maximum percentage of your total capital that can be used across all open positions at once. Lower values = better risk diversification. Example: 30% means only 30% of your balance can be in active trades." />
                 </label>
                 <input
                   type="number"
@@ -548,8 +565,9 @@ export default function RiskConfigurationForm({
               </div>
               
               <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="flex items-center text-sm font-medium text-gray-300 mb-2">
                   Daily Loss Limit (%)
+                  <Tooltip text="Maximum total loss allowed in a single day before all trading stops automatically. Protects your account from catastrophic losses during bad market days or bot malfunctions." />
                 </label>
                 <input
                   type="number"
@@ -568,7 +586,10 @@ export default function RiskConfigurationForm({
           {/* Trailing Stop */}
           <div className="bg-gray-800 border border-gray-700 rounded-lg p-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-white">Trailing Stop Loss</h3>
+              <h3 className="text-lg font-semibold text-white flex items-center">
+                Trailing Stop Loss
+                <Tooltip text="Dynamically adjusts your stop loss as the price moves in your favor, locking in profits while protecting against reversals. Example: If price rises 5%, your stop loss moves up 5% too, securing that gain." />
+              </h3>
               <label className="relative inline-flex items-center cursor-pointer">
                 <input
                   type="checkbox"
@@ -618,7 +639,10 @@ export default function RiskConfigurationForm({
           {/* Trading Window */}
           <div className="bg-gray-800 border border-gray-700 rounded-lg p-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-white">Trading Window</h3>
+              <h3 className="text-lg font-semibold text-white flex items-center">
+                Trading Window
+                <Tooltip text="Restricts trading to specific hours and days of the week. Useful for avoiding volatile market hours or trading only during high-volume periods when spreads are tighter." />
+              </h3>
               <label className="relative inline-flex items-center cursor-pointer">
                 <input
                   type="checkbox"
@@ -695,7 +719,10 @@ export default function RiskConfigurationForm({
           {/* Cooldown */}
           <div className="bg-gray-800 border border-gray-700 rounded-lg p-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-white">Cooldown After Losses</h3>
+              <h3 className="text-lg font-semibold text-white flex items-center">
+                Cooldown After Losses
+                <Tooltip text="Pauses trading for a set period after consecutive losses to prevent emotional or revenge trading. Gives the market (and you) time to stabilize before resuming trades." />
+              </h3>
               <label className="relative inline-flex items-center cursor-pointer">
                 <input
                   type="checkbox"

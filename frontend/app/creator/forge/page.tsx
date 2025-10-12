@@ -22,6 +22,7 @@ import toast from 'react-hot-toast'
 import { useCreateBot } from '@/hooks/useBots'
 import { useDefaultCredentials, useCredentials } from '@/hooks/useCredentials'
 import config from '@/lib/config'
+import BotPromptsTab from '@/components/BotPromptsTab'
 
 // Bot creation schema
 const botSchema = z.object({
@@ -171,9 +172,8 @@ const botTemplates = [
 ]
 
 const exchangeTypes = [
-  { value: 'MULTI', label: '🌐 Multi-Exchange', description: 'Trade across 6 major exchanges with unified interface' },
-  { value: 'BINANCE', label: '🟡 Binance', description: 'World\'s largest crypto exchange' },
   { value: 'BYBIT', label: '🟠 Bybit', description: 'Advanced derivatives platform' },
+  { value: 'BINANCE', label: '🟡 Binance', description: 'World\'s largest crypto exchange' },
   { value: 'OKX', label: '⚫ OKX', description: 'Unified trading account' },
   { value: 'BITGET', label: '🟢 Bitget', description: 'Copy trading leader' },
   { value: 'KRAKEN', label: '🟣 Kraken', description: 'European regulated exchange' },
@@ -184,7 +184,7 @@ const timeframeOptions = [
   '1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '6h', '8h', '12h', '1d', '3d', '1w', '1M'
 ]
 
-// Top 20 trading pairs from CoinMarketCap (against USDT)
+// Top 21 trading pairs from CoinMarketCap (against USDT)
 const topTradingPairs = [
   { symbol: 'BTC/USDT', name: 'Bitcoin', rank: 1 },
   { symbol: 'ETH/USDT', name: 'Ethereum', rank: 2 },
@@ -205,7 +205,8 @@ const topTradingPairs = [
   { symbol: 'ATOM/USDT', name: 'Cosmos', rank: 17 },
   { symbol: 'ETC/USDT', name: 'Ethereum Classic', rank: 18 },
   { symbol: 'XLM/USDT', name: 'Stellar', rank: 19 },
-  { symbol: 'FIL/USDT', name: 'Filecoin', rank: 20 }
+  { symbol: 'FIL/USDT', name: 'Filecoin', rank: 20 },
+  { symbol: 'ICP/USDT', name: 'Internet Computer', rank: 21 }
 ]
 
 export default function ForgePage() {
@@ -260,7 +261,7 @@ export default function ForgePage() {
     resolver: zodResolver(botSchema),
     defaultValues: {
       // bot_mode is auto-set based on template
-      exchange_type: 'BINANCE',
+      exchange_type: 'BYBIT',
       trading_pairs: ['BTC/USDT'],
       timeframe: '1h',
       timeframes: ['1h'],
@@ -268,10 +269,12 @@ export default function ForgePage() {
       price_per_month: 0,
       is_free: false,
       image_url: '',
-      leverage: 10,
+      leverage: 5,
       risk_percentage: 2,
-      stop_loss_percentage: 5,
-      take_profit_percentage: 10,
+      stop_loss_percentage: 2,
+      take_profit_percentage: 5,
+      llm_provider: 'openai',
+      llm_model: 'gpt-4',
       enable_image_analysis: false,
       enable_sentiment_analysis: false
     }
@@ -1162,7 +1165,11 @@ export default function ForgePage() {
                   <div className="space-y-4">
                     <div>
                       <label className="form-label">Exchange Platform</label>
-                      <select {...register('exchange_type')} className="form-input">
+                      <select 
+                        {...register('exchange_type')} 
+                        className="form-input"
+                        defaultValue="BYBIT"
+                      >
                         {exchangeTypes.map((exchange) => (
                           <option key={exchange.value} value={exchange.value}>
                             {exchange.label}
@@ -1175,7 +1182,7 @@ export default function ForgePage() {
                     <div>
                       <label className="form-label">Trading Pairs</label>
                       <p className="mt-1 text-sm text-gray-400 mb-3">
-                        📊 Select from top 20 CoinMarketCap coins. Users will choose from your selection when subscribing.
+                        📊 Select from top coins. Users will choose from your selection when subscribing.
                       </p>
                       
                       {/* Quick Add Top Coins */}
@@ -1201,8 +1208,8 @@ export default function ForgePage() {
                           className="form-input flex-1"
                           onChange={(e) => {
                             const value = e.target.value
-                            if (value && !watch('trading_pairs')?.includes(value)) {
-                              setValue('trading_pairs', [...(watch('trading_pairs') || []), value])
+                              if (value && !watch('trading_pairs')?.includes(value)) {
+                                setValue('trading_pairs', [...(watch('trading_pairs') || []), value])
                               e.target.value = '' // Reset select
                             }
                           }}
@@ -1238,8 +1245,8 @@ export default function ForgePage() {
                           {watch('trading_pairs').map((pair, index) => {
                             const pairInfo = topTradingPairs.find(p => p.symbol === pair)
                             return (
-                              <div
-                                key={index}
+                            <div
+                              key={index}
                                 className="flex items-center gap-3 bg-dark-700/50 border border-gray-600 rounded-md p-3"
                               >
                                 {/* Rank Badge */}
@@ -1255,28 +1262,28 @@ export default function ForgePage() {
                                   {pairInfo && (
                                     <div className="text-xs text-gray-400">{pairInfo.name}</div>
                                   )}
-                                </div>
-                                
-                                {/* Remove Button */}
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const pairs = watch('trading_pairs').filter((_, i) => i !== index)
-                                    setValue('trading_pairs', pairs.length > 0 ? pairs : ['BTC/USDT'])
-                                  }}
-                                  disabled={watch('trading_pairs').length === 1}
-                                  className={`p-1 rounded ${
-                                    watch('trading_pairs').length === 1
-                                      ? 'text-gray-600 cursor-not-allowed'
-                                      : 'text-red-400 hover:text-red-300 hover:bg-red-500/10'
-                                  }`}
-                                  title={watch('trading_pairs').length === 1 ? 'At least one pair required' : 'Remove'}
-                                >
-                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                  </svg>
-                                </button>
                               </div>
+                              
+                              {/* Remove Button */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const pairs = watch('trading_pairs').filter((_, i) => i !== index)
+                                  setValue('trading_pairs', pairs.length > 0 ? pairs : ['BTC/USDT'])
+                                }}
+                                disabled={watch('trading_pairs').length === 1}
+                                className={`p-1 rounded ${
+                                  watch('trading_pairs').length === 1
+                                    ? 'text-gray-600 cursor-not-allowed'
+                                    : 'text-red-400 hover:text-red-300 hover:bg-red-500/10'
+                                }`}
+                                title={watch('trading_pairs').length === 1 ? 'At least one pair required' : 'Remove'}
+                              >
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                              </button>
+                            </div>
                             )
                           })}
                           
@@ -1297,7 +1304,11 @@ export default function ForgePage() {
                     
                     <div>
                       <label className="form-label">Primary Timeframe</label>
-                      <select {...register('timeframe')} className="form-input">
+                      <select 
+                        {...register('timeframe')} 
+                        className="form-input"
+                        defaultValue="1h"
+                      >
                         {timeframeOptions.map((tf) => (
                           <option key={tf} value={tf}>{tf}</option>
                         ))}
@@ -1638,9 +1649,31 @@ export default function ForgePage() {
           </div>
         )}
 
-        {/* Step 4: Backtest Your Bot */}
+        {/* Step 4: Attach Prompts & Backtest */}
         {step === 4 && (
           <div className="space-y-8">
+            {/* Attach Prompts Section - FIRST */}
+            {createdBotId && (
+              <div className="bg-gradient-to-r from-purple-900/30 to-indigo-900/30 p-6 rounded-lg border border-purple-700/50">
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className="text-2xl font-bold text-white flex items-center">
+                    🎯 Attach Prompt
+                    <span className="ml-2 px-2 py-1 bg-red-500/20 text-red-400 text-xs rounded-full">REQUIRED</span>
+                  </h4>
+                </div>
+                <p className="text-sm text-gray-300 mb-4">
+                  Enhance your bot's decision-making by attaching custom prompt templates. 
+                  Prompts guide your bot's AI analysis and trading strategies.
+                </p>
+                
+                {/* Embedded BotPromptsTab Component */}
+                <div className="bg-gray-900/50 rounded-lg border border-purple-700/30">
+                  <BotPromptsTab botId={createdBotId} />
+                </div>
+              </div>
+            )}
+
+            {/* Backtest Your Bot Section - SECOND */}
             <div className="card-quantum p-8">
               <div className="flex items-center justify-between mb-6">
                 <div>
@@ -1651,7 +1684,7 @@ export default function ForgePage() {
                   <div className="text-2xl font-bold text-green-400">FREE</div>
                   <div className="text-sm text-gray-400">24 hours</div>
                 </div>
-              </div>
+                  </div>
 
               {/* Trial Configuration */}
               <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700 mb-6">
@@ -1681,7 +1714,7 @@ export default function ForgePage() {
                     <label className="block text-sm font-medium text-gray-300 mb-2">
                       Primary Trading Pair
                     </label>
-                    <select
+                        <select
                       value={trialConfig.tradingPair}
                       onChange={(e) => setTrialConfig(prev => ({ ...prev, tradingPair: e.target.value }))}
                       className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
@@ -1733,8 +1766,8 @@ export default function ForgePage() {
                             <option key={pair} value={pair}>{pair}</option>
                           ))
                       ) : null}
-                    </select>
-                  </div>
+                        </select>
+                          </div>
                   
                   {/* List of Secondary Pairs */}
                   {trialConfig.secondaryTradingPairs.length > 0 && (
@@ -1747,13 +1780,13 @@ export default function ForgePage() {
                           {/* Priority Badge */}
                           <div className="flex items-center justify-center w-7 h-7 rounded-full bg-purple-500/20 text-purple-400 text-sm font-bold">
                             {index + 2}
-                          </div>
+                      </div>
                           
                           {/* Pair Name */}
                           <div className="flex-1 text-white font-medium text-sm">
                             {pair}
-                          </div>
-                          
+                  </div>
+
                           {/* Reorder Buttons */}
                           <button
                             type="button"
@@ -1800,8 +1833,8 @@ export default function ForgePage() {
                           </button>
                           
                           {/* Remove Button */}
-                          <button
-                            type="button"
+                  <button
+                    type="button"
                             onClick={() => {
                               const pairs = trialConfig.secondaryTradingPairs.filter((_, i) => i !== index)
                               setTrialConfig(prev => ({ ...prev, secondaryTradingPairs: pairs }))
@@ -1812,8 +1845,8 @@ export default function ForgePage() {
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                             </svg>
-                          </button>
-                        </div>
+                  </button>
+                </div>
                       ))}
                       
                       {/* Summary */}
@@ -1823,56 +1856,78 @@ export default function ForgePage() {
                           <div>1️⃣ {trialConfig.tradingPair} <span className="text-gray-600">(Primary)</span></div>
                           {trialConfig.secondaryTradingPairs.map((pair, idx) => (
                             <div key={idx}>{idx + 2}️⃣ {pair}</div>
-                          ))}
-                        </div>
+                        ))}
+                      </div>
                         <div className="mt-1 text-gray-600">
                           💡 Bot trades first available pair without open position
-                        </div>
+                    </div>
                       </div>
                     </div>
                   )}
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
-                  <h4 className="text-lg font-semibold text-white mb-2">📊 What You Get</h4>
-                  <ul className="text-gray-300 space-y-1">
-                    <li>• Real-time market analysis</li>
-                    <li>• Historical performance data</li>
-                    <li>• Risk management insights</li>
-                    <li>• Trading signal validation</li>
-                  </ul>
-                </div>
-
-                <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
-                  <h4 className="text-lg font-semibold text-white mb-2">🚀 Quick Start</h4>
-                  <ul className="text-gray-300 space-y-1">
-                    <li>• No setup required</li>
-                    <li>• Instant activation</li>
-                    <li>• Full bot capabilities</li>
-                    <li>• 24/7 monitoring</li>
-                  </ul>
+              <div className="bg-gradient-to-br from-blue-900/30 to-purple-900/30 p-6 rounded-lg border border-blue-700/50 mb-6">
+                <h4 className="text-lg font-semibold text-white mb-4 flex items-center">
+                  <span className="mr-2">🔑</span>
+                  Exchange Credentials Setup
+                </h4>
+                <div className="text-gray-300 space-y-3">
+                  <p className="text-sm">
+                    Before starting the trial, make sure you have configured your exchange API credentials:
+                  </p>
+                  <ol className="text-sm space-y-2 ml-4">
+                    <li>
+                      <strong className="text-blue-400">1. Go to API Credentials</strong> - Navigate to the API Credentials page to manage your exchange keys
+                    </li>
+                    <li>
+                      <strong className="text-blue-400">2. Add New Credential</strong> - Click "Add New Credential" and enter your exchange API keys (API Key, Secret, Passphrase if required)
+                    </li>
+                    <li>
+                      <strong className="text-blue-400">3. Select Network</strong> - Choose TESTNET for safe testing with virtual funds, or MAINNET for real trading
+                    </li>
+                    <li>
+                      <strong className="text-blue-400">4. Set as Default</strong> - Mark your credential as default for automatic selection when creating trials
+                    </li>
+                  </ol>
+                  <div className="mt-4 p-3 bg-yellow-900/20 border border-yellow-700/50 rounded-md">
+                    <p className="text-sm text-yellow-300">
+                      ⚠️ <strong>Security Tip:</strong> Always start with TESTNET to validate your bot's behavior before using MAINNET with real funds.
+                    </p>
+                  </div>
+                  <div className="mt-3">
+                    <a 
+                      href="/creator/credentials" 
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center text-blue-400 hover:text-blue-300 text-sm font-medium"
+                    >
+                      → Go to API Credentials to setup your keys
+                      <svg className="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                      </svg>
+                    </a>
+                  </div>
                 </div>
               </div>
 
               <div className="flex flex-col sm:flex-row gap-4 items-center justify-between mb-6">
                 <div className="flex items-center space-x-4">
-                  <button
+                      <button 
                     onClick={handleStartFreeTrial}
                     disabled={isStartingTrial}
                     className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 disabled:from-gray-600 disabled:to-gray-700 text-white px-6 py-3 rounded-lg font-semibold transition-all duration-200 transform hover:scale-105 disabled:scale-100 disabled:cursor-not-allowed shadow-lg"
                   >
                     {isStartingTrial ? (
                       <span className="flex items-center">
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
                         Starting Trial...
                       </span>
-                    ) : (
+                        ) : (
                       '🚀 Start 24h Free Trial'
-                    )}
-                  </button>
-                  
+                        )}
+                      </button>
+                      
                   <div className="text-center">
                     <div className="text-sm text-gray-400 mb-1">Need help?</div>
                     <div className="flex space-x-2">
@@ -1912,14 +1967,14 @@ export default function ForgePage() {
                     <span className="ml-2 px-2 py-1 bg-green-500/20 text-green-400 text-xs rounded-full">LIVE</span>
                   </h4>
                   <div className="flex items-center space-x-2">
-                    <button
+                      <button 
                       onClick={fetchBotLogs}
                       disabled={isLoadingLogs}
                       className="px-3 py-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white text-sm rounded-md transition-colors"
                     >
                       {isLoadingLogs ? '⏳ Loading...' : '🔄 Refresh'}
-                    </button>
-                    <button
+                      </button>
+                      <button 
                       onClick={() => setBotLogs([])}
                       className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-sm rounded-md transition-colors"
                     >
