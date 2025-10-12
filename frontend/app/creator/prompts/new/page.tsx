@@ -301,25 +301,25 @@ export default function NewPromptPage() {
                   Content *
                 </label>
                 <span className="text-xs text-gray-500">
-                  GitLab Flavored Markdown editor
+                  Professional Markdown editor
                 </span>
               </div>
 
               <MarkdownEditor
                 content={formData.content}
                 onChange={(content) => handleInputChange('content', content)}
-                placeholder="Enter your prompt template here... Use GitLab Flavored Markdown for formatting!"
+                placeholder="Enter your prompt template here... Use Markdown for formatting!"
                 className="w-full"
               />
             </div>
 
-            {/* Markdown Tips */}
+            {/* Editor Tips */}
             <div className="mb-6 p-4 bg-dark-800 border border-gray-600 rounded-md">
               <div className="flex items-start space-x-2">
                 <span className="text-yellow-400">💡</span>
                 <div className="text-sm text-gray-300">
-                  <p className="font-medium mb-2">Markdown Tips:</p>
-                  <p>Use <code className="bg-dark-700 px-1 rounded">**bold**</code>, <code className="bg-dark-700 px-1 rounded">*italic*</code>, <code className="bg-dark-700 px-1 rounded">`code`</code>, <code className="bg-dark-700 px-1 rounded">```blocks```</code>, <code className="bg-dark-700 px-1 rounded"># Headers</code>, <code className="bg-dark-700 px-1 rounded">- Lists</code>, <code className="bg-dark-700 px-1 rounded">&gt; Quotes</code></p>
+                  <p className="font-medium mb-2">Editor Tips:</p>
+                  <p>Use <code className="bg-dark-700 px-1 rounded">**bold**</code>, <code className="bg-dark-700 px-1 rounded">*italic*</code>, <code className="bg-dark-700 px-1 rounded">`code`</code>, <code className="bg-dark-700 px-1 rounded">```blocks```</code>, <code className="bg-dark-700 px-1 rounded"># Headers</code>, <code className="bg-dark-700 px-1 rounded">- Lists</code>, <code className="bg-dark-700 px-1 rounded">&gt; Quotes</code>. Press F11 for fullscreen mode.</p>
                 </div>
               </div>
             </div>
