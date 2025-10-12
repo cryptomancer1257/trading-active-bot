@@ -691,31 +691,43 @@ class UniversalFuturesBot(CustomBot):
                 current_ticker = self.futures_client.get_ticker(symbol)
                 current_market_price = float(current_ticker['price'])
                 
-                # Validate and adjust prices
-                min_distance = current_market_price * 0.001  # 0.1% minimum distance
+                # Validate and adjust prices with minimum distance requirement
+                min_distance_pct = 0.005  # 0.5% minimum distance (Bybit requirement)
                 adjusted_stop_price = stop_loss_price
                 adjusted_tp_price = take_profit_price
                 
                 if action.action == "BUY":  # Long position
-                    # Stop loss should be BELOW market price
+                    # Stop loss should be BELOW market price with minimum distance
                     if stop_loss_price >= current_market_price:
-                        adjusted_stop_price = current_market_price * (1 - max(self.stop_loss_pct, 0.005))
-                        logger.warning(f"⚠️ Stop loss adjusted: {stop_loss_price:.2f} → {adjusted_stop_price:.2f}")
+                        adjusted_stop_price = current_market_price * (1 - max(self.stop_loss_pct, min_distance_pct))
+                        logger.warning(f"⚠️ SL too high, adjusted: ${stop_loss_price:.2f} → ${adjusted_stop_price:.2f}")
+                    elif (current_market_price - stop_loss_price) / current_market_price < min_distance_pct:
+                        adjusted_stop_price = current_market_price * (1 - min_distance_pct)
+                        logger.warning(f"⚠️ SL too close ({(current_market_price - stop_loss_price) / current_market_price * 100:.2f}%), adjusted: ${stop_loss_price:.2f} → ${adjusted_stop_price:.2f}")
                     
-                    # Take profit should be ABOVE market price
+                    # Take profit should be ABOVE market price with minimum distance
                     if take_profit_price <= current_market_price:
                         adjusted_tp_price = current_market_price * (1 + max(self.take_profit_pct, 0.01))
-                        logger.warning(f"⚠️ Take profit adjusted: {take_profit_price:.2f} → {adjusted_tp_price:.2f}")
+                        logger.warning(f"⚠️ TP too low, adjusted: ${take_profit_price:.2f} → ${adjusted_tp_price:.2f}")
+                    elif (take_profit_price - current_market_price) / current_market_price < min_distance_pct:
+                        adjusted_tp_price = current_market_price * (1 + max(self.take_profit_pct, min_distance_pct))
+                        logger.warning(f"⚠️ TP too close, adjusted: ${take_profit_price:.2f} → ${adjusted_tp_price:.2f}")
                 else:  # SELL - Short position
-                    # Stop loss should be ABOVE market price
+                    # Stop loss should be ABOVE market price with minimum distance
                     if stop_loss_price <= current_market_price:
-                        adjusted_stop_price = current_market_price * (1 + max(self.stop_loss_pct, 0.005))
-                        logger.warning(f"⚠️ Stop loss adjusted: {stop_loss_price:.2f} → {adjusted_stop_price:.2f}")
+                        adjusted_stop_price = current_market_price * (1 + max(self.stop_loss_pct, min_distance_pct))
+                        logger.warning(f"⚠️ SL too low, adjusted: ${stop_loss_price:.2f} → ${adjusted_stop_price:.2f}")
+                    elif (stop_loss_price - current_market_price) / current_market_price < min_distance_pct:
+                        adjusted_stop_price = current_market_price * (1 + min_distance_pct)
+                        logger.warning(f"⚠️ SL too close ({(stop_loss_price - current_market_price) / current_market_price * 100:.2f}%), adjusted: ${stop_loss_price:.2f} → ${adjusted_stop_price:.2f}")
                     
-                    # Take profit should be BELOW market price
+                    # Take profit should be BELOW market price with minimum distance
                     if take_profit_price >= current_market_price:
-                        adjusted_tp_price = current_market_price * (1 - max(self.take_profit_pct, 0.01))
-                        logger.warning(f"⚠️ Take profit adjusted: {take_profit_price:.2f} → {adjusted_tp_price:.2f}")
+                        adjusted_tp_price = current_market_price * (1 - max(self.take_profit_pct, min_distance_pct))
+                        logger.warning(f"⚠️ TP too high, adjusted: ${take_profit_price:.2f} → ${adjusted_tp_price:.2f}")
+                    elif (current_market_price - take_profit_price) / current_market_price < min_distance_pct:
+                        adjusted_tp_price = current_market_price * (1 - max(self.take_profit_pct, min_distance_pct))
+                        logger.warning(f"⚠️ TP too close, adjusted: ${take_profit_price:.2f} → ${adjusted_tp_price:.2f}")
                 
                 # Create managed orders
                 managed_orders = self.futures_client.create_managed_orders(
@@ -737,7 +749,11 @@ class UniversalFuturesBot(CustomBot):
                     logger.info(f"🎯 Take Profit: ${adjusted_tp_price:.2f}")
                     
             except Exception as e:
-                logger.error(f"Failed to place managed orders: {e}")
+                logger.error(f"❌ Failed to place managed orders on {self.exchange_name}: {e}")
+                logger.error(f"   Stop Price: ${adjusted_stop_price:.2f}, TP Price: ${adjusted_tp_price:.2f}")
+                logger.error(f"   Side: {sl_side}, Quantity: {quantity_str}, Symbol: {symbol}")
+                import traceback
+                logger.error(f"   Traceback: {traceback.format_exc()}")
                 sl_order = None
                 tp_orders = None
             

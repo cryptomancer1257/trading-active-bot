@@ -207,6 +207,12 @@ def create_bot(db: Session, bot: schemas.BotCreate, developer_id: int, status: s
         if field in bot_dict and bot_dict[field] is not None:
             llm_config[field] = bot_dict[field]
     
+    # 🤖 Auto-fallback: If llm_model is empty/None but llm_provider exists, use provider as model
+    if 'llm_provider' in llm_config and llm_config['llm_provider']:
+        if 'llm_model' not in llm_config or not llm_config.get('llm_model'):
+            llm_config['llm_model'] = llm_config['llm_provider']
+            logger.info(f"🔄 Auto-set llm_model to provider: {llm_config['llm_provider']}")
+    
     # Merge LLM config into strategy_config
     if llm_config:
         if 'strategy_config' not in filtered_bot_dict or filtered_bot_dict['strategy_config'] is None:
@@ -711,6 +717,12 @@ def update_bot(db: Session, bot_id: int, bot_update: schemas.BotUpdate):
         for field in llm_fields:
             if field in update_data:
                 llm_config[field] = update_data.pop(field)
+        
+        # 🤖 Auto-fallback: If llm_model is empty/None but llm_provider exists, use provider as model
+        if 'llm_provider' in llm_config and llm_config['llm_provider']:
+            if 'llm_model' not in llm_config or not llm_config.get('llm_model'):
+                llm_config['llm_model'] = llm_config['llm_provider']
+                logger.info(f"🔄 Auto-set llm_model to provider: {llm_config['llm_provider']}")
         
         # Merge LLM config into strategy_config
         if llm_config:
