@@ -39,6 +39,7 @@ interface BotLog {
   status?: string
   order_id?: string
   position_side?: string
+  subscription_id?: number
   
   // Risk Management
   stop_loss?: number | null
@@ -107,6 +108,19 @@ export default function BotDetailPage() {
 
   // Fetch real bot data from API
   const { data: bot, isLoading: isBotLoading, error: botError } = useGetBot(botId)
+
+  // Set default tab to analytics for non-developers after bot loads
+  useEffect(() => {
+    if (bot && user && bot.developer_id !== user.id) {
+      // Check if coming from localStorage (already handled)
+      const savedTab = typeof window !== 'undefined' ? localStorage.getItem('bot-detail-tab') : null
+      if (!savedTab) {
+        // Default to analytics for non-developers
+        setActiveTab('analytics')
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bot?.id, user?.id])
 
   // Define fetchBotLogs with useCallback to prevent infinite loop
   const fetchBotLogs = useCallback(async () => {
@@ -448,24 +462,64 @@ export default function BotDetailPage() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-            <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
-              <h4 className="text-lg font-semibold text-white mb-2">📊 What You Get</h4>
-              <ul className="text-gray-300 space-y-1">
-                <li>• Real-time market analysis</li>
-                <li>• Historical performance data</li>
-                <li>• Risk management insights</li>
-                <li>• Trading signal validation</li>
-              </ul>
+            <div className="bg-gradient-to-br from-purple-900/30 to-purple-800/30 p-5 rounded-lg border border-purple-500/30">
+              <h4 className="text-lg font-semibold text-white mb-3 flex items-center">
+                <span className="mr-2">🤖</span>
+                LLM Providers Setup
+                <span className="ml-2 px-2 py-0.5 text-xs bg-red-500 text-white rounded-full">REQUIRED</span>
+              </h4>
+              <div className="text-gray-300 space-y-2 text-sm">
+                <p className="text-yellow-400 font-medium mb-2">⚠️ Bot requires LLM Provider to run!</p>
+                <div className="space-y-1.5">
+                  <div className="flex items-start">
+                    <span className="mr-2">1️⃣</span>
+                    <span>Go to <a href="/creator/llm-providers" className="text-purple-400 hover:text-purple-300 underline" target="_blank">LLM Providers</a></span>
+                  </div>
+                  <div className="flex items-start">
+                    <span className="mr-2">2️⃣</span>
+                    <span>Add your API keys (OpenAI, Anthropic, Google, etc.)</span>
+                  </div>
+                  <div className="flex items-start">
+                    <span className="mr-2">3️⃣</span>
+                    <span>Select default provider for your bot</span>
+                  </div>
+                </div>
+                <div className="mt-3 p-2 bg-purple-900/30 border border-purple-500/20 rounded text-xs">
+                  💡 Without LLM Provider, bot cannot analyze market or make trading decisions
+                </div>
+              </div>
             </div>
 
-            <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
-              <h4 className="text-lg font-semibold text-white mb-2">🚀 Quick Start</h4>
-              <ul className="text-gray-300 space-y-1">
-                <li>• No setup required</li>
-                <li>• Instant activation</li>
-                <li>• Full bot capabilities</li>
-                <li>• 24/7 monitoring</li>
-              </ul>
+            <div className="bg-gradient-to-br from-blue-900/30 to-blue-800/30 p-5 rounded-lg border border-blue-500/30">
+              <h4 className="text-lg font-semibold text-white mb-3 flex items-center">
+                <span className="mr-2">🔑</span>
+                API Credentials Setup
+                <span className="ml-2 px-2 py-0.5 text-xs bg-yellow-500 text-black rounded-full">TEST TRIAL</span>
+              </h4>
+              <div className="text-gray-300 space-y-2 text-sm">
+                <p className="text-blue-400 font-medium mb-2">🧪 Required for testing bot trial</p>
+                <div className="space-y-1.5">
+                  <div className="flex items-start">
+                    <span className="mr-2">1️⃣</span>
+                    <span>Go to <a href="/creator/credentials" className="text-blue-400 hover:text-blue-300 underline" target="_blank">API Credentials</a></span>
+                  </div>
+                  <div className="flex items-start">
+                    <span className="mr-2">2️⃣</span>
+                    <span>Add exchange API keys (Bybit, Binance, etc.)</span>
+                  </div>
+                  <div className="flex items-start">
+                    <span className="mr-2">3️⃣</span>
+                    <span>Choose TESTNET for safe testing</span>
+                  </div>
+                  <div className="flex items-start">
+                    <span className="mr-2">4️⃣</span>
+                    <span>Set as default credential</span>
+                  </div>
+                </div>
+                <div className="mt-3 p-2 bg-blue-900/30 border border-blue-500/20 rounded text-xs">
+                  💡 Use TESTNET for risk-free testing with virtual funds
+                </div>
+              </div>
             </div>
           </div>
 
@@ -774,50 +828,67 @@ export default function BotDetailPage() {
         {/* Tabs */}
         <div className="border-b border-gray-700 mb-6">
           <nav className="-mb-px flex space-x-8" aria-label="Tabs">
-            <button
-              onClick={() => setActiveTab('overview')}
-              className={`whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm ${
-                activeTab === 'overview'
-                  ? 'border-purple-500 text-purple-400'
-                  : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-300'
-              }`}
-            >
-              <SparklesIcon className="h-5 w-5 inline-block mr-2" />
-              Overview
-            </button>
-            <button
-              onClick={() => setActiveTab('prompts')}
-              className={`whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm ${
-                activeTab === 'prompts'
-                  ? 'border-purple-500 text-purple-400'
-                  : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-300'
-              }`}
-            >
-              <DocumentTextIcon className="h-5 w-5 inline-block mr-2" />
-              Prompts
-            </button>
-            <button
-              onClick={() => setActiveTab('risk-management')}
-              className={`whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm ${
-                activeTab === 'risk-management'
-                  ? 'border-purple-500 text-purple-400'
-                  : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-300'
-              }`}
-            >
-              <ExclamationTriangleIcon className="h-5 w-5 inline-block mr-2" />
-              Risk Management
-            </button>
-            <button
-              onClick={() => setActiveTab('settings')}
-              className={`whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm ${
-                activeTab === 'settings'
-                  ? 'border-purple-500 text-purple-400'
-                  : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-300'
-              }`}
-            >
-              <Cog6ToothIcon className="h-5 w-5 inline-block mr-2" />
-              Settings
-            </button>
+            {/* Show Overview tab only for bot developer */}
+            {bot.developer_id === user?.id && (
+              <button
+                onClick={() => setActiveTab('overview')}
+                className={`whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === 'overview'
+                    ? 'border-purple-500 text-purple-400'
+                    : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <SparklesIcon className="h-5 w-5 inline-block mr-2" />
+                Overview
+              </button>
+            )}
+            
+            {/* Show Prompts tab only for bot developer */}
+            {bot.developer_id === user?.id && (
+              <button
+                onClick={() => setActiveTab('prompts')}
+                className={`whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === 'prompts'
+                    ? 'border-purple-500 text-purple-400'
+                    : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <DocumentTextIcon className="h-5 w-5 inline-block mr-2" />
+                Prompts
+              </button>
+            )}
+            
+            {/* Show Risk Management tab only for bot developer */}
+            {bot.developer_id === user?.id && (
+              <button
+                onClick={() => setActiveTab('risk-management')}
+                className={`whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === 'risk-management'
+                    ? 'border-purple-500 text-purple-400'
+                    : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <ExclamationTriangleIcon className="h-5 w-5 inline-block mr-2" />
+                Risk Management
+              </button>
+            )}
+            
+            {/* Show Settings tab only for bot developer */}
+            {bot.developer_id === user?.id && (
+              <button
+                onClick={() => setActiveTab('settings')}
+                className={`whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === 'settings'
+                    ? 'border-purple-500 text-purple-400'
+                    : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <Cog6ToothIcon className="h-5 w-5 inline-block mr-2" />
+                Settings
+              </button>
+            )}
+            
+            {/* Show Analytics tab for everyone */}
             <button
               onClick={() => setActiveTab('analytics')}
               className={`whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm ${
@@ -829,6 +900,8 @@ export default function BotDetailPage() {
               <ChartBarIcon className="h-5 w-5 inline-block mr-2" />
               Analytics
             </button>
+            
+            {/* Show Subscriptions tab for everyone */}
             <button
               onClick={() => setActiveTab('subscriptions')}
               className={`whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm ${
