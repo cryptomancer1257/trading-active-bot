@@ -3,6 +3,21 @@
 import { useState, useEffect, useRef } from 'react'
 import { ArrowsPointingOutIcon, ArrowsPointingInIcon } from '@heroicons/react/24/outline'
 import { extractVariables, validateVariables, AVAILABLE_VARIABLES } from '@/utils/promptVariables'
+import dynamic from 'next/dynamic'
+import type { Monaco } from '@monaco-editor/react'
+
+// Dynamically import Monaco Editor to avoid SSR issues
+const MonacoEditor = dynamic(() => import('@monaco-editor/react'), { 
+  ssr: false,
+  loading: () => (
+    <div className="flex items-center justify-center h-full bg-gray-900 rounded">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-2"></div>
+        <p className="text-gray-400 text-sm">Loading Editor...</p>
+      </div>
+    </div>
+  )
+})
 
 interface MarkdownEditorProps {
   content: string
@@ -22,22 +37,14 @@ export default function MarkdownEditor({
   const [previewMode, setPreviewMode] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [internalContent, setInternalContent] = useState(content)
-  const [fontSize, setFontSize] = useState<'sm' | 'base' | 'lg'>('lg')
-  const [lineHeight, setLineHeight] = useState<'tight' | 'normal' | 'relaxed'>('relaxed')
   const [wordWrap, setWordWrap] = useState<boolean>(true)
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark')
   const [syntaxHighlight, setSyntaxHighlight] = useState<boolean>(true)
-  const [spellCheck, setSpellCheck] = useState<boolean>(true)
-  const [autoComplete, setAutoComplete] = useState<boolean>(true)
   const [autoFocus, setAutoFocus] = useState<boolean>(true)
-  const [autoResize, setAutoResize] = useState<boolean>(true)
-  const [autoScroll, setAutoScroll] = useState<boolean>(true)
   const [showVariables, setShowVariables] = useState<boolean>(false)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const editorRef = useRef<any>(null)
 
   // Sync internal content with prop content
   useEffect(() => {
-    console.log('🔄 MarkdownEditor content sync:', { content, internalContent })
     setInternalContent(content)
   }, [content])
 
@@ -60,26 +67,28 @@ export default function MarkdownEditor({
   const insertVariable = (variable: string) => {
     const variableText = `{${variable}}`
     
-    // Use ref to get textarea element
-    if (textareaRef.current) {
-      const textarea = textareaRef.current
-      const start = textarea.selectionStart
-      const end = textarea.selectionEnd
-      const beforeCursor = internalContent.substring(0, start)
-      const afterCursor = internalContent.substring(end)
-      const newContent = beforeCursor + variableText + afterCursor
+    // Use Monaco editor instance to insert variable at cursor position
+    if (editorRef.current) {
+      const editor = editorRef.current
+      const selection = editor.getSelection()
+      const range = {
+        startLineNumber: selection.startLineNumber,
+        startColumn: selection.startColumn,
+        endLineNumber: selection.endLineNumber,
+        endColumn: selection.endColumn
+      }
       
-      setInternalContent(newContent)
-      onChange(newContent)
+      // Insert variable at cursor position
+      editor.executeEdits('', [{
+        range: range,
+        text: variableText,
+        forceMoveMarkers: true
+      }])
       
-      // Set cursor position after the inserted variable
-      setTimeout(() => {
-        const newCursorPos = start + variableText.length
-        textarea.setSelectionRange(newCursorPos, newCursorPos)
-        textarea.focus()
-      }, 0)
+      // Focus editor and move cursor after inserted text
+      editor.focus()
     } else {
-      // Fallback: append to end if textarea not found
+      // Fallback: append to end if editor not found
       const newContent = internalContent + variableText
       setInternalContent(newContent)
       onChange(newContent)
@@ -147,10 +156,10 @@ export default function MarkdownEditor({
   }
 
   return (
-    <div className={`border border-gray-600 rounded-lg bg-gray-800 ${className}`}>
+    <div className={`border border-gray-600 rounded-lg bg-gray-900 overflow-hidden ${className}`}>
       {/* Toolbar */}
-      {!readOnly && (
-        <div className="border-b border-gray-600 p-3 flex items-center justify-between">
+      {!readOnly && !isFullscreen && (
+        <div className="border-b border-gray-600 p-3 flex items-center justify-between bg-gray-800">
           <div className="flex items-center space-x-2">
             <button
               type="button"
@@ -179,10 +188,7 @@ export default function MarkdownEditor({
           <div className="flex items-center space-x-2">
             <button
               type="button"
-              onClick={() => {
-                console.log('🔧 Variables button clicked, current state:', showVariables)
-                setShowVariables(!showVariables)
-              }}
+              onClick={() => setShowVariables(!showVariables)}
               className={`px-3 py-1 rounded text-sm transition-colors ${
                 showVariables
                   ? 'bg-blue-600 text-white'
@@ -205,7 +211,7 @@ export default function MarkdownEditor({
       )}
 
       {/* Variables Panel - Show at top of editor content */}
-      {!readOnly && showVariables && (
+      {!readOnly && !isFullscreen && showVariables && (
         <div className="border-b border-gray-600 p-4 bg-gray-900 max-h-64 overflow-y-auto">
           <div className="flex items-start space-x-2">
             <span className="text-blue-400 text-sm">🔧</span>
@@ -238,23 +244,95 @@ export default function MarkdownEditor({
 
       {/* Editor Content */}
       <div 
-        className={`${isFullscreen ? 'fixed inset-0 z-50 bg-gray-900' : ''} min-h-[600px] flex flex-col`}
+        className={`${isFullscreen ? 'fixed inset-0 z-50 bg-[#1e1e1e] flex flex-col' : 'flex flex-col'}`}
         onClick={(e) => e.stopPropagation()}
       >
-        {isFullscreen && (
-          <div className="absolute top-4 right-4 z-10">
-            <button
-              type="button"
-              onClick={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-                setIsFullscreen(false)
-              }}
-              className="p-2 bg-gray-700 hover:bg-gray-600 text-white rounded-md transition-colors"
-              title="Exit Fullscreen (Esc)"
-            >
-              <ArrowsPointingInIcon className="h-5 w-5" />
-            </button>
+        {/* Fullscreen Toolbar */}
+        {isFullscreen && !readOnly && (
+          <div className="border-b border-gray-700 p-3 bg-gray-900 flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <button
+                type="button"
+                onClick={() => setPreviewMode(false)}
+                className={`px-3 py-1 rounded text-sm transition-colors ${
+                  !previewMode 
+                    ? 'bg-blue-600 text-white' 
+                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                }`}
+              >
+                Edit
+              </button>
+              <button
+                type="button"
+                onClick={() => setPreviewMode(true)}
+                className={`px-3 py-1 rounded text-sm transition-colors ${
+                  previewMode 
+                    ? 'bg-blue-600 text-white' 
+                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                }`}
+              >
+                Preview
+              </button>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <button
+                type="button"
+                onClick={() => setShowVariables(!showVariables)}
+                className={`px-3 py-1 rounded text-sm transition-colors ${
+                  showVariables
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                }`}
+                title="Insert Variables"
+              >
+                Variables
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  setIsFullscreen(false)
+                }}
+                className="p-2 bg-gray-700 hover:bg-gray-600 text-white rounded-md transition-colors"
+                title="Exit Fullscreen (Esc)"
+              >
+                <ArrowsPointingInIcon className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Variables Panel in Fullscreen */}
+        {isFullscreen && !readOnly && showVariables && (
+          <div className="border-b border-gray-700 p-4 bg-gray-800 max-h-64 overflow-y-auto">
+            <div className="flex items-start space-x-2">
+              <span className="text-blue-400 text-sm">🔧</span>
+              <div className="text-xs text-gray-400">
+                <p className="font-medium mb-2 text-gray-300">Available Variables:</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {Object.entries(AVAILABLE_VARIABLES).map(([key, variable]) => (
+                    <div key={key} className="flex items-center space-x-2 p-2 bg-gray-900 rounded">
+                      <button
+                        type="button"
+                        onClick={() => insertVariable(key)}
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded text-xs transition-colors"
+                      >
+                        Insert
+                      </button>
+                      <div className="flex-1">
+                        <code className="bg-gray-700 px-1 rounded text-xs">{`{${key}}`}</code>
+                        <p className="text-xs text-gray-500 mt-1">{variable.description}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-2 text-xs text-gray-500">
+                  Click "Insert" to add variables to your prompt. Variables will be replaced with actual values when the prompt is used.
+                </p>
+              </div>
+            </div>
           </div>
         )}
 
@@ -262,48 +340,92 @@ export default function MarkdownEditor({
         <div className="flex-1 overflow-hidden">
           {previewMode ? (
             <div 
-              className="p-6 w-full text-base bg-gray-800 rounded-lg text-gray-200 h-full overflow-y-auto cursor-default"
+              className="p-6 w-full text-base bg-gray-800 text-gray-200 overflow-y-auto cursor-default"
+              style={{ height: isFullscreen ? 'calc(100vh - 64px)' : '600px' }}
               dangerouslySetInnerHTML={{ 
                 __html: renderMarkdown(internalContent || 'No content to preview') 
               }}
             />
           ) : (
-            <div className="relative h-full w-full">
-              {/* Preview-style background */}
-              <div 
-                className="p-6 w-full text-base bg-gray-800 rounded-lg h-full overflow-y-auto whitespace-pre-wrap text-gray-100 cursor-text"
-                style={{
-                  fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace',
-                  lineHeight: '1.6'
-                }}
-              >
-                {internalContent || placeholder}
-              </div>
-              
-              {/* Invisible textarea overlay */}
-              <textarea
-                ref={textareaRef}
+            <div className="w-full relative" style={{ height: isFullscreen ? 'calc(100vh - 64px)' : '600px' }}>
+              <MonacoEditor
+                height={isFullscreen ? 'calc(100vh - 64px)' : '600px'}
+                defaultLanguage="markdown"
+                theme="vs-dark"
                 value={internalContent}
-                onChange={(e) => {
+                onChange={(value) => {
                   if (readOnly) return
-                  const newContent = e.target.value
-                  console.log('📝 MarkdownEditor onChange:', { newContent: newContent.substring(0, 100) + '...' })
+                  const newContent = value || ''
                   setInternalContent(newContent)
                   onChange(newContent)
                 }}
-                placeholder={placeholder}
-                readOnly={readOnly}
-                className="absolute inset-0 w-full p-6 bg-transparent resize-none focus:outline-none text-transparent overflow-y-auto cursor-text"
-                style={{ 
-                  resize: 'none',
-                  fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace',
-                  fontSize: '1rem',
-                  lineHeight: '1.6',
-                  caretColor: '#3b82f6' // Blue caret color
+                options={{
+                  readOnly: readOnly,
+                  minimap: { enabled: true },
+                  fontSize: 14,
+                  lineNumbers: 'on',
+                  wordWrap: wordWrap ? 'on' : 'off',
+                  automaticLayout: true,
+                  scrollBeyondLastLine: false,
+                  renderWhitespace: 'selection',
+                  cursorBlinking: 'smooth',
+                  cursorStyle: 'line',
+                  lineHeight: 22,
+                  padding: { top: 16, bottom: 16 },
+                  folding: true,
+                  foldingStrategy: 'indentation',
+                  showFoldingControls: 'always',
+                  smoothScrolling: true,
+                  quickSuggestions: true,
+                  suggestOnTriggerCharacters: true,
+                  acceptSuggestionOnEnter: 'on',
+                  tabCompletion: 'on',
+                  wordBasedSuggestions: 'allDocuments',
+                  bracketPairColorization: {
+                    enabled: true
+                  },
+                  guides: {
+                    indentation: true,
+                    bracketPairs: true
+                  },
+                  formatOnPaste: true,
+                  formatOnType: true
                 }}
-                spellCheck={spellCheck}
-                autoComplete={autoComplete ? 'on' : 'off'}
-                autoFocus={autoFocus}
+                onMount={(editor, monaco) => {
+                  // Store editor instance
+                  editorRef.current = editor
+
+                  // Configure markdown language features
+                  monaco.languages.setLanguageConfiguration('markdown', {
+                    wordPattern: /(-?\d*\.\d\w*)|([^\`\~\!\@\#\%\^\&\*\(\)\-\=\+\[\{\]\}\\\|\;\:\'\"\,\.\<\>\/\?\s]+)/g,
+                  })
+
+                  // Add custom variable highlighting and autocomplete
+                  monaco.languages.registerCompletionItemProvider('markdown', {
+                    provideCompletionItems: (model, position) => {
+                      const word = model.getWordUntilPosition(position)
+                      const suggestions = Object.entries(AVAILABLE_VARIABLES).map(([key, variable]) => ({
+                        label: `{${key}}`,
+                        kind: monaco.languages.CompletionItemKind.Variable,
+                        documentation: variable.description,
+                        insertText: `{${key}}`,
+                        range: {
+                          startLineNumber: position.lineNumber,
+                          endLineNumber: position.lineNumber,
+                          startColumn: word.startColumn,
+                          endColumn: word.endColumn
+                        }
+                      }))
+                      return { suggestions }
+                    },
+                    triggerCharacters: ['{']
+                  })
+
+                  // Focus editor if autoFocus is true
+                  if (autoFocus && !readOnly) {
+                    editor.focus()
+                  }
+                }}
               />
             </div>
           )}
