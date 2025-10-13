@@ -286,6 +286,10 @@ class Bot(Base):
     risk_config = Column(JSON, default=dict)  # Default risk configuration for all subscriptions
     risk_management_mode = Column(String(20), default='DEFAULT')  # DEFAULT or AI_PROMPT
     
+    # General metadata (for storing additional bot information like performance stats)
+    # Note: 'metadata' is reserved by SQLAlchemy, so we map it to 'bot_metadata' in Python
+    bot_metadata = Column('metadata', JSON, default=dict)  # Additional metadata for the bot
+    
     # AI/LLM configuration
     llm_provider = Column(String(50), nullable=True)  # openai, anthropic, gemini
     enable_image_analysis = Column(Boolean, default=False)
