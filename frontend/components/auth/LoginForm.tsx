@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -8,6 +8,8 @@ import { EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline'
 import { useAuth } from '@/contexts/AuthContext'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { GoogleLogin, CredentialResponse } from '@react-oauth/google'
+import toast from 'react-hot-toast'
 
 const loginSchema = z.object({
   email: z.string().email('Invalid email address'),
@@ -21,6 +23,18 @@ export default function LoginForm() {
   const [isLoading, setIsLoading] = useState(false)
   const { login } = useAuth()
   const router = useRouter()
+  
+  // Check if Google OAuth is configured
+  const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
+  const isGoogleConfigured = googleClientId && googleClientId !== 'YOUR_GOOGLE_CLIENT_ID_HERE.apps.googleusercontent.com'
+  
+  // Log on component mount
+  useEffect(() => {
+    console.log('🔵 LoginForm mounted')
+    console.log('🔵 Google Client ID:', googleClientId ? googleClientId.substring(0, 20) + '...' : 'NOT SET')
+    console.log('🔵 Google OAuth configured:', isGoogleConfigured ? 'YES ✅' : 'NO ❌')
+    console.log('🔵 API URL:', process.env.NEXT_PUBLIC_API_URL)
+  }, [googleClientId, isGoogleConfigured])
 
   const {
     register,
@@ -45,27 +59,109 @@ export default function LoginForm() {
     }
   }
 
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        <div>
-          <div className="mx-auto h-12 w-12 flex items-center justify-center rounded-full bg-primary-100">
-            <svg className="h-6 w-6 text-primary-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-            </svg>
-          </div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            Sign in to your account
-          </h2>
-          <p className="mt-2 text-center text-sm text-gray-600">
-            Or{' '}
-            <Link href="/auth/register" className="font-medium text-primary-600 hover:text-primary-500">
-              create a new account
-            </Link>
-          </p>
-        </div>
+  const handleGoogleSuccess = async (credentialResponse: CredentialResponse) => {
+    setIsLoading(true)
+    console.log('🔵 Google OAuth Started')
+    
+    try {
+      if (!credentialResponse.credential) {
+        toast.error('Failed to get Google credentials')
+        return
+      }
 
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit(onSubmit)}>
+      console.log('🔵 Sending credential to backend...')
+      
+      // Send credential to backend
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/google`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          credential: credentialResponse.credential
+        }),
+      })
+
+      console.log('🔵 Backend response status:', response.status)
+
+      if (!response.ok) {
+        const error = await response.json()
+        console.error('❌ Backend error:', error)
+        throw new Error(error.detail || 'Google authentication failed')
+      }
+
+      const data = await response.json()
+      console.log('🔵 Backend returned data:', { 
+        hasToken: !!data.access_token,
+        tokenPreview: data.access_token ? data.access_token.substring(0, 30) + '...' : 'NO TOKEN'
+      })
+      
+      if (!data.access_token) {
+        throw new Error('No access token received from backend')
+      }
+      
+      // Clear any existing token first
+      localStorage.removeItem('access_token')
+      console.log('🔵 Cleared old token')
+      
+      // Store token in localStorage with correct key that AuthContext expects
+      localStorage.setItem('access_token', data.access_token)
+      console.log('✅ Token saved to localStorage')
+      
+      // Verify token was actually saved
+      const verifyToken = localStorage.getItem('access_token')
+      console.log('🔵 Verify token in localStorage:', verifyToken ? 'EXISTS ✅' : 'MISSING ❌')
+      
+      if (!verifyToken) {
+        throw new Error('Failed to save token to localStorage - browser may be blocking storage')
+      }
+      
+      // Fetch user profile to verify token works
+      console.log('🔵 Fetching user profile...')
+      try {
+        const userResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/me`, {
+          headers: {
+            'Authorization': `Bearer ${data.access_token}`
+          }
+        })
+        
+        console.log('🔵 User profile response:', userResponse.status)
+        
+        if (userResponse.ok) {
+          const userData = await userResponse.json()
+          console.log('✅ User profile loaded:', userData.email, 'Role:', userData.role)
+        } else {
+          const errorData = await userResponse.json()
+          console.error('❌ Failed to load user profile:', errorData)
+        }
+      } catch (err) {
+        console.error('❌ Error fetching user profile:', err)
+      }
+      
+      toast.success('Successfully signed in with Google! Redirecting...')
+      console.log('🔵 Redirecting to dashboard in 1 second...')
+      
+      // Force full page reload to reinitialize AuthContext with new token
+      setTimeout(() => {
+        console.log('🔵 Executing redirect now...')
+        window.location.href = '/dashboard'
+      }, 1000)
+      
+    } catch (error: any) {
+      console.error('❌ Google auth error:', error)
+      toast.error(error.message || 'Failed to sign in with Google')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleGoogleError = () => {
+    toast.error('Google sign-in failed. Please try again.')
+  }
+
+  return (
+    <>
+      <form className="space-y-6" onSubmit={handleSubmit(onSubmit)}>
           <div className="space-y-4">
             <div>
               <label htmlFor="email" className="form-label">
@@ -138,9 +234,39 @@ export default function LoginForm() {
               )}
             </button>
           </div>
-        </form>
-      </div>
-    </div>
+      </form>
+
+      {/* Google OAuth Section - Only show if configured */}
+      {isGoogleConfigured ? (
+        <>
+          {/* Divider */}
+          <div className="relative mt-6">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-gray-600"></div>
+            </div>
+            <div className="relative flex justify-center text-sm">
+              <span className="px-2 bg-dark-800 text-gray-400">Or continue with</span>
+            </div>
+          </div>
+
+          {/* Google Sign-In Button */}
+          <div className="mt-6 flex justify-center">
+            <GoogleLogin
+              onSuccess={handleGoogleSuccess}
+              onError={handleGoogleError}
+              useOneTap
+              text="signin_with"
+              size="large"
+              width="100%"
+            />
+          </div>
+        </>
+      ) : (
+        <div className="mt-6 p-4 bg-yellow-900/20 border border-yellow-500/30 rounded-lg text-center text-sm text-yellow-400">
+          ⚠️ Google OAuth not configured. Check console for details.
+        </div>
+      )}
+    </>
   )
 }
 

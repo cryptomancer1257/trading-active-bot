@@ -161,7 +161,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     console.log('Logging out user')
     localStorage.removeItem('access_token')
     setUser(null)
+    setLastAuthCheck(0)
     toast.success('Logged out successfully')
+    
+    // Redirect to home page after logout
+    // Use setTimeout to allow toast to show
+    setTimeout(() => {
+      window.location.href = '/'
+    }, 500)
   }
 
   const refreshAuth = async () => {

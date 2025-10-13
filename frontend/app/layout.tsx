@@ -5,6 +5,7 @@ import { AuthProvider } from '@/contexts/AuthContext'
 import { Toaster } from 'react-hot-toast'
 import Navbar from '@/components/layout/Navbar'
 import QueryProvider from '@/components/providers/QueryProvider'
+import GoogleOAuthProvider from '@/components/providers/GoogleOAuthProvider'
 import BackendStatus from '@/components/debug/BackendStatus'
 
 const inter = Inter({ subsets: ['latin'] })
@@ -30,15 +31,16 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={inter.className}>
-        <QueryProvider>
-          <AuthProvider>
-            <div className="min-h-screen bg-dark-900 neural-grid">
-              <Navbar />
-              <main className="flex-1 relative z-10">
-                {children}
-              </main>
-            </div>
-            <Toaster
+        <GoogleOAuthProvider>
+          <QueryProvider>
+            <AuthProvider>
+              <div className="min-h-screen bg-dark-900 neural-grid">
+                <Navbar />
+                <main className="flex-1 relative z-10">
+                  {children}
+                </main>
+              </div>
+              <Toaster
               position="top-right"
               toastOptions={{
                 duration: 4000,
@@ -78,6 +80,7 @@ export default function RootLayout({
             <BackendStatus />
           </AuthProvider>
         </QueryProvider>
+        </GoogleOAuthProvider>
       </body>
     </html>
   )
