@@ -31,45 +31,56 @@ async def get_dashboard_activity(
         cutoff_time = datetime.utcnow() - timedelta(hours=hours)
         activities = []
         
-        # 1. Get recent trades from performance_logs
-        recent_trades = db.query(models.PerformanceLog).join(
+        # 1. Get recent trades from transactions table
+        recent_transactions = db.query(models.Transaction).join(
             models.Subscription,
-            models.PerformanceLog.subscription_id == models.Subscription.id
+            models.Transaction.subscription_id == models.Subscription.id
         ).filter(
             models.Subscription.user_id == current_user.id,
-            models.PerformanceLog.timestamp >= cutoff_time
-        ).order_by(desc(models.PerformanceLog.timestamp)).limit(limit).all()
+            models.Transaction.created_at >= cutoff_time
+        ).order_by(desc(models.Transaction.created_at)).limit(limit).all()
         
-        for trade in recent_trades:
+        for tx in recent_transactions:
             # Get subscription and bot info
-            subscription = get_subscription_by_id(db, trade.subscription_id)
+            subscription = get_subscription_by_id(db, tx.subscription_id)
             if not subscription or not subscription.bot:
                 continue
             
-            # Parse signal data
-            signal_data = trade.signal_data or {}
-            details = signal_data.get('details', '')
+            # Calculate P&L
+            if tx.status == 'CLOSED':
+                pnl = float(tx.realized_pnl or 0)
+            else:  # OPEN
+                pnl = float(tx.unrealized_pnl or 0)
             
-            # Determine if profitable
-            pnl = float(trade.balance or 0) - float(trade.price or 0)
             is_profit = pnl > 0
             
+            # Format details
+            position_info = f"{tx.position_side or 'SPOT'}" if tx.position_side else ""
+            details = f"{tx.status} - {tx.action} {tx.symbol}"
+            if position_info:
+                details += f" ({position_info})"
+            if tx.status == 'CLOSED':
+                details += f" | Entry: ${float(tx.entry_price or 0):.2f} | Exit: ${float(tx.exit_price or 0):.2f}"
+            else:
+                current_price = tx.last_updated_price or tx.entry_price
+                details += f" | Entry: ${float(tx.entry_price or 0):.2f} | Current: ${float(current_price or 0):.2f}"
+            
             activities.append({
-                'id': f"trade_{trade.id}",
+                'id': f"trade_{tx.id}",
                 'type': 'TRADE',
-                'timestamp': trade.timestamp.isoformat() if trade.timestamp else None,
+                'timestamp': tx.created_at.isoformat() if tx.created_at else None,
                 'bot_name': subscription.bot.name,
                 'bot_id': subscription.bot.id,
                 'subscription_id': subscription.id,
-                'action': trade.action,
-                'symbol': subscription.trading_pair,
-                'price': float(trade.price) if trade.price else None,
-                'quantity': float(trade.quantity) if trade.quantity else None,
-                'balance': float(trade.balance) if trade.balance else None,
+                'action': tx.action,  # BUY/SELL
+                'symbol': tx.symbol,
+                'price': float(tx.entry_price) if tx.entry_price else None,
+                'quantity': float(tx.quantity) if tx.quantity else None,
                 'pnl': pnl,
                 'is_profit': is_profit,
+                'status': tx.status,
                 'exchange': subscription.bot.exchange_type,
-                'details': details[:100] if details else None
+                'details': details
             })
         
         # 2. Get risk management events (from bot actions with risk alerts)
@@ -167,37 +178,46 @@ async def get_dashboard_stats(
             models.Subscription.status == 'ACTIVE'
         ).count()
         
-        # Trades today
+        # Trades today - from Transaction table
         today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-        trades_today = db.query(models.PerformanceLog).join(
-            models.Subscription
-        ).filter(
-            models.Subscription.user_id == current_user.id,
-            models.PerformanceLog.timestamp >= today_start
-        ).count()
         
-        # Total P&L (rough estimate from recent trades)
-        recent_trades = db.query(models.PerformanceLog).join(
+        # Get today's transactions
+        today_transactions = db.query(models.Transaction).join(
             models.Subscription
         ).filter(
             models.Subscription.user_id == current_user.id,
-            models.PerformanceLog.timestamp >= today_start
+            models.Transaction.created_at >= today_start
         ).all()
         
-        total_pnl = sum(
-            float(trade.balance or 0) - float(trade.price or 0)
-            for trade in recent_trades
-        )
+        trades_today = len(today_transactions)
         
-        # Win rate (today)
-        winning_trades = sum(1 for trade in recent_trades 
-                           if (float(trade.balance or 0) - float(trade.price or 0)) > 0)
-        win_rate = (winning_trades / len(recent_trades) * 100) if recent_trades else 0
+        # Calculate Today's P&L from transactions
+        total_realized_pnl = 0.0
+        total_unrealized_pnl = 0.0
+        winning_trades = 0
+        closed_trades = 0
+        
+        for tx in today_transactions:
+            if tx.status == 'CLOSED':
+                closed_trades += 1
+                realized = float(tx.realized_pnl or 0)
+                total_realized_pnl += realized
+                if realized > 0:
+                    winning_trades += 1
+            else:  # OPEN
+                unrealized = float(tx.unrealized_pnl or 0)
+                total_unrealized_pnl += unrealized
+        
+        # Total P&L = Realized + Unrealized
+        total_pnl_today = total_realized_pnl + total_unrealized_pnl
+        
+        # Win rate (only from closed trades)
+        win_rate = (winning_trades / closed_trades * 100) if closed_trades > 0 else 0
         
         return {
             'active_subscriptions': active_subs,
             'trades_today': trades_today,
-            'total_pnl_today': round(total_pnl, 2),
+            'total_pnl_today': round(total_pnl_today, 2),
             'win_rate_today': round(win_rate, 1),
             'timestamp': datetime.utcnow().isoformat()
         }

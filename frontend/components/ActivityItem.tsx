@@ -19,6 +19,7 @@ interface Activity {
   balance?: number
   pnl?: number
   is_profit?: boolean
+  status?: string  // OPEN or CLOSED
   exchange?: string
   details?: string
   
@@ -46,6 +47,11 @@ export default function ActivityItem({ activity }: { activity: Activity }) {
     const actionBg = activity.action === 'BUY' ? 'bg-green-500/10' : 'bg-red-500/10'
     const actionBorder = activity.action === 'BUY' ? 'border-green-500/20' : 'border-red-500/20'
     const pnlColor = activity.is_profit ? 'text-green-400' : 'text-red-400'
+    
+    // Status badge
+    const statusBadge = activity.status === 'CLOSED' 
+      ? <span className="text-xs px-2 py-0.5 bg-gray-600/50 text-gray-300 rounded">CLOSED</span>
+      : <span className="text-xs px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded">OPEN</span>
 
     return (
       <div className={`bg-gradient-to-r ${actionBg} border ${actionBorder} rounded-lg p-4 transition-all hover:shadow-lg hover:shadow-quantum-500/10`}>
@@ -53,13 +59,16 @@ export default function ActivityItem({ activity }: { activity: Activity }) {
           <div className="flex-1">
             <div className="flex items-center space-x-2 mb-2">
               <span className="text-2xl">📈</span>
-              <div>
-                <Link 
-                  href={`/creator/entities/${activity.bot_id}`}
-                  className="font-medium text-white hover:text-quantum-400 transition-colors"
-                >
-                  {activity.bot_name}
-                </Link>
+              <div className="flex-1">
+                <div className="flex items-center space-x-2">
+                  <Link 
+                    href={`/creator/entities/${activity.bot_id}`}
+                    className="font-medium text-white hover:text-quantum-400 transition-colors"
+                  >
+                    {activity.bot_name}
+                  </Link>
+                  {statusBadge}
+                </div>
                 <p className="text-xs text-gray-500">{activity.exchange}</p>
               </div>
             </div>
@@ -88,7 +97,7 @@ export default function ActivityItem({ activity }: { activity: Activity }) {
             </div>
 
             {activity.details && (
-              <p className="text-xs text-gray-400 mt-2 truncate">{activity.details}</p>
+              <p className="text-xs text-gray-400 mt-2">{activity.details}</p>
             )}
           </div>
           

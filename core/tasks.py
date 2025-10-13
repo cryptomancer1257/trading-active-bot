@@ -3644,11 +3644,11 @@ def update_bot_performance_metrics(self, bot_id: int):
             # Update bot metadata with performance stats
             bot = db.query(models.Bot).filter(models.Bot.id == bot_id).first()
             if bot:
-                # Store in metadata JSON
+                # Store in bot_metadata JSON
                 # SQLAlchemy JSON field: Need to copy, modify, reassign
                 from sqlalchemy.orm.attributes import flag_modified
                 
-                metadata_dict = dict(bot.metadata) if bot.metadata else {}
+                metadata_dict = dict(bot.bot_metadata) if bot.bot_metadata else {}
                 metadata_dict['performance'] = {
                     'total_trades': total_trades,
                     'winning_trades': winning_trades,
@@ -3661,8 +3661,8 @@ def update_bot_performance_metrics(self, bot_id: int):
                     'profit_factor': round(profit_factor, 2),
                     'last_updated': datetime.now().isoformat()
                 }
-                bot.metadata = metadata_dict
-                flag_modified(bot, 'metadata')
+                bot.bot_metadata = metadata_dict
+                flag_modified(bot, 'bot_metadata')
                 
                 db.commit()
             
