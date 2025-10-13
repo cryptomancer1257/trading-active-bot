@@ -101,6 +101,7 @@ class UserUpdate(BaseModel):
 
 class UserInDB(UserBase):
     id: int
+    email_verified: bool = False
     created_at: datetime
     updated_at: datetime
     

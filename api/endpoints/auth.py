@@ -7,13 +7,19 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # file: api/endpoints/auth.py
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from typing import Annotated, List, Optional
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
+import os
+from datetime import datetime, timedelta
+import secrets
 
 from core import crud, schemas, security
 from core.database import get_db
+from services.email_service import email_service
 
 router = APIRouter()
 
@@ -23,7 +29,28 @@ def register_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     db_user = crud.get_user_by_email(db, email=user.email)
     if db_user:
         raise HTTPException(status_code=400, detail="Email already registered")
-    return crud.create_user(db=db, user=user)
+    
+    # Create user with email_verified = False
+    new_user = crud.create_user(db=db, user=user)
+    
+    # Generate verification token
+    verification_token = secrets.token_urlsafe(32)
+    new_user.verification_token = verification_token
+    new_user.verification_token_expires = datetime.utcnow() + timedelta(hours=24)
+    new_user.email_verified = False
+    db.commit()
+    db.refresh(new_user)
+    
+    # Send verification email
+    # Use developer_name if available, otherwise use email as username
+    username = new_user.developer_name if new_user.developer_name else new_user.email.split('@')[0]
+    email_service.send_verification_email(
+        to_email=new_user.email,
+        username=username,
+        verification_token=verification_token
+    )
+    
+    return new_user
 
 @router.post("/token", response_model=schemas.Token)
 async def login_for_access_token(
@@ -38,10 +65,196 @@ async def login_for_access_token(
             detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    
+    # Check if email is verified
+    if not user.email_verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Email not verified. Please check your inbox and verify your email address.",
+        )
+    
     access_token = security.create_access_token(
         data={"sub": str(user.id), "role": user.role.value}
     )
     return {"access_token": access_token, "token_type": "bearer"}
+
+@router.post("/google", response_model=schemas.Token)
+async def google_auth(
+    credential: str = Body(..., embed=True),
+    db: Session = Depends(get_db)
+):
+    """
+    Authenticate with Google OAuth 2.0
+    
+    Args:
+        credential: Google OAuth credential (JWT token from Google Sign-In)
+        db: Database session
+    
+    Returns:
+        Access token and token type
+        
+    Raises:
+        HTTPException: If token is invalid or user creation fails
+    """
+    try:
+        # Verify the Google token
+        # Get Google Client ID from environment variable
+        google_client_id = os.getenv("GOOGLE_CLIENT_ID")
+        if not google_client_id:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Google OAuth not configured. Please set GOOGLE_CLIENT_ID environment variable."
+            )
+        
+        # Verify the token with Google
+        idinfo = id_token.verify_oauth2_token(
+            credential, 
+            google_requests.Request(), 
+            google_client_id
+        )
+        
+        # Extract user information from Google token
+        email = idinfo.get('email')
+        name = idinfo.get('name', '')
+        picture = idinfo.get('picture', '')
+        google_id = idinfo.get('sub')
+        
+        if not email:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email not provided by Google"
+            )
+        
+        # Check if user exists
+        user = crud.get_user_by_email(db, email=email)
+        
+        if not user:
+            # Create new user with Google OAuth
+            # Generate a random password (user won't use it for Google login)
+            random_password = secrets.token_urlsafe(32)
+            
+            user_create = schemas.UserCreate(
+                email=email,
+                password=random_password,
+                role=schemas.UserRole.DEVELOPER,  # Default to DEVELOPER for Google OAuth users
+                full_name=name
+            )
+            user = crud.create_user(db=db, user=user_create)
+            
+            # Mark email as verified for Google OAuth users
+            user.email_verified = True
+            user.verification_token = None
+            user.verification_token_expires = None
+            db.commit()
+            db.refresh(user)
+        else:
+            # For existing users logging in via Google, also mark email as verified
+            if not user.email_verified:
+                user.email_verified = True
+                user.verification_token = None
+                user.verification_token_expires = None
+                db.commit()
+                db.refresh(user)
+        
+        # Generate access token for the user
+        access_token = security.create_access_token(
+            data={"sub": str(user.id), "role": user.role.value}
+        )
+        
+        return {"access_token": access_token, "token_type": "bearer"}
+        
+    except ValueError as e:
+        # Invalid token
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Invalid Google token: {str(e)}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Authentication failed: {str(e)}"
+        )
+
+@router.post("/verify-email")
+async def verify_email(
+    token: str = Query(..., description="Email verification token"),
+    db: Session = Depends(get_db)
+):
+    """Verify user's email address"""
+    # Find user by verification token
+    user = db.query(crud.models.User).filter(
+        crud.models.User.verification_token == token
+    ).first()
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid verification token"
+        )
+    
+    # Check if token is expired
+    if user.verification_token_expires and user.verification_token_expires < datetime.utcnow():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Verification token has expired. Please request a new one."
+        )
+    
+    # Mark email as verified
+    user.email_verified = True
+    user.verification_token = None
+    user.verification_token_expires = None
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": "Email verified successfully. You can now log in."
+    }
+
+@router.post("/resend-verification")
+async def resend_verification_email(
+    email: str = Body(..., embed=True),
+    db: Session = Depends(get_db)
+):
+    """Resend verification email"""
+    user = crud.get_user_by_email(db, email=email)
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    if user.email_verified:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email is already verified"
+        )
+    
+    # Generate new verification token
+    verification_token = secrets.token_urlsafe(32)
+    user.verification_token = verification_token
+    user.verification_token_expires = datetime.utcnow() + timedelta(hours=24)
+    db.commit()
+    
+    # Send verification email
+    # Use developer_name if available, otherwise use email as username
+    username = user.developer_name if user.developer_name else user.email.split('@')[0]
+    email_sent = email_service.send_verification_email(
+        to_email=user.email,
+        username=username,
+        verification_token=verification_token
+    )
+    
+    if not email_sent:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to send verification email. Please try again later."
+        )
+    
+    return {
+        "success": True,
+        "message": "Verification email sent. Please check your inbox."
+    }
 
 @router.get("/me", response_model=schemas.UserProfile)
 def get_current_user_profile(

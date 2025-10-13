@@ -439,7 +439,7 @@ export default function MarkdownEditor({
           <div className="flex items-start space-x-2">
             <span className="text-yellow-400 text-sm">💡</span>
             <div className="text-xs text-gray-400">
-              <p className="font-medium mb-2 text-gray-300">GitLab Flavored Markdown Tips:</p>
+              <p className="font-medium mb-2 text-gray-300">Editor Flavored Markdown Tips:</p>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                 {markdownTips.map((tip, index) => (
                   <div key={index} className="flex items-center space-x-2">
