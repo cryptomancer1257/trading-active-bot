@@ -34,6 +34,63 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # --- Public endpoints ---
+@router.get("/{bot_id}/trading-pairs")
+def get_bot_trading_pairs(bot_id: int, db: Session = Depends(get_db)):
+    """Get bot's supported trading pairs (public endpoint for marketplace - NO AUTH REQUIRED)"""
+    try:
+        bot = db.query(models.Bot).filter(
+            models.Bot.id == bot_id,
+            models.Bot.status == models.BotStatus.APPROVED
+        ).first()
+        
+        if not bot:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Bot not found or not approved (ID: {bot_id})"
+            )
+        
+        # Return trading pairs
+        trading_pairs = bot.trading_pairs if bot.trading_pairs else (
+            [bot.trading_pair] if bot.trading_pair else ["BTCUSDT"]  # Default fallback
+        )
+        
+        # Normalize trading pairs: replace "//" with "/" and ensure proper format
+        normalized_pairs = []
+        for pair in trading_pairs:
+            if pair:
+                # Replace multiple slashes with single slash
+                normalized_pair = pair.replace('//', '/')
+                # If no slash at all, try to format it (e.g., BTCUSDT -> BTC/USDT)
+                if '/' not in normalized_pair and len(normalized_pair) >= 6:
+                    # Common format: first 3-4 chars are base, rest is quote
+                    # This is a simple heuristic, might need adjustment
+                    if normalized_pair.endswith('USDT'):
+                        base = normalized_pair[:-4]
+                        normalized_pair = f"{base}/USDT"
+                    elif normalized_pair.endswith('BTC'):
+                        base = normalized_pair[:-3]
+                        normalized_pair = f"{base}/BTC"
+                    elif normalized_pair.endswith('ETH'):
+                        base = normalized_pair[:-3]
+                        normalized_pair = f"{base}/ETH"
+                normalized_pairs.append(normalized_pair)
+        
+        return {
+            "bot_id": bot.id,
+            "bot_name": bot.name,
+            "trading_pairs": normalized_pairs,
+            "primary_pair": normalized_pairs[0] if normalized_pairs else "BTC/USDT",
+            "count": len(normalized_pairs)
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting bot trading pairs for {bot_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve bot trading pairs: {str(e)}"
+        )
+
 @router.get("/stats")
 def get_public_stats(db: Session = Depends(get_db)):
     """Get public statistics for landing page"""

@@ -158,6 +158,7 @@ class ExchangeCredentials(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # Nullable for marketplace users
     principal_id = Column(String(255), nullable=True)  # ICP Principal ID for marketplace users
     exchange = Column(Enum(ExchangeType), nullable=False)
+    credential_type = Column(Enum(CredentialType), default=CredentialType.SPOT)  # SPOT, FUTURES, MARGIN
     
     # Encrypted API credentials
     api_key = Column(String(255), nullable=False)
