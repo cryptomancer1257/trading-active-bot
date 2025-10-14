@@ -826,7 +826,7 @@ async def store_credentials_bulk_by_principal_id(
     - Upsert credentials by pair (principal_id, exchange, is_testnet)
     """
     try:
-        allowed = {"BINANCE", "COINBASE", "KRAKEN"}
+        allowed = {"BINANCE", "BYBIT", "OKX", "BITGET", "HUOBI", "KRAKEN", "COINBASE"}
         def _norm_exchange(e: Any) -> str:
             try:
                 return (e.value if hasattr(e, 'value') else str(e)).upper()
@@ -877,6 +877,7 @@ async def store_credentials_bulk_by_principal_id(
                 api_secret=item.api_secret,
                 api_passphrase=item.api_passphrase,
                 is_testnet=is_testnet,
+                credential_type=item.trading_mode or 'SPOT',
             )
 
             if ok:

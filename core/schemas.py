@@ -1113,6 +1113,7 @@ class ExchangeCredentialsByPrincipalRequest(BaseModel):
 # === Bulk credentials + optional user settings ===
 class ExchangeCredentialItemByPrincipal(BaseModel):
     exchange: ExchangeType
+    trading_mode: Optional[str] = 'SPOT'  # SPOT or FUTURES
     api_key: str
     api_secret: str
     api_passphrase: Optional[str] = None
