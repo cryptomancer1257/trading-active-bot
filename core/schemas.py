@@ -1455,3 +1455,54 @@ class LLMProviderInDB(LLMProviderBase):
     
     class Config:
         from_attributes = True
+
+# ============================================
+# USER PLAN SCHEMAS (Free vs Pro)
+# ============================================
+
+class PlanBase(BaseModel):
+    plan_name: str
+    price_usd: float
+    max_bots: int
+    max_subscriptions_per_bot: int
+    allowed_environment: str
+    publish_marketplace: bool
+    subscription_expiry_days: int
+    compute_quota_per_day: int
+    revenue_share_percentage: float
+
+class UserPlanInDB(PlanBase):
+    id: int
+    user_id: int
+    status: str
+    expiry_date: Optional[datetime] = None
+    auto_renew: bool
+    payment_method: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+class PlanUpgradeRequest(BaseModel):
+    payment_id: str  # PayPal payment ID
+    payment_method: str = "paypal"
+    auto_renew: bool = True
+
+class PlanUpgradeResponse(BaseModel):
+    success: bool
+    message: str
+    plan: Optional[UserPlanInDB] = None
+    
+class PlanHistoryInDB(BaseModel):
+    id: int
+    user_id: int
+    plan_name: str
+    action: str
+    payment_id: Optional[str] = None
+    amount_usd: Optional[float] = None
+    reason: Optional[str] = None
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True

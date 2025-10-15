@@ -21,6 +21,7 @@ from core import crud, models, schemas, security
 from core.database import get_db
 from core.bot_manager import BotManager
 from core.api_key_manager import api_key_manager
+from core.plan_checker import plan_checker
 from services.s3_manager import S3Manager
 import logging
 from pathlib import Path
@@ -403,6 +404,9 @@ def submit_new_bot(
 ):
     """Developer submit a new bot, bot will be in PENDING status"""
     
+    # Check plan limits
+    plan_checker.check_bot_creation_limit(current_user, db)
+    
     # For template bots, just create bot record pointing to local template file
     # create_bot will auto-set code_path based on template field
     # NO S3 upload needed - template files are local
@@ -441,6 +445,9 @@ async def submit_new_bot_with_code(
 ):
     """Developer submit a new bot with code file"""
     try:
+        # Check plan limits FIRST before any processing
+        plan_checker.check_bot_creation_limit(current_user, db)
+        
         logger.info(f"[SUBMIT BOT] Start submission with data ")
         # Validate file type
         if not file.filename or not file.filename.endswith('.py'):
