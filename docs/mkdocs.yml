@@ -1,0 +1,187 @@
+site_name: QuantumForge Documentation
+site_description: AI-Powered Trading Bot Platform - Complete Developer Guide
+site_author: QuantumForge Team
+site_url: https://docs.quantumforge.ai
+
+repo_name: quantumforge/trading-bot-platform
+repo_url: https://github.com/quantumforge/trading-bot-platform
+edit_uri: edit/main/docs/
+
+# Directory Configuration
+docs_dir: content
+site_dir: site
+
+# Copyright
+copyright: Copyright &copy; 2024 QuantumForge
+
+# Theme
+theme:
+  name: material
+  language: en
+  
+  # Color scheme
+  palette:
+    # Light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep purple
+      accent: purple
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    
+    # Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep purple
+      accent: purple
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  
+  # Features
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.indexes
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+  
+  # Logo and favicon
+  icon:
+    repo: fontawesome/brands/github
+  
+  # Font
+  font:
+    text: Roboto
+    code: Roboto Mono
+
+# Plugins
+plugins:
+  - search:
+      lang: en
+      separator: '[\s\-\.]+' 
+
+# Extensions
+markdown_extensions:
+  # Python Markdown
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - meta
+  - toc:
+      permalink: true
+      toc_depth: 3
+  
+  # Python Markdown Extensions
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.betterem:
+      smart_enable: all
+  - pymdownx.caret
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.mark
+  - pymdownx.smartsymbols
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+
+# Extra
+extra:
+  analytics:
+    provider: google
+    property: G-XXXXXXXXXX
+  
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/quantumforge
+    - icon: fontawesome/brands/discord
+      link: https://discord.gg/quantumforge
+    - icon: fontawesome/brands/twitter
+      link: https://twitter.com/quantumforge
+
+# Extra CSS
+extra_css:
+  - stylesheets/extra.css
+
+# Extra JavaScript
+extra_javascript:
+  - javascripts/extra.js
+  - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
+
+# Navigation
+nav:
+  - Home: index.md
+  
+  - User Guide:
+    - user-guide/README.md
+    - Getting Started: user-guide/01-getting-started.md
+    - Creating Your First Bot: user-guide/02-creating-your-first-bot.md
+    - Bot Configuration: user-guide/03-bot-configuration.md
+    - LLM Integration: user-guide/04-llm-integration.md
+    - Prompt Engineering: user-guide/05-prompt-engineering.md
+    - Multi-Pair Trading: user-guide/06-multi-pair-trading.md
+    - Publishing to Marketplace: user-guide/07-publishing-to-marketplace.md
+    - Risk Management: user-guide/08-risk-management.md
+    - Backtesting: user-guide/09-backtesting.md
+    - FAQ: user-guide/faq.md
+    - Troubleshooting: user-guide/troubleshooting.md
+  
+  - Technical Docs:
+    - API Reference: API_REFERENCE.md
+    - Database Schema: DATABASE_SCHEMA.md
+    - Technical Architecture: TECHNICAL_ARCHITECTURE.md
+    - Deployment Guide: DEPLOYMENT_GUIDE.md
+  
+  - Integration Guides:
+    - ICP Integration: ICP_INTEGRATION_GUIDE.md
+    - PayPal Integration: PAYPAL_INTEGRATION_GUIDE.md
+    - LLM Integration: llm_integration_guide.md
+    - Marketplace Registration: marketplace_bot_registration_api.md
+  
+  - Feature Guides:
+    - Multi-Pair Trading: MULTI_PAIR_TRADING.md
+    - Risk Management: RISK_MANAGEMENT_SYSTEM.md
+    - Prompt Templates: PROMPT_TEMPLATES_GUIDE.md
+    - Universal Futures Bot: UNIVERSAL_FUTURES_BOT_GUIDE.md
+    - Universal Spot Bot: UNIVERSAL_SPOT_BOT_GUIDE.md
+  
+  - Development:
+    - Setup: DEVELOPMENT_MODE_GUIDE.md
+    - PyCharm Setup: PYCHARM_CELERY_SETUP.md
+    - Celery Setup: CELERY_FUTURES_BOT_SETUP.md
+    - Google OAuth: GOOGLE_OAUTH_SETUP.md
+    - Email Verification: EMAIL_VERIFICATION_GUIDE.md
+  
+  - About:
+    - Trading System: TRADING_SYSTEM_SUMMARY.md
+    - Final Status: FINAL_SYSTEM_STATUS.md
+
