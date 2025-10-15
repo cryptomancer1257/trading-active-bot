@@ -22,6 +22,7 @@ import toast from 'react-hot-toast'
 import config from '@/lib/config'
 import { useAuth } from '@/contexts/AuthContext'
 import { useGetBot } from '@/hooks/useBots'
+import PreTrialValidationModal from '@/components/PreTrialValidationModal'
 
 // Bot Log Interface
 interface BotLog {
@@ -105,6 +106,9 @@ export default function BotDetailPage() {
   })
   const [botLogs, setBotLogs] = useState<BotLog[]>([])
   const [isLoadingLogs, setIsLoadingLogs] = useState(false)
+  
+  // Pre-trial validation state
+  const [showValidationModal, setShowValidationModal] = useState(false)
 
   // Fetch real bot data from API
   const { data: bot, isLoading: isBotLoading, error: botError } = useGetBot(botId)
@@ -186,7 +190,16 @@ export default function BotDetailPage() {
   const handleStartFreeTrial = async () => {
     if (isStartingTrial) return
     
+    // Show validation modal first
+    setShowValidationModal(true)
+  }
+
+  // Actual trial start after validation passes
+  const startTrialAfterValidation = async () => {
+    if (isStartingTrial) return
+    
     setIsStartingTrial(true)
+    setShowValidationModal(false)
     
     try {
       // Calculate start and end dates for 24h free trial
@@ -919,6 +932,17 @@ export default function BotDetailPage() {
         {/* Content based on active tab */}
         {renderContent()}
       </div>
+
+      {/* Pre-Trial Validation Modal */}
+      {bot && (
+        <PreTrialValidationModal
+          isOpen={showValidationModal}
+          onClose={() => setShowValidationModal(false)}
+          onProceed={startTrialAfterValidation}
+          bot={bot as any}
+          networkType={trialConfig.networkType as 'TESTNET' | 'MAINNET'}
+        />
+      )}
     </div>
   )
 }

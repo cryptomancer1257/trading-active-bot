@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from typing import List, Optional, Any
 from datetime import datetime
 from decimal import Decimal
@@ -136,6 +137,82 @@ def get_public_stats(db: Session = Depends(get_db)):
             "total_developers": 0
         }
 
+@router.get("/check-name/{bot_name}")
+def check_bot_name_availability(
+    bot_name: str,
+    db: Session = Depends(get_db)
+):
+    """Check if bot name is available (not taken by existing bots)"""
+    try:
+        # Check if bot name already exists (case-insensitive)
+        existing_bot = db.query(models.Bot).filter(
+            models.Bot.name.ilike(f"%{bot_name}%")
+        ).first()
+        
+        is_available = existing_bot is None
+        
+        return {
+            "name": bot_name,
+            "available": is_available,
+            "message": "Name is available" if is_available else f"Name '{bot_name}' is already taken"
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to check bot name availability: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to check name availability: {str(e)}"
+        )
+
+@router.get("/templates", response_model=List[schemas.BotInDB])
+def get_bot_templates(
+    skip: int = 0,
+    limit: int = 50,
+    bot_type: Optional[str] = None,
+    exchange_type: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """Get bot templates for creating new bots (only platform templates, not user-created bots)"""
+    try:
+        query = db.query(models.Bot).filter(
+            models.Bot.status == models.BotStatus.APPROVED,
+            # Filter for template bots only: Created by admin (developer_id = 1)
+            # These are the official platform templates, not user-created bots
+            models.Bot.developer_id == 1
+        )
+        
+        # Filter by bot type if specified
+        if bot_type:
+            try:
+                bot_type_enum = models.BotType(bot_type.upper())
+                query = query.filter(models.Bot.bot_type == bot_type_enum)
+            except ValueError:
+                pass  # Invalid bot type, ignore filter
+        
+        # Filter by exchange type if specified
+        if exchange_type:
+            try:
+                exchange_type_enum = models.ExchangeType(exchange_type.upper())
+                query = query.filter(models.Bot.exchange_type == exchange_type_enum)
+            except ValueError:
+                pass  # Invalid exchange type, ignore filter
+        
+        # Order by creation date (newest first)
+        query = query.order_by(models.Bot.created_at.desc())
+        
+        # Apply pagination
+        templates = query.offset(skip).limit(limit).all()
+        
+        logger.info(f"Found {len(templates)} bot templates (filtered for platform templates only)")
+        return templates
+        
+    except Exception as e:
+        logger.error(f"Failed to get bot templates: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve bot templates: {str(e)}"
+        )
+
 @router.get("/", response_model=schemas.BotListResponse)
 def get_public_bots(
     skip: int = 0,
@@ -176,14 +253,131 @@ def get_bot_reviews(
     """Get reviews for a specific bot"""
     return crud.get_bot_reviews(db, bot_id=bot_id, skip=skip, limit=limit)
 
-@router.get("/{bot_id}/performance", response_model=schemas.PerformanceResponse)
-def get_bot_performance(
+@router.get("/{bot_id}/performance")
+def get_bot_performance_public(
     bot_id: int,
     days: int = 30,
     db: Session = Depends(get_db)
 ):
-    """Get bot performance metrics"""
-    return crud.get_bot_performance_metrics(db, bot_id=bot_id, days=days)
+    """
+    Get bot performance metrics for public display (NO AUTH REQUIRED)
+    Returns summary stats and chart data only (no recent transactions)
+    Used by marketplace frontend to display performance tab
+    """
+    from sqlalchemy import func, and_, case
+    from datetime import datetime, timedelta
+    
+    # Get bot to verify it exists
+    bot = db.query(models.Bot).filter(models.Bot.id == bot_id).first()
+    if not bot:
+        raise HTTPException(status_code=404, detail="Bot not found")
+    
+    # Calculate date range
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=days)
+    
+    # Get subscription stats
+    total_subscriptions = db.query(func.count(models.Subscription.id)).filter(
+        models.Subscription.bot_id == bot_id
+    ).scalar() or 0
+    
+    active_subscriptions = db.query(func.count(models.Subscription.id)).filter(
+        models.Subscription.bot_id == bot_id,
+        models.Subscription.status == models.SubscriptionStatus.ACTIVE
+    ).scalar() or 0
+    
+    # Get transaction stats
+    transactions_query = db.query(models.Transaction).join(
+        models.Subscription,
+        models.Subscription.id == models.Transaction.subscription_id
+    ).filter(
+        models.Subscription.bot_id == bot_id
+    )
+    
+    # Get ALL transactions in period (OPEN + CLOSED)
+    all_transactions_in_period = transactions_query.filter(
+        models.Transaction.created_at >= start_date
+    ).all()
+    
+    total_transactions = len(all_transactions_in_period)
+    
+    # Calculate P&L and win rate
+    total_pnl = 0.0
+    total_realized_pnl = 0.0
+    total_unrealized_pnl = 0.0
+    winning_trades = 0
+    losing_trades = 0
+    open_positions = 0
+    closed_positions = 0
+    
+    for tx in all_transactions_in_period:
+        if tx.status == 'CLOSED':
+            closed_positions += 1
+            realized = float(tx.realized_pnl or 0)
+            total_realized_pnl += realized
+            total_pnl += realized
+            if realized > 0:
+                winning_trades += 1
+            elif realized < 0:
+                losing_trades += 1
+        else:  # OPEN
+            open_positions += 1
+            unrealized = float(tx.unrealized_pnl or 0)
+            total_unrealized_pnl += unrealized
+            total_pnl += unrealized
+    
+    win_rate = (winning_trades / closed_positions * 100) if closed_positions > 0 else 0
+    
+    # Get daily stats for chart
+    daily_stats = db.query(
+        func.date(models.Transaction.created_at).label('date'),
+        func.count(models.Transaction.id).label('count'),
+        func.sum(
+            case(
+                (models.Transaction.status == 'CLOSED', models.Transaction.realized_pnl),
+                else_=models.Transaction.unrealized_pnl
+            )
+        ).label('pnl')
+    ).join(
+        models.Subscription,
+        models.Subscription.id == models.Transaction.subscription_id
+    ).filter(
+        models.Subscription.bot_id == bot_id,
+        models.Transaction.created_at >= start_date
+    ).group_by(
+        func.date(models.Transaction.created_at)
+    ).order_by(
+        func.date(models.Transaction.created_at)
+    ).all()
+    
+    # Format chart data
+    chart_data = []
+    for stat in daily_stats:
+        chart_data.append({
+            'date': stat.date.isoformat() if stat.date else None,
+            'transactions': stat.count,
+            'pnl': float(stat.pnl) if stat.pnl else 0
+        })
+    
+    return {
+        'bot_id': bot_id,
+        'bot_name': bot.name,
+        'period_days': days,
+        'summary': {
+            'total_subscriptions': total_subscriptions,
+            'active_subscriptions': active_subscriptions,
+            'total_transactions': total_transactions,
+            'open_positions': open_positions,
+            'closed_positions': closed_positions,
+            'winning_trades': winning_trades,
+            'losing_trades': losing_trades,
+            'win_rate': round(win_rate, 2),
+            'total_pnl': round(total_pnl, 2),
+            'realized_pnl': round(total_realized_pnl, 2),
+            'unrealized_pnl': round(total_unrealized_pnl, 2)
+        },
+        'chart_data': chart_data
+    }
 
 # --- Bot categories ---
 @router.get("/categories/", response_model=List[schemas.BotCategoryInDB])
