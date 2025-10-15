@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from typing import List, Optional, Any
 from datetime import datetime
 from decimal import Decimal
@@ -135,6 +136,82 @@ def get_public_stats(db: Session = Depends(get_db)):
             "avg_rating": 0.0,
             "total_developers": 0
         }
+
+@router.get("/check-name/{bot_name}")
+def check_bot_name_availability(
+    bot_name: str,
+    db: Session = Depends(get_db)
+):
+    """Check if bot name is available (not taken by existing bots)"""
+    try:
+        # Check if bot name already exists (case-insensitive)
+        existing_bot = db.query(models.Bot).filter(
+            models.Bot.name.ilike(f"%{bot_name}%")
+        ).first()
+        
+        is_available = existing_bot is None
+        
+        return {
+            "name": bot_name,
+            "available": is_available,
+            "message": "Name is available" if is_available else f"Name '{bot_name}' is already taken"
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to check bot name availability: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to check name availability: {str(e)}"
+        )
+
+@router.get("/templates", response_model=List[schemas.BotInDB])
+def get_bot_templates(
+    skip: int = 0,
+    limit: int = 50,
+    bot_type: Optional[str] = None,
+    exchange_type: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """Get bot templates for creating new bots (only platform templates, not user-created bots)"""
+    try:
+        query = db.query(models.Bot).filter(
+            models.Bot.status == models.BotStatus.APPROVED,
+            # Filter for template bots only: Created by admin (developer_id = 1)
+            # These are the official platform templates, not user-created bots
+            models.Bot.developer_id == 1
+        )
+        
+        # Filter by bot type if specified
+        if bot_type:
+            try:
+                bot_type_enum = models.BotType(bot_type.upper())
+                query = query.filter(models.Bot.bot_type == bot_type_enum)
+            except ValueError:
+                pass  # Invalid bot type, ignore filter
+        
+        # Filter by exchange type if specified
+        if exchange_type:
+            try:
+                exchange_type_enum = models.ExchangeType(exchange_type.upper())
+                query = query.filter(models.Bot.exchange_type == exchange_type_enum)
+            except ValueError:
+                pass  # Invalid exchange type, ignore filter
+        
+        # Order by creation date (newest first)
+        query = query.order_by(models.Bot.created_at.desc())
+        
+        # Apply pagination
+        templates = query.offset(skip).limit(limit).all()
+        
+        logger.info(f"Found {len(templates)} bot templates (filtered for platform templates only)")
+        return templates
+        
+    except Exception as e:
+        logger.error(f"Failed to get bot templates: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve bot templates: {str(e)}"
+        )
 
 @router.get("/", response_model=schemas.BotListResponse)
 def get_public_bots(

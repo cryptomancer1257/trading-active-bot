@@ -23,6 +23,7 @@ import { useCreateBot } from '@/hooks/useBots'
 import { useDefaultCredentials, useCredentials } from '@/hooks/useCredentials'
 import config from '@/lib/config'
 import BotPromptsTab from '@/components/BotPromptsTab'
+import PreTrialValidationModal from '@/components/PreTrialValidationModal'
 
 // Bot creation schema
 const botSchema = z.object({
@@ -35,7 +36,7 @@ const botSchema = z.object({
   timeframe: z.string().default('1h'),
   timeframes: z.array(z.string()).default(['1h']),
   version: z.string().default('1.0.0'),
-  template: z.enum(['universal_futures_bot', 'universal_spot_bot', 'binance_futures_bot', 'binance_futures_rpa_bot', 'binance_signals_bot', 'custom']),
+  template: z.enum(['universal_futures_bot', 'universal_spot_bot', 'binance_futures_bot', 'binance_futures_rpa_bot', 'binance_signals_bot', 'universal_futures_signals_bot', 'custom']),
   // Pricing
   price_per_month: z.number().min(0, 'Price must be 0 or higher').default(0),
   is_free: z.boolean().default(false),
@@ -69,10 +70,10 @@ const botTemplates = [
   {
     id: 'universal_futures_bot',
     name: '🌐 Universal Futures Entity',
-    description: 'Multi-exchange futures trading across 6 major platforms (Binance, Bybit, OKX, Bitget, Huobi, Kraken) with unified LLM AI analysis',
+    description: 'Multi-exchange futures trading (Binance & Bybit) with unified LLM AI analysis. Choose your preferred exchange during setup.',
     type: 'FUTURES',
     exchange: 'MULTI',
-    features: ['6 Exchanges Support', 'Multi-Exchange Portfolio', 'LLM Integration', 'Unified Interface', 'Capital Management', 'Stop Loss/Take Profit'],
+    features: ['Binance & Bybit Support', 'LLM Integration', 'Unified Interface', 'Capital Management', 'Stop Loss/Take Profit', 'Multi-Timeframe'],
     gradient: 'from-blue-500 via-purple-500 to-pink-500',
     complexity: 'Advanced',
     templateFile: 'universal_futures_bot.py',
@@ -82,10 +83,10 @@ const botTemplates = [
   {
     id: 'universal_spot_bot',
     name: '🌟 Universal Spot Entity',
-    description: 'Multi-exchange spot trading across 6 major platforms (Binance, Bybit, OKX, Bitget, Huobi, Kraken) with OCO orders and no leverage',
+    description: 'Multi-exchange spot trading (Binance & Bybit) with OCO orders and no leverage. Safer than futures trading.',
     type: 'SPOT',
     exchange: 'MULTI',
-    features: ['6 Exchanges Support', 'No Leverage (1x)', 'OCO Orders (SL/TP)', 'LLM Integration', 'Safer than Futures', 'Multi-Timeframe Analysis'],
+    features: ['Binance & Bybit Support', 'No Leverage (1x)', 'OCO Orders (SL/TP)', 'LLM Integration', 'Safer than Futures', 'Multi-Timeframe Analysis'],
     gradient: 'from-emerald-500 via-teal-500 to-cyan-500',
     complexity: 'Intermediate',
     templateFile: 'universal_spot_bot.py',
@@ -93,91 +94,38 @@ const botTemplates = [
     new: true
   },
   {
-    id: 'binance_futures_bot',
-    name: '🚀 Futures Quantum Entity',
-    description: 'Advanced futures trading with LLM AI analysis, leverage, and quantum risk management',
-    type: 'FUTURES',
-    exchange: 'BINANCE',
-    features: ['LLM Integration', 'Leverage Trading', 'Stop Loss/Take Profit', 'Real-time Analysis'],
-    gradient: 'from-quantum-500 to-purple-600',
-    complexity: 'Advanced',
-    templateFile: 'binance_futures_bot.py'
-  },
-  {
-    id: 'binance_futures_rpa_bot',
-    name: '👁️ Visual Analysis Entity',
-    description: 'RPA-powered chart capture with AI image analysis for visual trading decisions',
-    type: 'FUTURES_RPA',
-    exchange: 'BINANCE',
-    features: ['Chart Analysis', 'Image Recognition', 'RPA Automation', 'Visual AI'],
-    gradient: 'from-cyber-500 to-blue-600',
-    complexity: 'Expert',
-    templateFile: 'binance_futures_rpa_bot.py'
-  },
-  {
-    id: 'binance_spot_bot',
-    name: '💎 Spot Trading Entity',
-    description: 'Professional spot trading with risk management for BTC, ETH, and major altcoins',
-    type: 'SPOT',
-    exchange: 'BINANCE',
-    features: ['Spot Trading', 'Risk Management', 'Multi-Pair Support', 'Portfolio Balance'],
-    gradient: 'from-green-500 to-emerald-600',
+    id: 'universal_futures_signals_bot',
+    name: '📡 Universal Futures Signals Entity',
+    description: 'Multi-exchange signals bot (Binance & Bybit) with LLM analysis. Telegram & Discord notifications. NO trading execution - signals only!',
+    type: 'LLM',
+    exchange: 'MULTI',
+    features: ['Binance & Bybit Support', 'LLM Analysis', 'Multi-Timeframe', 'Telegram Signals', 'Discord Signals', 'No Trading Risk', 'Signal Intelligence'],
+    gradient: 'from-purple-500 via-pink-500 to-red-500',
     complexity: 'Intermediate',
-    templateFile: 'binance_spot_bot.py'
+    templateFile: 'universal_futures_signals_bot.py',
+    highlighted: true,
+    new: true
   },
   {
     id: 'binance_signals_bot',
     name: '📡 Signal Intelligence Entity',
-    description: 'Pure signal generation with LLM analysis - no trading, only intelligent signals',
+    description: 'Binance-focused signal generation with LLM analysis - no trading, only intelligent signals',
     type: 'LLM',
     exchange: 'BINANCE',
-    features: ['Signal Generation', 'Market Analysis', 'No API Keys', 'Pure Intelligence'],
+    features: ['Binance Only', 'Signal Generation', 'Market Analysis', 'No API Keys', 'Pure Intelligence'],
     gradient: 'from-neural-500 to-green-600',
     complexity: 'Intermediate',
     templateFile: 'binance_signals_bot.py'
-  },
-  {
-    id: 'kraken_futures_bot',
-    name: '🐙 Kraken Futures Entity',
-    description: 'Derivatives trading on Kraken with risk management and leverage control',
-    type: 'FUTURES',
-    exchange: 'KRAKEN',
-    features: ['Derivatives', 'Risk Control', 'EUR/USD Pairs', 'Regulated Exchange'],
-    gradient: 'from-purple-500 to-pink-600',
-    complexity: 'Advanced',
-    templateFile: 'kraken_futures_bot.py'
-  },
-  {
-    id: 'bybit_perpetual_bot',
-    name: '⚡ Bybit Perpetual Entity',
-    description: 'High-leverage perpetual contracts with advanced risk management',
-    type: 'FUTURES',
-    exchange: 'BYBIT',
-    features: ['Perpetual Contracts', 'High Leverage', 'Fast Execution', 'Crypto-Native'],
-    gradient: 'from-orange-500 to-red-600',
-    complexity: 'Expert',
-    templateFile: 'bybit_perpetual_bot.py'
-  },
-  {
-    id: 'custom',
-    name: '⚡ Custom Neural Entity',
-    description: 'Build your own AI entity from scratch with custom neural architecture',
-    type: 'TECHNICAL',
-    exchange: 'BINANCE',
-    features: ['Custom Logic', 'Full Control', 'Advanced Config', 'Neural Framework'],
-    gradient: 'from-yellow-500 to-orange-600',
-    complexity: 'Expert',
-    templateFile: null // No template file for custom
   }
 ]
 
 const exchangeTypes = [
   { value: 'BYBIT', label: '🟠 Bybit', description: 'Advanced derivatives platform' },
   { value: 'BINANCE', label: '🟡 Binance', description: 'World\'s largest crypto exchange' },
-  { value: 'OKX', label: '⚫ OKX', description: 'Unified trading account' },
-  { value: 'BITGET', label: '🟢 Bitget', description: 'Copy trading leader' },
-  { value: 'KRAKEN', label: '🟣 Kraken', description: 'European regulated exchange' },
-  { value: 'HUOBI', label: '🔴 Huobi/HTX', description: 'Global digital asset exchange' }
+  //{ value: 'OKX', label: '⚫ OKX', description: 'Unified trading account' },
+  //{ value: 'BITGET', label: '🟢 Bitget', description: 'Copy trading leader' },
+  //{ value: 'KRAKEN', label: '🟣 Kraken', description: 'European regulated exchange' },
+  //{ value: 'HUOBI', label: '🔴 Huobi/HTX', description: 'Global digital asset exchange' }
 ]
 
 const timeframeOptions = [
@@ -250,6 +198,13 @@ export default function ForgePage() {
   const [selectedImage, setSelectedImage] = useState<File | null>(null)
   const [imagePreview, setImagePreview] = useState<string>('')
   const [isUploadingImage, setIsUploadingImage] = useState(false)
+  
+  // Name validation state
+  const [nameCheckStatus, setNameCheckStatus] = useState<'idle' | 'checking' | 'available' | 'taken'>('idle')
+  const [nameCheckMessage, setNameCheckMessage] = useState('')
+  
+  // Pre-trial validation state
+  const [showValidationModal, setShowValidationModal] = useState(false)
 
   const {
     register,
@@ -410,19 +365,67 @@ export default function ForgePage() {
     )
   }
 
+  // Check bot name availability
+  const checkNameAvailability = async (name: string) => {
+    if (!name || name.length < 3) {
+      setNameCheckStatus('idle')
+      setNameCheckMessage('')
+      return
+    }
+    
+    setNameCheckStatus('checking')
+    setNameCheckMessage('Checking availability...')
+    
+    try {
+      const response = await fetch(`http://localhost:8000/bots/check-name/${encodeURIComponent(name)}`)
+      const result = await response.json()
+      
+      if (result.available) {
+        setNameCheckStatus('available')
+        setNameCheckMessage('✅ Name is available')
+      } else {
+        setNameCheckStatus('taken')
+        setNameCheckMessage('❌ Name is already taken')
+      }
+    } catch (error) {
+      console.error('Error checking name availability:', error)
+      setNameCheckStatus('idle')
+      setNameCheckMessage('Failed to check availability')
+    }
+  }
+
   const handleTemplateSelect = (template: typeof botTemplates[0]) => {
     setSelectedTemplate(template.id)
     setValue('template', template.id as any)
     setValue('bot_type', template.type as any)
-    setValue('exchange_type', template.exchange as any) // Auto-set exchange based on template
+    
+    // For multi-exchange templates, default to BINANCE (user can change later)
+    const defaultExchange = template.exchange === 'MULTI' ? 'BINANCE' : template.exchange
+    setValue('exchange_type', defaultExchange as any)
+    
     setValue('name', template.name)
     setValue('description', template.description)
-    console.log('🎯 Template selected:', template.name, 'Exchange:', template.exchange)
+    
+    // Check name availability for template name
+    checkNameAvailability(template.name)
+    
+    console.log('🎯 Template selected:', template.name, 'Exchange:', defaultExchange)
     setStep(2)
   }
 
   const onSubmit = async (data: BotFormData) => {
     if (step === 3) {
+      // Check if name is available before creating bot
+      if (nameCheckStatus === 'taken') {
+        toast.error('❌ Bot name is already taken. Please choose a different name.')
+        return
+      }
+      
+      if (nameCheckStatus === 'checking') {
+        toast.error('⏳ Please wait for name availability check to complete.')
+        return
+      }
+      
       // Step 3: Create bot and move to Binance testing
       setIsSubmitting(true)
       try {
@@ -775,11 +778,20 @@ export default function ForgePage() {
     }
   }
 
-  // Handle start free trial
+  // Handle start free trial - show validation modal first
   const handleStartFreeTrial = async () => {
     if (isStartingTrial || !createdBotId) return
     
+    // Show validation modal first
+    setShowValidationModal(true)
+  }
+
+  // Actual trial start after validation passes
+  const startTrialAfterValidation = async () => {
+    if (isStartingTrial || !createdBotId) return
+    
     setIsStartingTrial(true)
+    setShowValidationModal(false)
     
     try {
       const startDate = new Date()
@@ -1068,18 +1080,60 @@ export default function ForgePage() {
                 <div className="space-y-4">
                   <div>
                     <label className="form-label">Entity Name</label>
-                    <input
-                      {...register('name')}
-                      className="form-input"
-                      placeholder="Enter neural entity name..."
-                    />
+                    <div className="relative">
+                      <input
+                        {...register('name')}
+                        value={watch('name') || ''}
+                        onChange={(e) => {
+                          const newName = e.target.value
+                          setValue('name', newName)
+                          
+                          // Debounced name checking
+                          setTimeout(() => {
+                            if (watch('name') === newName) {
+                              checkNameAvailability(newName)
+                            }
+                          }, 500)
+                        }}
+                        className={`form-input pr-10 ${
+                          nameCheckStatus === 'available' ? 'border-green-500' : 
+                          nameCheckStatus === 'taken' ? 'border-red-500' : ''
+                        }`}
+                        placeholder="Enter neural entity name..."
+                      />
+                      {nameCheckStatus === 'checking' && (
+                        <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
+                        </div>
+                      )}
+                      {nameCheckStatus === 'available' && (
+                        <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-green-500">
+                          ✅
+                        </div>
+                      )}
+                      {nameCheckStatus === 'taken' && (
+                        <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-red-500">
+                          ❌
+                        </div>
+                      )}
+                    </div>
                     {errors.name && <p className="form-error">{errors.name.message}</p>}
+                    {nameCheckMessage && (
+                      <p className={`text-sm mt-1 ${
+                        nameCheckStatus === 'available' ? 'text-green-500' : 
+                        nameCheckStatus === 'taken' ? 'text-red-500' : 'text-gray-500'
+                      }`}>
+                        {nameCheckMessage}
+                      </p>
+                    )}
                   </div>
                   
                   <div>
                     <label className="form-label">Description</label>
                     <textarea
                       {...register('description')}
+                      value={watch('description') || ''}
+                      onChange={(e) => setValue('description', e.target.value)}
                       rows={3}
                       className="form-input"
                       placeholder="Describe your AI entity's capabilities..."
@@ -2165,6 +2219,22 @@ export default function ForgePage() {
           </div>
         )}
       </form>
+
+      {/* Pre-Trial Validation Modal */}
+      {createdBotId && (
+        <PreTrialValidationModal
+          isOpen={showValidationModal}
+          onClose={() => setShowValidationModal(false)}
+          onProceed={startTrialAfterValidation}
+          bot={{
+            id: createdBotId,
+            name: watch('name') || 'Your Bot',
+            exchange_type: watch('exchange_type'),
+            bot_type: watch('bot_type')
+          } as any}
+          networkType={trialConfig.networkType as 'TESTNET' | 'MAINNET'}
+        />
+      )}
 
       {/* Floating Neural Particles */}
       <div className="fixed top-20 left-20 w-1 h-1 bg-quantum-500 rounded-full animate-neural-pulse opacity-60"></div>

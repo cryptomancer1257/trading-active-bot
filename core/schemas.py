@@ -25,10 +25,14 @@ class BotType(str, Enum):
     FUTURES = "FUTURES"     # Futures Trading
     FUTURES_RPA = "FUTURES_RPA"  # Futures Trading with RPA
     FUTURES_API = "FUTURES_API"  # temp
+    BACKTEST = "BACKTEST"   # Backtesting/Signals bot
 
 class BotMode(str, Enum):
     PASSIVE = "PASSIVE"
     ACTIVE = "ACTIVE"
+    MULTI_TIMEFRAME = "MULTI_TIMEFRAME"  # Multi-timeframe analysis
+    multi_timeframe = "multi_timeframe"  # Legacy support
+    multi_timeframe_legacy = "multi_timeframe"  # Legacy support
 
 class FileType(str, Enum):
     CODE = "CODE"
