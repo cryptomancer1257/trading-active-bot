@@ -180,11 +180,11 @@ export default function MyEntitiesPage() {
                 <div className="space-y-2 mb-4">
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-400">Subscribers:</span>
-                    <span className="text-white font-semibold">{bot.subscribers_count || 0}</span>
+                    <span className="text-white font-semibold">{(bot as any).subscribers_count || 0}</span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-400">Total Transactions:</span>
-                    <span className="text-white font-semibold">{bot.transactions_count || 0}</span>
+                    <span className="text-white font-semibold">{(bot as any).transactions_count || 0}</span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-400">Rating:</span>

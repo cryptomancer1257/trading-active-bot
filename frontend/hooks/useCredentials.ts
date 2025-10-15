@@ -5,7 +5,7 @@ import { api } from '@/lib/api'
 export interface ExchangeCredentials {
   id: number
   user_id: number
-  exchange_type: 'BINANCE' | 'COINBASE' | 'KRAKEN' | 'BYBIT' | 'HUOBI'
+  exchange_type: 'BINANCE' | 'COINBASE' | 'KRAKEN' | 'BYBIT' | 'HUOBI' | 'OKX' | 'BITGET'
   credential_type: 'SPOT' | 'FUTURES' | 'MARGIN'
   network_type: 'TESTNET' | 'MAINNET'
   name: string
@@ -23,7 +23,7 @@ export interface ExchangeCredentialsWithSecrets extends ExchangeCredentials {
 }
 
 export interface CreateCredentialsData {
-  exchange_type: 'BINANCE' | 'COINBASE' | 'KRAKEN' | 'BYBIT' | 'HUOBI'
+  exchange_type: 'BINANCE' | 'COINBASE' | 'KRAKEN' | 'BYBIT' | 'HUOBI' | 'OKX' | 'BITGET'
   credential_type: 'SPOT' | 'FUTURES' | 'MARGIN'
   network_type: 'TESTNET' | 'MAINNET'
   name: string

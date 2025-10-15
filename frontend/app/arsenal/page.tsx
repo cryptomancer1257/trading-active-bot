@@ -219,19 +219,19 @@ export default function ArsenalPage() {
         </div>
         <div className="card-cyber p-6 text-center animate-fade-in" style={{ animationDelay: '0.2s' }}>
           <div className="text-3xl font-bold text-neural-400 animate-neural-pulse">
-            {filteredBots.reduce((sum, bot) => sum + bot.deployments, 0).toLocaleString()}
+            {filteredBots.reduce((sum: number, bot: any) => sum + bot.deployments, 0).toLocaleString()}
           </div>
           <div className="text-sm text-gray-400 mt-1">Total Deployments</div>
         </div>
         <div className="card-cyber p-6 text-center animate-fade-in" style={{ animationDelay: '0.3s' }}>
           <div className="text-3xl font-bold text-cyber-400 animate-neural-pulse">
-            {Math.round(filteredBots.reduce((sum, bot) => sum + parseFloat(bot.performance.replace('%', '').replace('+', '')), 0) / filteredBots.length)}%
+            {Math.round(filteredBots.reduce((sum: number, bot: any) => sum + parseFloat(bot.performance.replace('%', '').replace('+', '')), 0) / filteredBots.length)}%
           </div>
           <div className="text-sm text-gray-400 mt-1">Avg Performance</div>
         </div>
         <div className="card-cyber p-6 text-center animate-fade-in" style={{ animationDelay: '0.4s' }}>
           <div className="text-3xl font-bold text-yellow-400 animate-neural-pulse">
-            {filteredBots.filter(bot => bot.status === 'Active').length}
+            {filteredBots.filter((bot: any) => bot.status === 'Active').length}
           </div>
           <div className="text-sm text-gray-400 mt-1">Online Now</div>
         </div>
@@ -239,7 +239,7 @@ export default function ArsenalPage() {
 
       {/* AI Entities Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {filteredBots.map((bot, index) => (
+        {filteredBots.map((bot: any, index: number) => (
           <div
             key={bot.id}
             className="card-quantum p-6 hover:shadow-2xl hover:shadow-quantum-500/20 transition-all duration-300 transform hover:-translate-y-1 animate-fade-in"
