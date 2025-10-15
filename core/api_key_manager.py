@@ -316,7 +316,7 @@ class APIKeyManager:
     def store_user_exchange_credentials_by_principal_id(
         self, db: Session, principal_id: str, exchange: str, 
         api_key: str, api_secret: str, api_passphrase: str = None, 
-        is_testnet: bool = True
+        is_testnet: bool = True, credential_type: str = 'SPOT'
     ) -> bool:
         """
         Store exchange credentials directly with principal ID (no user mapping required)
@@ -324,26 +324,32 @@ class APIKeyManager:
         Args:
             db: Database session
             principal_id: ICP Principal ID
-            exchange: Exchange name (BINANCE, COINBASE, KRAKEN)
+            exchange: Exchange name (BINANCE, BYBIT, OKX, etc.)
             api_key: Plain API key
             api_secret: Plain API secret
             api_passphrase: Plain API passphrase (optional)
             is_testnet: Whether these are testnet credentials
+            credential_type: Trading mode (SPOT, FUTURES, MARGIN)
             
         Returns:
             True if successful, False otherwise
         """
         try:
+            # Normalize credential_type
+            cred_type_upper = str(credential_type).upper() if credential_type else 'SPOT'
+            cred_type_enum = models.CredentialType(cred_type_upper)
+            
             # Encrypt credentials
             encrypted_key = self.encrypt_api_key(api_key)
             encrypted_secret = self.encrypt_api_key(api_secret)
             encrypted_passphrase = self.encrypt_api_key(api_passphrase) if api_passphrase else None
             
-            # Check if credentials already exist for this principal ID
+            # Check if credentials already exist for this principal ID + exchange + testnet + credential_type
             existing = db.query(models.ExchangeCredentials).filter(
                 models.ExchangeCredentials.principal_id == principal_id,
                 models.ExchangeCredentials.exchange == exchange,
-                models.ExchangeCredentials.is_testnet == is_testnet
+                models.ExchangeCredentials.is_testnet == is_testnet,
+                models.ExchangeCredentials.credential_type == cred_type_enum
             ).first()
             
             if existing:
@@ -353,13 +359,14 @@ class APIKeyManager:
                 existing.api_passphrase = encrypted_passphrase
                 existing.validation_status = "pending"
                 db.commit()
-                logger.info(f"Updated {exchange} credentials for principal ID: {principal_id}")
+                logger.info(f"Updated {exchange} {cred_type_upper} credentials for principal ID: {principal_id}")
             else:
                 # Create new credentials
                 new_cred = models.ExchangeCredentials(
                     user_id=None,  # No user mapping for marketplace users
                     principal_id=principal_id,
                     exchange=models.ExchangeType(exchange),
+                    credential_type=cred_type_enum,
                     api_key=encrypted_key,
                     api_secret=encrypted_secret,
                     api_passphrase=encrypted_passphrase,
@@ -368,7 +375,7 @@ class APIKeyManager:
                 )
                 db.add(new_cred)
                 db.commit()
-                logger.info(f"Created new {exchange} credentials for principal ID: {principal_id}")
+                logger.info(f"Created new {exchange} {cred_type_upper} credentials for principal ID: {principal_id}")
             
             return True
             

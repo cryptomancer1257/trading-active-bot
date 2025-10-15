@@ -504,6 +504,7 @@ async def create_marketplace_subscription_v2(
                 marketplace_subscription_end=request.subscription_end,
                 
                 is_testnet=request.is_testnet,
+                exchange_type=request.exchange_type or models.ExchangeType.BINANCE,  # Use exchange from request
                 # network_type=network_type_model,
                 trading_pair=request.trading_pair,
                 secondary_trading_pairs=request.secondary_trading_pairs or [],  # Multi-pair trading
@@ -570,6 +571,7 @@ async def create_marketplace_subscription_v2(
                 marketplace_subscription_end=request.subscription_end,
                 
                 is_testnet=request.is_testnet,
+                exchange_type=request.exchange_type or models.ExchangeType.BINANCE,  # Use exchange from request
                 # network_type=network_type_model,
                 trading_pair=request.trading_pair,
                 secondary_trading_pairs=request.secondary_trading_pairs or [],  # Multi-pair trading
@@ -826,7 +828,7 @@ async def store_credentials_bulk_by_principal_id(
     - Upsert credentials by pair (principal_id, exchange, is_testnet)
     """
     try:
-        allowed = {"BINANCE", "COINBASE", "KRAKEN"}
+        allowed = {"BINANCE", "BYBIT", "OKX", "BITGET", "HUOBI", "KRAKEN", "COINBASE"}
         def _norm_exchange(e: Any) -> str:
             try:
                 return (e.value if hasattr(e, 'value') else str(e)).upper()
@@ -877,6 +879,7 @@ async def store_credentials_bulk_by_principal_id(
                 api_secret=item.api_secret,
                 api_passphrase=item.api_passphrase,
                 is_testnet=is_testnet,
+                credential_type=item.trading_mode or 'SPOT',
             )
 
             if ok:

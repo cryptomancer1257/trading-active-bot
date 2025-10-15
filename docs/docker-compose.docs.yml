@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  docs:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: quantumforge-docs
+    ports:
+      - "3002:3002"
+    volumes:
+      - .:/docs
+      - /docs/site  # Prevent site folder from being mounted
+    environment:
+      - PYTHONUNBUFFERED=1
+      - ENABLE_PDF_EXPORT=0
+    restart: unless-stopped
+    networks:
+      - quantumforge-network
+
+  # Nginx reverse proxy (optional)
+  nginx-docs:
+    image: nginx:alpine
+    container_name: quantumforge-docs-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./site:/usr/share/nginx/html:ro
+    depends_on:
+      - docs
+    restart: unless-stopped
+    networks:
+      - quantumforge-network
+
+networks:
+  quantumforge-network:
+    driver: bridge
+
