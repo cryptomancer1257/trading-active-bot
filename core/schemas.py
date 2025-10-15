@@ -627,6 +627,7 @@ class MarketplaceSubscriptionCreateV2(BaseModel):
     
     # Trading configuration
     is_testnet: bool = True
+    exchange_type: Optional[ExchangeType] = Field(ExchangeType.BINANCE, description="Exchange to trade on (BINANCE, BYBIT, etc.)")
     trading_pair: Optional[str] = Field(None, description="Trading pair like BTC/USDT")
     secondary_trading_pairs: Optional[List[str]] = []  # Multi-pair trading
     trading_network: Optional[str] = Field(None, description="Trading network like MAINNET, TESTNET")

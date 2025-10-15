@@ -504,6 +504,7 @@ async def create_marketplace_subscription_v2(
                 marketplace_subscription_end=request.subscription_end,
                 
                 is_testnet=request.is_testnet,
+                exchange_type=request.exchange_type or models.ExchangeType.BINANCE,  # Use exchange from request
                 # network_type=network_type_model,
                 trading_pair=request.trading_pair,
                 secondary_trading_pairs=request.secondary_trading_pairs or [],  # Multi-pair trading
@@ -570,6 +571,7 @@ async def create_marketplace_subscription_v2(
                 marketplace_subscription_end=request.subscription_end,
                 
                 is_testnet=request.is_testnet,
+                exchange_type=request.exchange_type or models.ExchangeType.BINANCE,  # Use exchange from request
                 # network_type=network_type_model,
                 trading_pair=request.trading_pair,
                 secondary_trading_pairs=request.secondary_trading_pairs or [],  # Multi-pair trading

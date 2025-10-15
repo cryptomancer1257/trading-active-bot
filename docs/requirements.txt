@@ -1,0 +1,15 @@
+# MkDocs Documentation Server Requirements
+# Simplified and tested versions
+
+# Core - MkDocs with Material theme
+mkdocs>=1.5.0,<2.0.0
+mkdocs-material>=9.5.0,<10.0.0
+
+# Extensions for enhanced markdown
+pymdown-extensions>=10.0,<11.0
+
+# Syntax highlighting
+Pygments>=2.16.0
+
+# Markdown parser
+markdown>=3.5.0

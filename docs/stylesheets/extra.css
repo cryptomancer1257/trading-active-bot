@@ -1,0 +1,169 @@
+/* QuantumForge Documentation - Custom Styles */
+
+:root {
+  --qf-purple: #9c27b0;
+  --qf-deep-purple: #673ab7;
+  --qf-indigo: #3f51b5;
+}
+
+/* Hero Section */
+.md-typeset .grid.cards {
+  grid-gap: 1rem;
+  margin-top: 2rem;
+}
+
+/* Cards */
+.md-typeset .grid.cards > * {
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  transition: all 0.3s ease;
+  padding: 1.5rem;
+}
+
+.md-typeset .grid.cards > *:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+  border-color: var(--qf-purple);
+}
+
+/* Buttons */
+.md-button {
+  border-radius: 4px;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.md-button--primary {
+  background-color: var(--qf-purple);
+}
+
+.md-button--primary:hover {
+  background-color: var(--qf-deep-purple);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(156, 39, 176, 0.3);
+}
+
+/* Admonitions */
+.md-typeset .admonition {
+  border-radius: 8px;
+  border-left: 4px solid var(--qf-purple);
+}
+
+/* Code blocks */
+.md-typeset pre {
+  border-radius: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.md-typeset code {
+  border-radius: 4px;
+  padding: 0.2em 0.4em;
+  background-color: rgba(156, 39, 176, 0.1);
+  color: var(--qf-purple);
+}
+
+/* Tables */
+.md-typeset table:not([class]) {
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.md-typeset table th {
+  background-color: var(--qf-purple);
+  color: white;
+}
+
+.md-typeset table tr:hover {
+  background-color: rgba(156, 39, 176, 0.05);
+}
+
+/* Navigation */
+.md-tabs {
+  background-color: var(--qf-deep-purple);
+}
+
+.md-tabs__link--active {
+  opacity: 1;
+}
+
+/* Search */
+.md-search__form {
+  border-radius: 8px;
+}
+
+/* Footer */
+.md-footer {
+  background-color: var(--qf-deep-purple);
+}
+
+/* Center content */
+.center {
+  text-align: center;
+  margin: 2rem 0;
+}
+
+/* Responsive grid */
+@media screen and (min-width: 76.25em) {
+  .md-typeset .grid.cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media screen and (max-width: 76.25em) {
+  .md-typeset .grid.cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Custom animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.md-content {
+  animation: fadeIn 0.5s ease;
+}
+
+/* Syntax highlighting customization */
+.highlight .hll { background-color: #ffffcc }
+.highlight .c { color: #999988; font-style: italic }
+.highlight .k { color: var(--qf-purple); font-weight: bold }
+.highlight .o { color: #000000; font-weight: bold }
+.highlight .cm { color: #999988; font-style: italic }
+.highlight .cp { color: #999999; font-weight: bold; font-style: italic }
+.highlight .c1 { color: #999988; font-style: italic }
+.highlight .cs { color: #999999; font-weight: bold; font-style: italic }
+
+/* Mermaid diagrams */
+.mermaid {
+  text-align: center;
+  margin: 2rem 0;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--qf-purple);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--qf-deep-purple);
+}
+
