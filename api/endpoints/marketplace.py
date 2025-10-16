@@ -289,7 +289,15 @@ async def create_marketplace_subscription_v2(
         
         # Set user_id from request or principal mapping, otherwise NULL
         user_id = request.user_id if request.user_id else (principal_mapping.user_id if principal_mapping else None)
-        
+
+        # ✅ Check subscription limit ONLY for Studio TRIAL subscriptions (not marketplace ICP/PayPal)
+        if request.payment_method == 'TRIAL' and user_id:
+            user = db.query(models.User).filter(models.User.id == user_id).first()
+            if user:
+                from core.plan_checker import plan_checker
+                plan_checker.check_user_subscription_limit(user, db)
+                logger.info(f"User {user_id} has valid subscription limit for TRIAL payment method")
+
         # Create default configs if not provided
         execution_config = request.execution_config or schemas.ExecutionConfig(
             buy_order_type="PERCENTAGE",
@@ -476,6 +484,14 @@ async def create_marketplace_subscription_v2(
             ).first()
         user_id = principal_mapping.user_id if principal_mapping else None
 
+        # ✅ Check subscription limit ONLY for Studio TRIAL subscriptions (not marketplace ICP/PayPal)
+        if request.payment_method == 'TRIAL' and user_id:
+            user = db.query(models.User).filter(models.User.id == user_id).first()
+            if user:
+                from core.plan_checker import plan_checker
+                plan_checker.check_user_subscription_limit(user, db)
+                logger.info(f"User {user_id} has valid subscription limit for TRIAL payment method")
+                
         if bot.bot_mode == "ACTIVE" and bot.bot_type == "FUTURES":
             # Create default configs if not provided
             execution_config = request.execution_config or schemas.ExecutionConfig(

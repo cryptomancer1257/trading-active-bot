@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react'
 import { useLLMProviders, useActiveLLMProviders } from '@/hooks/useLLMProviders'
 import { useCredentials, useDefaultCredentials } from '@/hooks/useCredentials'
 import { Bot } from '@/lib/types'
+import config from '@/lib/config'
 
 interface PreTrialValidationModalProps {
   isOpen: boolean
@@ -16,11 +17,14 @@ interface PreTrialValidationModalProps {
 interface ValidationResult {
   hasLLMProvider: boolean
   hasExchangeCredentials: boolean
+  hasPrompt: boolean
   missingLLMProvider: boolean
   missingCredentials: boolean
+  missingPrompt: boolean
   exchangeType: string
   credentialType: string
   networkType: string
+  promptCount: number
 }
 
 export default function PreTrialValidationModal({
@@ -73,14 +77,41 @@ export default function PreTrialValidationModal({
         cred.is_active
       ) || !!defaultCredentials
 
+      // Check prompts
+      let hasPrompts = false
+      let promptCount = 0
+      
+      const token = localStorage.getItem('access_token')
+      if (token) {
+        try {
+          const response = await fetch(`${config.studioBaseUrl}/bot-prompts/bots/${bot.id}/prompts`, {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            }
+          })
+
+          if (response.ok) {
+            const prompts = await response.json()
+            hasPrompts = Array.isArray(prompts) && prompts.length > 0
+            promptCount = hasPrompts ? prompts.length : 0
+          }
+        } catch (error) {
+          console.error('Error fetching prompts:', error)
+        }
+      }
+
       const validationResult: ValidationResult = {
         hasLLMProvider: hasActiveLLMProvider,
         hasExchangeCredentials: hasMatchingCredentials,
+        hasPrompt: hasPrompts,
         missingLLMProvider: !hasActiveLLMProvider,
         missingCredentials: !hasMatchingCredentials,
+        missingPrompt: !hasPrompts,
         exchangeType,
         credentialType,
-        networkType
+        networkType,
+        promptCount
       }
 
       setValidation(validationResult)
@@ -92,7 +123,7 @@ export default function PreTrialValidationModal({
   }
 
   const handleProceed = () => {
-    if (validation?.hasLLMProvider && validation?.hasExchangeCredentials) {
+    if (validation?.hasLLMProvider && validation?.hasExchangeCredentials && validation?.hasPrompt) {
       onProceed()
     }
   }
@@ -103,6 +134,13 @@ export default function PreTrialValidationModal({
 
   const openCredentialsPage = () => {
     window.open('/creator/credentials', '_blank')
+  }
+
+  const openPromptsTab = () => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('bot-detail-tab', 'prompts')
+      window.location.reload()
+    }
   }
 
   if (!isOpen) return null
@@ -243,18 +281,58 @@ export default function PreTrialValidationModal({
                 )}
               </div>
 
+              {/* Prompt Check */}
+              <div className={`rounded-lg p-4 border ${
+                validation.hasPrompt 
+                  ? 'bg-green-900/30 border-green-500/30' 
+                  : 'bg-red-900/30 border-red-500/30'
+              }`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center">
+                    <span className="text-2xl mr-3">
+                      {validation.hasPrompt ? '✅' : '❌'}
+                    </span>
+                    <div>
+                      <h4 className="text-lg font-semibold text-white">
+                        Bot Prompt Configuration
+                      </h4>
+                      <p className="text-sm text-gray-300">
+                        {validation.hasPrompt 
+                          ? `Found ${validation.promptCount} attached prompt(s)`
+                          : 'No prompts attached to this bot'
+                        }
+                      </p>
+                    </div>
+                  </div>
+                  {validation.missingPrompt && (
+                    <button
+                      onClick={openPromptsTab}
+                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors text-sm"
+                    >
+                      Attach Prompt
+                    </button>
+                  )}
+                </div>
+                {validation.missingPrompt && (
+                  <div className="mt-3 p-3 bg-red-900/20 border border-red-500/20 rounded text-sm text-red-300">
+                    <p className="font-medium mb-1">⚠️ Prompt Required</p>
+                    <p>This bot requires at least one prompt to guide its trading strategy and decision-making.</p>
+                  </div>
+                )}
+              </div>
+
               {/* Summary */}
               <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
                 <h4 className="text-lg font-semibold text-white mb-3">Configuration Status</h4>
-                {validation.hasLLMProvider && validation.hasExchangeCredentials ? (
+                {validation.hasLLMProvider && validation.hasExchangeCredentials && validation.hasPrompt ? (
                   <div className="text-green-400 flex items-center">
                     <span className="mr-2">🎉</span>
-                    <span>All configurations are ready! You can start your free trial.</span>
+                    <span>All configurations are ready! You can start your {networkType === 'TESTNET' ? 'free trial' : 'trade'}.</span>
                   </div>
                 ) : (
                   <div className="text-red-400 flex items-center">
                     <span className="mr-2">⚠️</span>
-                    <span>Please configure the missing items above before starting your trial.</span>
+                    <span>Please configure the missing items above before starting.</span>
                   </div>
                 )}
               </div>
@@ -272,14 +350,14 @@ export default function PreTrialValidationModal({
           </button>
           <button
             onClick={handleProceed}
-            disabled={!validation?.hasLLMProvider || !validation?.hasExchangeCredentials}
+            disabled={!validation?.hasLLMProvider || !validation?.hasExchangeCredentials || !validation?.hasPrompt}
             className={`px-6 py-2 rounded-lg font-medium transition-colors ${
-              validation?.hasLLMProvider && validation?.hasExchangeCredentials
+              validation?.hasLLMProvider && validation?.hasExchangeCredentials && validation?.hasPrompt
                 ? 'bg-green-600 hover:bg-green-700 text-white'
                 : 'bg-gray-700 text-gray-400 cursor-not-allowed'
             }`}
           >
-            {validation?.hasLLMProvider && validation?.hasExchangeCredentials 
+            {validation?.hasLLMProvider && validation?.hasExchangeCredentials && validation?.hasPrompt
               ? 'Start Free Trial' 
               : 'Configure Missing Items'
             }

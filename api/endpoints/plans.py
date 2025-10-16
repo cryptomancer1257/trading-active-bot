@@ -52,6 +52,7 @@ PRO_PLAN_CONFIG = {
 def get_paypal_access_token():
     """Get PayPal access token for API calls"""
     try:
+        logger.info(f"🔑 Attempting PayPal auth - Client ID: {PAYPAL_CLIENT_ID[:20]}..., Mode: {PAYPAL_MODE}")
         response = requests.post(
             f"{PAYPAL_API_BASE}/v1/oauth2/token",
             auth=(PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET),
@@ -59,16 +60,21 @@ def get_paypal_access_token():
             data={"grant_type": "client_credentials"}
         )
         response.raise_for_status()
+        logger.info("✅ PayPal authentication successful")
         return response.json()["access_token"]
     except Exception as e:
-        logger.error(f"Failed to get PayPal access token: {e}")
+        logger.error(f"❌ Failed to get PayPal access token: {e}")
+        logger.error(f"Response: {response.text if 'response' in locals() else 'No response'}")
         raise HTTPException(status_code=500, detail="PayPal authentication failed")
 
 
 def verify_paypal_payment(payment_id: str):
-    """Verify PayPal payment and get details"""
+    """Verify PayPal payment and get details. If APPROVED, capture it first."""
     try:
+        logger.info(f"🔍 Verifying PayPal order: {payment_id}")
         access_token = get_paypal_access_token()
+        
+        # Get order details
         response = requests.get(
             f"{PAYPAL_API_BASE}/v2/checkout/orders/{payment_id}",
             headers={
@@ -79,23 +85,47 @@ def verify_paypal_payment(payment_id: str):
         response.raise_for_status()
         payment_data = response.json()
         
+        logger.info(f"📦 PayPal order status: {payment_data.get('status')}")
+        
+        # If APPROVED, capture the payment
+        if payment_data.get("status") == "APPROVED":
+            logger.info(f"💰 Order is APPROVED, capturing payment...")
+            capture_response = requests.post(
+                f"{PAYPAL_API_BASE}/v2/checkout/orders/{payment_id}/capture",
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json"
+                }
+            )
+            capture_response.raise_for_status()
+            payment_data = capture_response.json()
+            logger.info(f"✅ Payment captured! New status: {payment_data.get('status')}")
+        
         # Check if payment is completed
         if payment_data.get("status") != "COMPLETED":
-            raise HTTPException(status_code=400, detail="Payment not completed")
+            logger.warning(f"⚠️ Payment not completed. Status: {payment_data.get('status')}")
+            raise HTTPException(status_code=400, detail=f"Payment not completed. Status: {payment_data.get('status')}")
         
-        # Get amount
-        amount = float(payment_data["purchase_units"][0]["amount"]["value"])
+        # Get amount from capture
+        amount = float(payment_data["purchase_units"][0]["payments"]["captures"][0]["amount"]["value"])
+        payer_email = payment_data["payer"]["email_address"]
+        
+        logger.info(f"✅ Payment verified: ${amount} from {payer_email}")
         
         return {
             "status": payment_data["status"],
             "amount_usd": amount,
-            "payer_email": payment_data["payer"]["email_address"],
+            "payer_email": payer_email,
             "payment_id": payment_id
         }
     except HTTPException:
         raise
+    except requests.exceptions.HTTPError as e:
+        logger.error(f"❌ PayPal API error for order {payment_id}: {e}")
+        logger.error(f"Response: {e.response.text if hasattr(e, 'response') else 'No response'}")
+        raise HTTPException(status_code=500, detail=f"Payment verification failed: {str(e)}")
     except Exception as e:
-        logger.error(f"Failed to verify PayPal payment {payment_id}: {e}")
+        logger.error(f"❌ Failed to verify PayPal payment {payment_id}: {e}")
         raise HTTPException(status_code=500, detail="Payment verification failed")
 
 

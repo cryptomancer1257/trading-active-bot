@@ -12,6 +12,10 @@ from sqlalchemy.orm import Session
 from core.database import get_db
 from services.telegram_service import TelegramService
 from services.discord_service import DiscordService
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Import from new structure
 from core.database import engine

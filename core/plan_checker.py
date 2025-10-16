@@ -127,6 +127,55 @@ class PlanChecker:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"This bot has reached its subscription limit ({subscription_count}/{user_plan.max_subscriptions_per_bot}). Owner needs to upgrade to Pro."
             )
+    
+    @staticmethod
+    def check_user_subscription_limit(user: models.User, db: Session) -> None:
+        """
+        Check if user has reached their total subscription limit across all bots
+        Free plan: 5 subscriptions total
+        Pro plan: unlimited
+        Raises HTTPException if limit exceeded
+        """
+        # Get user's plan
+        user_plan = db.query(models.UserPlan).filter(
+            models.UserPlan.user_id == user.id
+        ).first()
+        
+        if not user_plan:
+            # No plan found - create default free plan
+            user_plan = models.UserPlan(
+                user_id=user.id,
+                plan_name=models.PlanName.FREE,
+                max_subscriptions_per_bot=5,  # Free plan: 5 total subscriptions
+                status=models.PlanStatus.ACTIVE
+            )
+            db.add(user_plan)
+            db.commit()
+            db.refresh(user_plan)
+        
+        # Check if plan is active
+        if user_plan.status != models.PlanStatus.ACTIVE:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Your plan is {user_plan.status.value}. Please activate or upgrade your plan."
+            )
+        
+        # Pro plan has unlimited subscriptions (set to 999999)
+        if user_plan.max_subscriptions_per_bot == 999999:
+            return  # Pro plan - unlimited
+        
+        # Count user's total active subscriptions across ALL bots
+        total_subscriptions = db.query(models.Subscription).filter(
+            models.Subscription.user_id == user.id,
+            models.Subscription.status == models.SubscriptionStatus.ACTIVE
+        ).count()
+        
+        # Check limit (Free plan: 5 total subscriptions)
+        if total_subscriptions >= user_plan.max_subscriptions_per_bot:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Subscription limit reached ({total_subscriptions}/{user_plan.max_subscriptions_per_bot}). Upgrade to Pro for unlimited subscriptions."
+            )
 
 
 # Global instance
