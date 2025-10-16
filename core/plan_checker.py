@@ -7,10 +7,61 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 from core import models
 from typing import Optional
+from datetime import datetime
 
 
 class PlanChecker:
     """Check if user's plan allows specific actions"""
+    
+    @staticmethod
+    def is_plan_package_enabled(db: Session) -> bool:
+        """
+        Check if plan package feature is currently enabled
+        Returns True if enabled, False if disabled
+        """
+        try:
+            flag = db.query(models.FeatureFlag).filter(
+                models.FeatureFlag.feature_type == models.FeatureFlagType.PLAN_PACKAGE
+            ).first()
+            
+            if not flag:
+                # Default to enabled if flag doesn't exist
+                return True
+            
+            current_time = datetime.utcnow()
+            
+            # Check if currently in disabled period
+            if (flag.disabled_from and flag.disabled_until and 
+                flag.disabled_from <= current_time <= flag.disabled_until):
+                return False
+            
+            return flag.is_enabled
+            
+        except Exception:
+            # Default to enabled on error
+            return True
+    
+    @staticmethod
+    def check_plan_package_enabled(db: Session) -> None:
+        """
+        Check if plan package is enabled, raise exception if disabled
+        """
+        if not PlanChecker.is_plan_package_enabled(db):
+            flag = db.query(models.FeatureFlag).filter(
+                models.FeatureFlag.feature_type == models.FeatureFlagType.PLAN_PACKAGE
+            ).first()
+            
+            reason = flag.reason if flag else "Plan package is temporarily disabled"
+            disabled_until = flag.disabled_until if flag else None
+            
+            detail = reason
+            if disabled_until:
+                detail += f" (until {disabled_until.strftime('%Y-%m-%d %H:%M')})"
+            
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=detail
+            )
     
     @staticmethod
     def check_bot_creation_limit(user: models.User, db: Session) -> None:
@@ -18,6 +69,14 @@ class PlanChecker:
         Check if user can create a new bot based on their plan
         Raises HTTPException if limit exceeded
         """
+        # First check if plan package is enabled
+        if PlanChecker.is_plan_package_enabled(db):
+            # Plan package is enabled, check limits normally
+            pass
+        else:
+            # Plan package is disabled, allow unlimited bot creation
+            return
+        
         # Get user's plan
         user_plan = db.query(models.UserPlan).filter(
             models.UserPlan.user_id == user.id
@@ -136,6 +195,11 @@ class PlanChecker:
         Pro plan: unlimited
         Raises HTTPException if limit exceeded
         """
+        # First check if plan package is enabled
+        if not PlanChecker.is_plan_package_enabled(db):
+            # Plan package is disabled, allow unlimited subscriptions
+            return
+        
         # Get user's plan
         user_plan = db.query(models.UserPlan).filter(
             models.UserPlan.user_id == user.id

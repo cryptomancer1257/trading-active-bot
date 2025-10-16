@@ -36,12 +36,13 @@ def get_user_subscriptions(
     skip: int = 0,
     limit: int = 50,
     status_filter: Optional[schemas.SubscriptionStatus] = None,
+    bot_id: Optional[int] = Query(None, description="Filter by bot ID"),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(security.get_current_active_user)
 ):
     """Get user's subscriptions with pagination and filtering"""
     subscriptions, total = crud.get_user_subscriptions_paginated(
-        db, user_id=current_user.id, skip=skip, limit=limit, status_filter=status_filter
+        db, user_id=current_user.id, skip=skip, limit=limit, status_filter=status_filter, bot_id=bot_id
     )
     return {
         "subscriptions": subscriptions,

@@ -30,6 +30,7 @@ from api.endpoints import credentials
 from api.endpoints import risk_management
 from api.endpoints import dashboard
 from api.endpoints import plans
+from api.endpoints import feature_flags
 
 import logging
 logger = logging.getLogger("uvicorn.error")
@@ -99,6 +100,7 @@ app.include_router(credentials.router, prefix="/developer/credentials", tags=["D
 app.include_router(risk_management.router, prefix="/v1/risk-management", tags=["Risk Management"])
 app.include_router(dashboard.router, prefix="/v1/dashboard", tags=["Dashboard"])
 app.include_router(plans.router, prefix="/api", tags=["Plans"])
+app.include_router(feature_flags.router, tags=["Feature Flags"])
 
 
 @app.post("/webhook")
