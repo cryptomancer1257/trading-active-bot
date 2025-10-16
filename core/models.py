@@ -48,6 +48,26 @@ class TradeMode(enum.Enum):
     MARGIN = "MARGIN"
     FUTURES = "FUTURES"
 
+class PlanName(enum.Enum):
+    FREE = "free"
+    PRO = "pro"
+
+class PlanStatus(enum.Enum):
+    ACTIVE = "active"
+    PAUSED = "paused"
+    EXPIRED = "expired"
+
+class PaymentMethod(enum.Enum):
+    PAYPAL = "paypal"
+    STRIPE = "stripe"
+    CRYPTO = "crypto"
+
+class PlanAction(enum.Enum):
+    UPGRADE = "upgrade"
+    DOWNGRADE = "downgrade"
+    RENEW = "renew"
+    CANCEL = "cancel"
+
 class ExchangeType(enum.Enum):
     MULTI = "MULTI"  # Multi-exchange support (Universal Bot)
     BINANCE = "BINANCE"
@@ -128,6 +148,8 @@ class User(Base):
     llm_providers = relationship("LLMProvider", back_populates="user")
     llm_subscriptions = relationship("DeveloperLLMSubscription", back_populates="developer")
     llm_usage_logs = relationship("LLMUsageLog", back_populates="developer")
+    plan = relationship("UserPlan", back_populates="user", uselist=False)
+    plan_history = relationship("PlanHistory", back_populates="user")
 
 class UserPrincipal(Base):
     """Mapping between users and their principal IDs"""
@@ -1171,4 +1193,77 @@ class LLMUsageLog(Base):
         Index('idx_llm_usage_bot', 'bot_id'),
         Index('idx_llm_usage_provider', 'provider'),
         Index('idx_llm_usage_source', 'source_type'),
+    )
+# ============================================
+# USER PLAN MODELS (Free vs Pro)
+# ============================================
+
+class UserPlan(Base):
+    __tablename__ = "user_plans"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    
+    # Plan details
+    plan_name = Column(Enum(PlanName), nullable=False, default=PlanName.FREE)
+    price_usd = Column(DECIMAL(10, 2), nullable=False, default=0.00)
+    
+    # Limits
+    max_bots = Column(Integer, nullable=False, default=5)
+    max_subscriptions_per_bot = Column(Integer, nullable=False, default=5)
+    allowed_environment = Column(Enum(NetworkType), nullable=False, default=NetworkType.TESTNET)
+    publish_marketplace = Column(Boolean, nullable=False, default=False)
+    subscription_expiry_days = Column(Integer, nullable=False, default=3)
+    compute_quota_per_day = Column(Integer, nullable=False, default=1000)
+    
+    # Revenue share (percentage for developer)
+    revenue_share_percentage = Column(DECIMAL(5, 2), nullable=False, default=0.00)
+    
+    # Plan status
+    status = Column(Enum(PlanStatus), nullable=False, default=PlanStatus.ACTIVE)
+    expiry_date = Column(DateTime, nullable=True)
+    auto_renew = Column(Boolean, nullable=False, default=False)
+    
+    # Payment details
+    payment_method = Column(Enum(PaymentMethod), nullable=True)
+    paypal_subscription_id = Column(String(255), nullable=True)
+    last_payment_id = Column(String(255), nullable=True)
+    last_payment_date = Column(DateTime, nullable=True)
+    next_billing_date = Column(DateTime, nullable=True)
+    
+    # Timestamps
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    
+    # Relationships
+    user = relationship("User", back_populates="plan")
+    
+    # Indexes
+    __table_args__ = (
+        Index('idx_user_plan_user_id', 'user_id'),
+        Index('idx_user_plan_name', 'plan_name'),
+        Index('idx_user_plan_status', 'status'),
+        Index('idx_user_plan_expiry', 'expiry_date'),
+    )
+
+
+class PlanHistory(Base):
+    __tablename__ = "plan_history"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    plan_name = Column(Enum(PlanName), nullable=False)
+    action = Column(Enum(PlanAction), nullable=False)
+    payment_id = Column(String(255), nullable=True)
+    amount_usd = Column(DECIMAL(10, 2), nullable=True)
+    reason = Column(Text, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    
+    # Relationships
+    user = relationship("User", back_populates="plan_history")
+    
+    # Indexes
+    __table_args__ = (
+        Index('idx_plan_history_user_id', 'user_id'),
+        Index('idx_plan_history_created_at', 'created_at'),
     )

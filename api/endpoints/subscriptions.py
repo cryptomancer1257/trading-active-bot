@@ -16,6 +16,7 @@ import logging
 from core import crud, models, schemas, security
 from core.database import get_db
 from core.tasks import run_bot_logic, run_bot_rpa_logic, run_bot_signal_logic
+from core.plan_checker import plan_checker
 from services.s3_manager import S3Manager
 from core.bot_manager import BotManager
 
@@ -198,6 +199,9 @@ def create_trial_subscription(
 ):
     """Create a trial subscription for testing a bot with testnet"""
     try:
+        # ✅ Check user's subscription limit (Free: 5 total, Pro: unlimited)
+        plan_checker.check_user_subscription_limit(current_user, db)
+        
         # Check if bot exists and is approved
         bot = crud.get_bot_by_id(db, trial_in.bot_id)
         

@@ -23,6 +23,8 @@ import config from '@/lib/config'
 import { useAuth } from '@/contexts/AuthContext'
 import { useGetBot } from '@/hooks/useBots'
 import PreTrialValidationModal from '@/components/PreTrialValidationModal'
+import UpgradeModal from '@/components/UpgradeModal'
+import { usePlan } from '@/hooks/usePlan'
 
 // Bot Log Interface
 interface BotLog {
@@ -102,13 +104,44 @@ export default function BotDetailPage() {
   const [trialConfig, setTrialConfig] = useState({
     tradingPair: 'BTC/USDT',
     secondaryTradingPairs: [] as string[],
-    networkType: 'TESTNET'
+    networkType: 'TESTNET',
+    subscriptionStart: '', // For Pro users
+    subscriptionEnd: ''    // For Pro users
   })
   const [botLogs, setBotLogs] = useState<BotLog[]>([])
   const [isLoadingLogs, setIsLoadingLogs] = useState(false)
   
   // Pre-trial validation state
   const [showValidationModal, setShowValidationModal] = useState(false)
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false)
+  
+  // Get user plan
+  const { currentPlan, isLoadingPlan } = usePlan()
+  const isPro = currentPlan?.plan_name === 'pro'
+
+  // Set default dates when Pro plan loads
+  useEffect(() => {
+    if (isPro && currentPlan && !trialConfig.subscriptionStart) {
+      const now = new Date()
+      const planExpiry = currentPlan.expiry_date ? new Date(currentPlan.expiry_date) : new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
+      
+      // Format for datetime-local input (YYYY-MM-DDTHH:mm)
+      const formatDateTime = (date: Date) => {
+        const year = date.getFullYear()
+        const month = String(date.getMonth() + 1).padStart(2, '0')
+        const day = String(date.getDate()).padStart(2, '0')
+        const hours = String(date.getHours()).padStart(2, '0')
+        const minutes = String(date.getMinutes()).padStart(2, '0')
+        return `${year}-${month}-${day}T${hours}:${minutes}`
+      }
+      
+      setTrialConfig(prev => ({
+        ...prev,
+        subscriptionStart: formatDateTime(now),
+        subscriptionEnd: formatDateTime(planExpiry)
+      }))
+    }
+  }, [isPro, currentPlan])
 
   // Fetch real bot data from API
   const { data: bot, isLoading: isBotLoading, error: botError } = useGetBot(botId)
@@ -202,9 +235,19 @@ export default function BotDetailPage() {
     setShowValidationModal(false)
     
     try {
-      // Calculate start and end dates for 24h free trial
-      const startDate = new Date()
-      const endDate = new Date(startDate.getTime() + 24 * 60 * 60 * 1000) // 24 hours later
+      // Calculate start and end dates
+      let startDate: Date
+      let endDate: Date
+      
+      if (isPro && trialConfig.subscriptionStart && trialConfig.subscriptionEnd) {
+        // Pro users: use custom dates
+        startDate = new Date(trialConfig.subscriptionStart)
+        endDate = new Date(trialConfig.subscriptionEnd)
+      } else {
+        // Free users: 24h free trial
+        startDate = new Date()
+        endDate = new Date(startDate.getTime() + 24 * 60 * 60 * 1000) // 24 hours later
+      }
       
       // Get current user ID from auth context
       const currentUserId = user?.id || 1 // Fallback to admin user if not authenticated
@@ -234,16 +277,24 @@ export default function BotDetailPage() {
       
       if (response.ok) {
         const result = await response.json()
-        toast.success('🎉 24h Free Trial Started! Your bot is now active.')
-        
-                // Show success modal with trial details
-                setTimeout(() => {
-                  alert(`🚀 Free Trial Activated!\n\nBot: ${bot.name}\nSubscription ID: ${result.subscription_id}\nDuration: 24 hours\nExpires: ${endDate.toLocaleString()}\nStatus: ${result.status}\n\nConfiguration:\n• Network: ${trialConfig.networkType}\n• Trading Pair: ${trialConfig.tradingPair}\n• Environment: ${trialConfig.networkType === 'TESTNET' ? 'Testnet' : 'Mainnet'}\n\nNeed help? Contact us on Telegram or Discord!`)
-                }, 1000)
+        const successMessage = isPro 
+          ? '🎉 Trading Started! Your bot is now active.'
+          : '🎉 24h Free Trial Started! Your bot is now active.'
+        toast.success(successMessage)
         
       } else {
         const error = await response.json()
-        toast.error(`Failed to start trial: ${error.detail || 'Unknown error'}`)
+        
+        // ✅ Check if subscription limit reached (403 Forbidden)
+        if (response.status === 403 && (error.detail?.includes('Subscription limit reached') || error.detail?.includes('subscription'))) {
+          // Extract limit info from error message (e.g., "5/5")
+          const limitMatch = error.detail?.match(/\((\d+)\/(\d+)\)/)
+          const limitInfo = limitMatch ? ` (${limitMatch[1]}/${limitMatch[2]})` : ''
+          toast.error(`🚫 Trial subscription limit reached${limitInfo}!`)
+          setShowUpgradeModal(true)
+        } else {
+          toast.error(`Failed to start trial: ${error.detail || 'Unknown error'}`)
+        }
       }
       
     } catch (error) {
@@ -474,82 +525,80 @@ export default function BotDetailPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-            <div className="bg-gradient-to-br from-purple-900/30 to-purple-800/30 p-5 rounded-lg border border-purple-500/30">
+          {/* Prompt Setup Section */}
+          <div className="mb-6">
+            <div className="bg-gradient-to-br from-indigo-900/30 to-purple-800/30 p-5 rounded-lg border border-indigo-500/30">
               <h4 className="text-lg font-semibold text-white mb-3 flex items-center">
-                <span className="mr-2">🤖</span>
-                LLM Providers Setup
+                <span className="mr-2">💬</span>
+                Bot Prompt Setup
                 <span className="ml-2 px-2 py-0.5 text-xs bg-red-500 text-white rounded-full">REQUIRED</span>
               </h4>
               <div className="text-gray-300 space-y-2 text-sm">
-                <p className="text-yellow-400 font-medium mb-2">⚠️ Bot requires LLM Provider to run!</p>
+                <p className="text-yellow-400 font-medium mb-2">⚠️ Bot requires a prompt to analyze market and make decisions!</p>
                 <div className="space-y-1.5">
                   <div className="flex items-start">
                     <span className="mr-2">1️⃣</span>
-                    <span>Go to <a href="/creator/llm-providers" className="text-purple-400 hover:text-purple-300 underline" target="_blank">LLM Providers</a></span>
+                    <span>Click on <strong className="text-indigo-400">"Prompt Management"</strong> tab above</span>
                   </div>
                   <div className="flex items-start">
                     <span className="mr-2">2️⃣</span>
-                    <span>Add your API keys (OpenAI, Anthropic, Google, etc.)</span>
+                    <span>Attach at least one prompt to your bot</span>
                   </div>
                   <div className="flex items-start">
                     <span className="mr-2">3️⃣</span>
-                    <span>Select default provider for your bot</span>
+                    <span>Configure prompt settings (market analysis, risk level, etc.)</span>
                   </div>
                 </div>
-                <div className="mt-3 p-2 bg-purple-900/30 border border-purple-500/20 rounded text-xs">
-                  💡 Without LLM Provider, bot cannot analyze market or make trading decisions
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-gradient-to-br from-blue-900/30 to-blue-800/30 p-5 rounded-lg border border-blue-500/30">
-              <h4 className="text-lg font-semibold text-white mb-3 flex items-center">
-                <span className="mr-2">🔑</span>
-                API Credentials Setup
-                <span className="ml-2 px-2 py-0.5 text-xs bg-yellow-500 text-black rounded-full">TEST TRIAL</span>
-              </h4>
-              <div className="text-gray-300 space-y-2 text-sm">
-                <p className="text-blue-400 font-medium mb-2">🧪 Required for testing bot trial</p>
-                <div className="space-y-1.5">
-                  <div className="flex items-start">
-                    <span className="mr-2">1️⃣</span>
-                    <span>Go to <a href="/creator/credentials" className="text-blue-400 hover:text-blue-300 underline" target="_blank">API Credentials</a></span>
-                  </div>
-                  <div className="flex items-start">
-                    <span className="mr-2">2️⃣</span>
-                    <span>Add exchange API keys (Bybit, Binance, etc.)</span>
-                  </div>
-                  <div className="flex items-start">
-                    <span className="mr-2">3️⃣</span>
-                    <span>Choose TESTNET for safe testing</span>
-                  </div>
-                  <div className="flex items-start">
-                    <span className="mr-2">4️⃣</span>
-                    <span>Set as default credential</span>
-                  </div>
-                </div>
-                <div className="mt-3 p-2 bg-blue-900/30 border border-blue-500/20 rounded text-xs">
-                  💡 Use TESTNET for risk-free testing with virtual funds
+                <div className="mt-3 p-2 bg-indigo-900/30 border border-indigo-500/20 rounded text-xs flex items-start">
+                  <span className="mr-2">💡</span>
+                  <span>The prompt guides your bot's trading strategy and decision-making process. Without a prompt, the bot cannot operate.</span>
                 </div>
               </div>
             </div>
           </div>
 
+          {/* Pro Plan: Custom subscription dates */}
+          {isPro && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Subscription Start Date
+                </label>
+                <input
+                  type="datetime-local"
+                  value={trialConfig.subscriptionStart}
+                  onChange={(e) => setTrialConfig({ ...trialConfig, subscriptionStart: e.target.value })}
+                  className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Subscription End Date
+                </label>
+                <input
+                  type="datetime-local"
+                  value={trialConfig.subscriptionEnd}
+                  onChange={(e) => setTrialConfig({ ...trialConfig, subscriptionEnd: e.target.value })}
+                  className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+            </div>
+          )}
+
           <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
             <div className="flex items-center space-x-4">
               <button
                 onClick={() => handleStartFreeTrial()}
-                disabled={isStartingTrial}
+                disabled={isStartingTrial || (isPro && (!trialConfig.subscriptionStart || !trialConfig.subscriptionEnd))}
                 className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 disabled:from-gray-600 disabled:to-gray-700 text-white px-6 py-3 rounded-lg font-semibold transition-all duration-200 transform hover:scale-105 disabled:scale-100 disabled:cursor-not-allowed shadow-lg"
               >
                 {isStartingTrial ? (
                   <span className="flex items-center">
                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                    Starting Trial...
+                    {isPro ? 'Starting...' : 'Starting Trial...'}
                   </span>
                 ) : (
-                  '🚀 Start 24h Free Trial'
+                  isPro ? '🚀 Start Trade' : '🚀 Start 24h Free Trial'
                 )}
               </button>
               
@@ -579,7 +628,10 @@ export default function BotDetailPage() {
 
             <div className="text-right">
               <div className="text-xs text-gray-500">
-                Trial starts immediately • No credit card required
+                {isPro 
+                  ? 'Set custom subscription period • Mainnet supported' 
+                  : 'Trial starts immediately • No credit card required'
+                }
               </div>
             </div>
           </div>
@@ -943,6 +995,12 @@ export default function BotDetailPage() {
           networkType={trialConfig.networkType as 'TESTNET' | 'MAINNET'}
         />
       )}
+
+      {/* Upgrade Modal */}
+      <UpgradeModal
+        isOpen={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+      />
     </div>
   )
 }
