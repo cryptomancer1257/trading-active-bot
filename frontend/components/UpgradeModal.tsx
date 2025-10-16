@@ -73,7 +73,7 @@ export default function UpgradeModal({ isOpen, onClose }: UpgradeModalProps) {
 
               {/* Pro Benefits (Compact List) */}
               <div className="bg-gradient-to-br from-purple-50 to-pink-50 border-2 border-purple-200 rounded-lg p-4 mb-4">
-                <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs md:text-sm">
+                <div className="flex flex-col gap-2 text-xs md:text-sm">
                   <div className="flex items-center text-gray-900 font-medium">
                     <span className="mr-2 text-green-500">✓</span>
                     Unlimited bots
@@ -85,10 +85,6 @@ export default function UpgradeModal({ isOpen, onClose }: UpgradeModalProps) {
                   <div className="flex items-center text-gray-900 font-medium">
                     <span className="mr-2 text-green-500">✓</span>
                     Publish to marketplace
-                  </div>
-                  <div className="flex items-center text-gray-900 font-medium">
-                    <span className="mr-2 text-green-500">✓</span>
-                    90% revenue share
                   </div>
                 </div>
               </div>
