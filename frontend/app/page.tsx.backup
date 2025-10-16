@@ -6,7 +6,7 @@ import { CpuChipIcon, ShieldCheckIcon, RocketLaunchIcon, BoltIcon } from '@heroi
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { usePlan } from '@/hooks/usePlan'
-import { useFeatureFlags } from '@/hooks/useFeatureFlags'
+// import { useFeatureFlags } from '@/hooks/useFeatureFlags'
 import PlanBadge from '@/components/PlanBadge'
 import UpgradeModal from '@/components/UpgradeModal'
 
@@ -38,45 +38,25 @@ const features = [
 ]
 
 export default function HomePage() {
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false)
-  const { currentPlan, limits, isPro, isFree } = usePlan()
-  // Temporarily disable feature flags to avoid page crash
-  // const { isPlanPackageEnabled } = useFeatureFlags()
-  const isPlanPackageEnabled = true // Always show plan UI for now
-  
-  // Fetch real-time stats from API
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const { currentPlan, limits, isPro, isFree } = usePlan();
+  const isPlanPackageEnabled = true;
+
   const { data: statsData, isLoading } = useQuery({
     queryKey: ['public-stats'],
     queryFn: async () => {
-      const response = await api.get('/bots/stats')
-      return response.data
+      const response = await api.get('/bots/stats');
+      return response.data;
     },
-    refetchInterval: 30000, // Refresh every 30 seconds
-  })
+    refetchInterval: 30000,
+  });
 
-  // Format stats for display
   const stats = [
-    { 
-      name: 'AI Entities Created', 
-      value: isLoading ? '...' : statsData?.total_bots?.toLocaleString() || '0', 
-      suffix: '+' 
-    },
-    { 
-      name: 'Active Deployments', 
-      value: isLoading ? '...' : statsData?.total_subscriptions?.toLocaleString() || '0', 
-      suffix: '' 
-    },
-    { 
-      name: 'Average Rating', 
-      value: isLoading ? '...' : statsData?.avg_rating || '0', 
-      suffix: '/5 ⭐' 
-    },
-    { 
-      name: 'Neural Architects', 
-      value: isLoading ? '...' : statsData?.total_developers?.toLocaleString() || '∞', 
-      suffix: '' 
-    },
-  ]
+    { name: 'AI Entities Created', value: isLoading ? '...' : statsData?.total_bots?.toLocaleString() || '0', suffix: '+' },
+    { name: 'Active Deployments', value: isLoading ? '...' : statsData?.total_subscriptions?.toLocaleString() || '0', suffix: '' },
+    { name: 'Average Rating', value: isLoading ? '...' : statsData?.avg_rating || '0', suffix: '/5 ⭐' },
+    { name: 'Neural Architects', value: isLoading ? '...' : statsData?.total_developers?.toLocaleString() || '∞', suffix: '' }
+  ];
 
   return (
     <div className="relative">

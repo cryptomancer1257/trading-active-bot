@@ -235,6 +235,77 @@ export default function BotDetailPage() {
     setShowValidationModal(false)
     
     try {
+      // ✅ Check for trading pair conflicts with existing active subscriptions
+      const token = localStorage.getItem('access_token')
+      if (token && user?.id) {
+        try {
+          // Fetch all subscriptions for this bot by this developer
+          const checkResponse = await fetch(`${config.studioBaseUrl}/subscriptions?bot_id=${bot.id}`, {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            }
+          })
+
+          if (checkResponse.ok) {
+            const allSubscriptions = await checkResponse.json()
+            console.log(`🔍 Found ${allSubscriptions.length} total subscriptions for bot ${bot.id}`)
+            
+            // Filter: only active subscriptions that haven't expired yet
+            const now = new Date()
+            const activeSubscriptions = allSubscriptions.filter((sub: any) => {
+              // Check both expires_at and marketplace_subscription_end
+              const endDate = sub.expires_at || sub.marketplace_subscription_end
+              if (!endDate) return false
+              const expireDate = new Date(endDate)
+              const isActive = sub.status === 'ACTIVE' && expireDate > now
+              if (isActive) {
+                console.log(`✅ Active subscription ${sub.id}: ${sub.trading_pair} on ${sub.network_type}, expires: ${endDate}`)
+              }
+              return isActive
+            })
+            
+            console.log(`🎯 Found ${activeSubscriptions.length} active non-expired subscriptions`)
+            
+            // Collect all trading pairs from current config
+            const requestedPairs = [trialConfig.tradingPair, ...trialConfig.secondaryTradingPairs]
+            
+            // Check if any requested pair is already in use (same exchange + network)
+            const conflictingPairs: string[] = []
+            for (const sub of activeSubscriptions) {
+              // Check if same network type
+              const sameNetwork = sub.network_type === trialConfig.networkType || 
+                                 (sub.network_type === 'TESTNET' && trialConfig.networkType === 'TESTNET') ||
+                                 (sub.network_type === 'MAINNET' && trialConfig.networkType === 'MAINNET')
+              
+              if (sameNetwork) {
+                const existingPairs = [sub.trading_pair, ...(sub.secondary_trading_pairs || [])]
+                for (const pair of requestedPairs) {
+                  if (existingPairs.includes(pair)) {
+                    conflictingPairs.push(`${pair} (${sub.network_type})`)
+                  }
+                }
+              }
+            }
+
+            if (conflictingPairs.length > 0) {
+              const uniqueConflicts = Array.from(new Set(conflictingPairs))
+              toast.error(
+                `⚠️ Trading pair conflict!\n\n` +
+                `The following trading pair(s) are already in active subscriptions:\n` +
+                `${uniqueConflicts.join(', ')}\n\n` +
+                `Please choose different trading pairs or stop the existing subscription first.`
+              )
+              setIsStartingTrial(false)
+              return
+            }
+          }
+        } catch (error) {
+          console.error('Error checking trading pair conflicts:', error)
+          // Continue anyway if check fails
+        }
+      }
+
       // Calculate start and end dates
       let startDate: Date
       let endDate: Date
