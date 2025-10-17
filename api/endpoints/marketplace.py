@@ -361,11 +361,11 @@ async def create_marketplace_subscription_v2(
             sell_order_value=100.0
         )
         
-        risk_config = request.risk_config or schemas.RiskConfig(
+        risk_config = bot.risk_config or schemas.RiskConfig(
             stop_loss_percent=2.0,
             take_profit_percent=4.0,
             max_position_size=100.0
-        )
+        ).dict()
         
         # Create marketplace subscription
         subscription = models.Subscription(
@@ -382,14 +382,17 @@ async def create_marketplace_subscription_v2(
             is_testnet=request.is_testnet,
             network_type=request.trading_network,
             trading_pair=request.trading_pair,
+            exchange_type=bot.exchange_type,
             secondary_trading_pairs=request.secondary_trading_pairs or [],  # Multi-pair trading
             payment_method=request.payment_method,
             paypal_payment_id=request.paypal_payment_id,
-
+            timeframe=bot.timeframe,
+            timeframes=bot.timeframes,
+            trade_mode=trade_mode,
 
             # configs
             execution_config=execution_config.dict(),
-            risk_config=risk_config.dict(),
+            risk_config=risk_config,
             
             # Timing - both are now required
             started_at=request.subscription_start,
@@ -659,6 +662,9 @@ async def create_marketplace_subscription_v2(
                 if bot.bot_type in [models.BotType.FUTURES, models.BotType.SPOT]:
                     run_bot_logic.apply_async(args=[subscription.id], countdown=10)
                     logger.info(f"✅ Triggered run_bot_logic for marketplace v3 {bot.bot_type.value} bot (subscription {subscription.id})")
+                elif bot.bot_type == models.BotType.SIGNALS_FUTURES:
+                    run_bot_logic.apply_async(args=[subscription.id], countdown=10)
+                    logger.info(f"✅ Triggered run_bot_logic for marketplace v3 SIGNALS_FUTURES bot (subscription {subscription.id})")
                 elif bot.bot_type == models.BotType.FUTURES_RPA:
                     run_bot_rpa_logic.apply_async(args=[subscription.id], countdown=10)
                     logger.info(f"✅ Triggered run_bot_rpa_logic for marketplace v3 RPA bot (subscription {subscription.id})")

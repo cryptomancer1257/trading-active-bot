@@ -254,6 +254,8 @@ def create_bot(db: Session, bot: schemas.BotCreate, developer_id: int, status: s
             'universal_futures_bot.py': 'bot_files/universal_futures_bot.py',
             'universal_spot_bot': 'bot_files/universal_spot_bot.py',
             'universal_spot_bot.py': 'bot_files/universal_spot_bot.py',
+            'universal_futures_signals_bot': 'bot_files/universal_futures_signals_bot.py',
+            'universal_futures_signals_bot.py': 'bot_files/universal_futures_signals_bot.py',
             'binance_futures_bot': 'bot_files/binance_futures_bot.py',
             'binance_futures_bot.py': 'bot_files/binance_futures_bot.py',
             'binance_futures_rpa_bot': 'bot_files/binance_futures_rpa_bot.py',
@@ -262,10 +264,36 @@ def create_bot(db: Session, bot: schemas.BotCreate, developer_id: int, status: s
             'binance_signals_bot.py': 'bot_files/binance_signals_bot.py',
         }
         
+        # Template-specific bot_type mapping
+        TEMPLATE_BOT_TYPE_MAPPING = {
+            # Universal templates (multi-exchange)
+            'universal_futures_signals_bot': 'SIGNALS_FUTURES',
+            'universal_futures_signals_bot.py': 'SIGNALS_FUTURES',
+            'universal_futures_bot': 'FUTURES',
+            'universal_futures_bot.py': 'FUTURES',
+            'universal_spot_bot': 'SPOT',
+            'universal_spot_bot.py': 'SPOT',
+            
+            # Binance-specific templates
+            'binance_futures_bot': 'FUTURES',
+            'binance_futures_bot.py': 'FUTURES',
+            'binance_futures_rpa_bot': 'FUTURES_RPA',
+            'binance_futures_rpa_bot.py': 'FUTURES_RPA',
+            'binance_signals_bot': 'PASSIVE',  # Legacy signals bot
+            'binance_signals_bot.py': 'PASSIVE',
+        }
+        
         code_path = TEMPLATE_FILE_MAPPING.get(template)
         if code_path:
             filtered_bot_dict['code_path'] = code_path
             logger.info(f"✅ Auto-set code_path for template '{template}' → {code_path}")
+            
+            # Force override bot_type based on template (ignore frontend value)
+            bot_type = TEMPLATE_BOT_TYPE_MAPPING.get(template)
+            if bot_type:
+                # Force override - template determines bot_type
+                filtered_bot_dict['bot_type'] = bot_type
+                logger.info(f"✅ Force override bot_type for template '{template}' → {bot_type}")
     
     db_bot = models.Bot(
         **filtered_bot_dict,

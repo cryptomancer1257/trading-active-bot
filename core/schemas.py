@@ -25,6 +25,7 @@ class BotType(str, Enum):
     FUTURES = "FUTURES"     # Futures Trading
     FUTURES_RPA = "FUTURES_RPA"  # Futures Trading with RPA
     FUTURES_API = "FUTURES_API"  # temp
+    SIGNALS_FUTURES = "SIGNALS_FUTURES"  # Signals-only futures bot
     BACKTEST = "BACKTEST"   # Backtesting/Signals bot
 
 class BotMode(str, Enum):
