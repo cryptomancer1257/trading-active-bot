@@ -47,13 +47,13 @@ export default function PromptsPage() {
   }
 
   const handleDelete = async (id: number) => {
-    if (!confirm('Are you sure you want to delete this prompt template?')) return
+    if (!confirm('Are you sure you want to delete this strategy template?')) return
 
     try {
       await deleteMutation.mutateAsync(id)
-      toast.success('Prompt template deleted successfully')
+      toast.success('Strategy template deleted successfully')
     } catch (error: any) {
-      toast.error(error.response?.data?.detail || 'Failed to delete prompt template')
+      toast.error(error.response?.data?.detail || 'Failed to delete strategy template')
     }
   }
 
@@ -67,11 +67,11 @@ export default function PromptsPage() {
               <div className="flex items-center gap-3 mb-4">
                 <DocumentTextIcon className="h-8 w-8 text-quantum-400" />
                 <h1 className="text-4xl font-bold bg-gradient-to-r from-quantum-400 to-emerald-400 bg-clip-text text-transparent">
-                  My Prompts
+                  My Strategies
                 </h1>
               </div>
               <p className="text-gray-300 text-lg">
-                Manage your AI prompt templates for trading analysis and bot strategies
+                Manage your AI strategy templates for trading analysis and bot strategies
               </p>
             </div>
             <button
@@ -79,12 +79,12 @@ export default function PromptsPage() {
               className="btn-quantum flex items-center gap-2"
             >
               <PlusIcon className="h-5 w-5" />
-              Create New Prompt
+              Create New Strategy
             </button>
           </div>
         </div>
 
-        {/* Prompts Grid */}
+        {/* Strategies Grid */}
         {myPrompts && myPrompts.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {myPrompts.map((prompt) => (
@@ -112,7 +112,7 @@ export default function PromptsPage() {
                     </pre>
                   </div>
                   <div className="mt-2 text-xs text-gray-500">
-                    {prompt.content && prompt.content.length > 200 ? `${prompt.content.length} characters` : 'Short prompt'}
+                    {prompt.content && prompt.content.length > 200 ? `${prompt.content.length} characters` : 'Short strategy'}
                   </div>
                 </div>
 
@@ -150,15 +150,15 @@ export default function PromptsPage() {
         ) : (
           <div className="card-quantum p-12 text-center">
             <DocumentTextIcon className="h-16 w-16 text-gray-500 mx-auto mb-4" />
-            <h3 className="text-xl font-semibold text-gray-300 mb-2">No Prompts Found</h3>
+            <h3 className="text-xl font-semibold text-gray-300 mb-2">No Strategies Found</h3>
             <p className="text-gray-500 mb-6">
-              You haven't created any prompt templates yet.
+              You haven't created any strategy templates yet.
             </p>
             <button
               onClick={handleCreate}
               className="btn-quantum"
             >
-              Create Your First Prompt
+              Create Your First Strategy
             </button>
           </div>
         )}
@@ -175,7 +175,7 @@ export default function PromptsPage() {
   )
 }
 
-// View Prompt Modal Component
+// View Strategy Modal Component
 function ViewPromptModal({ prompt, onClose }: {
   prompt: PromptTemplate
   onClose: () => void
@@ -220,7 +220,7 @@ function ViewPromptModal({ prompt, onClose }: {
               </div>
             </div>
             <div className="mt-2 text-xs text-gray-400">
-              📝 <strong>Format:</strong> This prompt supports Markdown formatting for better readability
+              📝 <strong>Format:</strong> This strategy supports Markdown formatting for better readability
             </div>
           </div>
 

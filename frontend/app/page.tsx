@@ -34,15 +34,25 @@ const features = [
     description: 'Command center interface for monitoring and controlling your AI army. Override decisions in real-time when needed.',
     icon: BoltIcon,
     gradient: 'from-yellow-500 to-orange-600',
-  },
-]
+  }
+];
 
 export default function HomePage() {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const { currentPlan, limits, isPro, isFree } = usePlan()
-  // Temporarily disable feature flags to avoid page crash
-  // const { isPlanPackageEnabled } = useFeatureFlags()
-  const isPlanPackageEnabled = true // Always show plan UI for now
+  // Check if plan package is enabled via feature flags
+  const { isPlanPackageEnabled, planPackageStatus, isLoadingPlanPackage, planPackageError } = useFeatureFlags()
+  
+  // Debug logging
+  console.log('Feature Flag Debug:', {
+    isPlanPackageEnabled,
+    planPackageStatus,
+    isLoadingPlanPackage,
+    planPackageError
+  })
+  
+  // Use feature flag to control plan UI visibility
+  const shouldShowPlanUI = isPlanPackageEnabled
   
   // Fetch real-time stats from API
   const { data: statsData, isLoading } = useQuery({
@@ -75,8 +85,8 @@ export default function HomePage() {
       name: 'Neural Architects', 
       value: isLoading ? '...' : statsData?.total_developers?.toLocaleString() || '∞', 
       suffix: '' 
-    },
-  ]
+    }
+  ];
 
   return (
     <div className="relative">
@@ -124,7 +134,7 @@ export default function HomePage() {
       </div>
 
       {/* Plan Status Card - Only show if user is logged in AND plan package is enabled */}
-      {currentPlan && limits && isPlanPackageEnabled && (
+      {currentPlan && limits && shouldShowPlanUI && (
         <div className="py-8 bg-dark-800/30">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className={`relative rounded-xl overflow-hidden ${
@@ -251,7 +261,7 @@ export default function HomePage() {
       </div>
 
       {/* Plan Comparison Table - Only show if plan package is enabled */}
-      {isPlanPackageEnabled && (
+      {shouldShowPlanUI && (
       <div className="py-20 bg-gradient-to-b from-dark-900 to-dark-800">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           {/* Section Header */}
@@ -409,8 +419,7 @@ export default function HomePage() {
           </div>
         </div>
       </div>
-
-      {/* Features Section */}
+      )}
       <div className="py-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
@@ -442,7 +451,6 @@ export default function HomePage() {
           </div>
         </div>
       </div>
-      )}
 
       {/* CTA Section */}
       <div className="py-20 bg-gradient-to-r from-quantum-900/30 via-dark-800/50 to-cyber-900/30 backdrop-blur-sm">

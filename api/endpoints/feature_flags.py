@@ -137,14 +137,17 @@ async def update_feature_flag(
 
 @router.post("/disable-plan-package", response_model=FeatureFlagResponse)
 async def disable_plan_package(
-    disabled_from: datetime,
-    disabled_until: datetime,
-    reason: str,
+    request_data: dict,
     db: Session = Depends(get_db),
     admin_user: models.User = Depends(require_admin)
 ):
     """Disable plan package for specific date range (Admin only)"""
     try:
+        # Extract parameters from request data
+        disabled_from = datetime.fromisoformat(request_data.get('disabled_from').replace('Z', '+00:00'))
+        disabled_until = datetime.fromisoformat(request_data.get('disabled_until').replace('Z', '+00:00'))
+        reason = request_data.get('reason')
+        
         if disabled_from >= disabled_until:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -240,8 +243,13 @@ async def get_plan_package_status(db: Session = Depends(get_db)):
         current_time = datetime.utcnow()
         
         # Check if currently in disabled period
-        if (flag.disabled_from and flag.disabled_until and 
-            flag.disabled_from <= current_time <= flag.disabled_until):
+        is_temporarily_disabled = (
+            not flag.is_enabled and
+            flag.disabled_from and flag.disabled_until and
+            flag.disabled_from <= current_time <= flag.disabled_until
+        )
+        
+        if is_temporarily_disabled:
             return {
                 "is_enabled": False,
                 "reason": flag.reason,

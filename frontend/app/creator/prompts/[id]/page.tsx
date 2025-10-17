@@ -54,13 +54,13 @@ export default function PromptDetailPage({ params }: PromptDetailPageProps) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
         <div className="text-center">
-          <h1 className="text-2xl font-bold text-white mb-4">Prompt Not Found</h1>
-          <p className="text-gray-400 mb-6">The prompt you're looking for doesn't exist or you don't have permission to view it.</p>
+          <h1 className="text-2xl font-bold text-white mb-4">Strategy Not Found</h1>
+          <p className="text-gray-400 mb-6">The strategy you're looking for doesn't exist or you don't have permission to view it.</p>
           <button
             onClick={() => router.push('/creator/prompts')}
             className="btn btn-primary"
           >
-            Back to Prompts
+            Back to Strategies
           </button>
         </div>
       </div>
@@ -77,11 +77,11 @@ export default function PromptDetailPage({ params }: PromptDetailPageProps) {
     setIsDeleting(true)
     try {
       await deletePrompt.mutateAsync(prompt.id)
-      toast.success('Prompt deleted successfully!')
+      toast.success('Strategy deleted successfully!')
       router.push('/creator/prompts')
     } catch (error) {
-      console.error('Error deleting prompt:', error)
-      toast.error('Failed to delete prompt. Please try again.')
+      console.error('Error deleting strategy:', error)
+      toast.error('Failed to delete strategy. Please try again.')
     } finally {
       setIsDeleting(false)
       setShowDeleteModal(false)
@@ -112,7 +112,7 @@ export default function PromptDetailPage({ params }: PromptDetailPageProps) {
               className="flex items-center text-gray-400 hover:text-white transition-colors"
             >
               <ArrowLeftIcon className="h-5 w-5 mr-2" />
-              Back to Prompts
+              Back to Strategies
             </button>
             
             <div className="flex items-center space-x-3">
