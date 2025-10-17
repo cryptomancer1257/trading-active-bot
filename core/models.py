@@ -68,6 +68,11 @@ class PlanAction(enum.Enum):
     RENEW = "renew"
     CANCEL = "cancel"
 
+class FeatureFlagType(enum.Enum):
+    PLAN_PACKAGE = "PLAN_PACKAGE"
+    MARKETPLACE_PUBLISHING = "MARKETPLACE_PUBLISHING"
+    BOT_CREATION = "BOT_CREATION"
+
 class ExchangeType(enum.Enum):
     MULTI = "MULTI"  # Multi-exchange support (Universal Bot)
     BINANCE = "BINANCE"
@@ -1266,4 +1271,27 @@ class PlanHistory(Base):
     __table_args__ = (
         Index('idx_plan_history_user_id', 'user_id'),
         Index('idx_plan_history_created_at', 'created_at'),
+    )
+
+class FeatureFlag(Base):
+    __tablename__ = "feature_flags"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    feature_type = Column(Enum(FeatureFlagType), nullable=False, unique=True)
+    is_enabled = Column(Boolean, default=True, nullable=False)
+    disabled_from = Column(DateTime, nullable=True)  # Start date for disabling
+    disabled_until = Column(DateTime, nullable=True)  # End date for disabling
+    reason = Column(Text, nullable=True)  # Reason for disabling
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    
+    # Relationships
+    creator = relationship("User", foreign_keys=[created_by])
+    
+    # Indexes
+    __table_args__ = (
+        Index('idx_feature_flags_type', 'feature_type'),
+        Index('idx_feature_flags_enabled', 'is_enabled'),
+        Index('idx_feature_flags_dates', 'disabled_from', 'disabled_until'),
     )

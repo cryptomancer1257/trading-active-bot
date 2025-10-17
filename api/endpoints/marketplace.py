@@ -298,6 +298,61 @@ async def create_marketplace_subscription_v2(
                 plan_checker.check_user_subscription_limit(user, db)
                 logger.info(f"User {user_id} has valid subscription limit for TRIAL payment method")
 
+        # ✅ Check for trading pair conflicts with existing active subscriptions
+        # Apply to both Studio users (user_id) and Marketplace users (user_principal_id)
+        if request.trading_pair and (user_id or request.user_principal_id):
+            from datetime import datetime
+            
+            # Get all active subscriptions for this user/principal and bot
+            query = db.query(models.Subscription).filter(
+                models.Subscription.bot_id == request.bot_id,
+                models.Subscription.status == models.SubscriptionStatus.ACTIVE
+            )
+            
+            if user_id:
+                # Studio user: filter by user_id
+                query = query.filter(models.Subscription.user_id == user_id)
+                logger.info(f"Checking trading pair conflicts for Studio user {user_id}")
+            else:
+                # Marketplace user: filter by user_principal_id
+                query = query.filter(models.Subscription.user_principal_id == request.user_principal_id)
+                logger.info(f"Checking trading pair conflicts for Marketplace user {request.user_principal_id}")
+            
+            existing_subscriptions = query.all()
+            
+            # Filter only non-expired subscriptions
+            now = datetime.now()
+            active_subscriptions = []
+            for sub in existing_subscriptions:
+                end_date = sub.expires_at or sub.marketplace_subscription_end
+                if end_date and end_date > now:
+                    active_subscriptions.append(sub)
+            
+            # Check for trading pair conflicts (same network type)
+            requested_pairs = [request.trading_pair] + (request.secondary_trading_pairs or [])
+            conflicting_pairs = []
+            
+            for sub in active_subscriptions:
+                # Check if same network type
+                same_network = (
+                    (sub.network_type == models.NetworkType.TESTNET and request.is_testnet) or
+                    (sub.network_type == models.NetworkType.MAINNET and not request.is_testnet)
+                )
+                
+                if same_network:
+                    existing_pairs = [sub.trading_pair] + (sub.secondary_trading_pairs or [])
+                    for pair in requested_pairs:
+                        if pair in existing_pairs:
+                            conflicting_pairs.append(f"{pair} ({sub.network_type.value})")
+            
+            if conflicting_pairs:
+                unique_conflicts = list(set(conflicting_pairs))
+                logger.warning(f"Trading pair conflict for user {user_id}, bot {request.bot_id}: {unique_conflicts}")
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Trading pair conflict! The following trading pair(s) are already in active subscriptions: {', '.join(unique_conflicts)}. Please choose different trading pairs or stop the existing subscription first."
+                )
+
         # Create default configs if not provided
         execution_config = request.execution_config or schemas.ExecutionConfig(
             buy_order_type="PERCENTAGE",
@@ -491,6 +546,61 @@ async def create_marketplace_subscription_v2(
                 from core.plan_checker import plan_checker
                 plan_checker.check_user_subscription_limit(user, db)
                 logger.info(f"User {user_id} has valid subscription limit for TRIAL payment method")
+
+        # ✅ Check for trading pair conflicts with existing active subscriptions
+        # Apply to both Studio users (user_id) and Marketplace users (user_principal_id)
+        if request.trading_pair and (user_id or request.user_principal_id):
+            from datetime import datetime
+            
+            # Get all active subscriptions for this user/principal and bot
+            query = db.query(models.Subscription).filter(
+                models.Subscription.bot_id == request.bot_id,
+                models.Subscription.status == models.SubscriptionStatus.ACTIVE
+            )
+            
+            if user_id:
+                # Studio user: filter by user_id
+                query = query.filter(models.Subscription.user_id == user_id)
+                logger.info(f"Checking trading pair conflicts for Studio user {user_id}")
+            else:
+                # Marketplace user: filter by user_principal_id
+                query = query.filter(models.Subscription.user_principal_id == request.user_principal_id)
+                logger.info(f"Checking trading pair conflicts for Marketplace user {request.user_principal_id}")
+            
+            existing_subscriptions = query.all()
+            
+            # Filter only non-expired subscriptions
+            now = datetime.now()
+            active_subscriptions = []
+            for sub in existing_subscriptions:
+                end_date = sub.expires_at or sub.marketplace_subscription_end
+                if end_date and end_date > now:
+                    active_subscriptions.append(sub)
+            
+            # Check for trading pair conflicts (same network type)
+            requested_pairs = [request.trading_pair] + (request.secondary_trading_pairs or [])
+            conflicting_pairs = []
+            
+            for sub in active_subscriptions:
+                # Check if same network type
+                same_network = (
+                    (sub.network_type == models.NetworkType.TESTNET and request.is_testnet) or
+                    (sub.network_type == models.NetworkType.MAINNET and not request.is_testnet)
+                )
+                
+                if same_network:
+                    existing_pairs = [sub.trading_pair] + (sub.secondary_trading_pairs or [])
+                    for pair in requested_pairs:
+                        if pair in existing_pairs:
+                            conflicting_pairs.append(f"{pair} ({sub.network_type.value})")
+            
+            if conflicting_pairs:
+                unique_conflicts = list(set(conflicting_pairs))
+                logger.warning(f"Trading pair conflict for user {user_id}, bot {request.bot_id}: {unique_conflicts}")
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Trading pair conflict! The following trading pair(s) are already in active subscriptions: {', '.join(unique_conflicts)}. Please choose different trading pairs or stop the existing subscription first."
+                )
                 
         if bot.bot_mode == "ACTIVE" and bot.bot_type == "FUTURES":
             # Create default configs if not provided
@@ -985,6 +1095,20 @@ def create_publish_token(
         'iss': 'studio',
         'exp': int(time.time()) + ttl_seconds,
         'nonce': os.urandom(8).hex(),
+        # 🆕 Add full bot data to token
+        'bot_data': {
+            'name': bot.name,
+            'description': bot.description,
+            'image_url': bot.image_url,
+            'bot_type': bot.bot_type,
+            'timeframe': bot.timeframe,
+            'timeframes': bot.timeframes or [],
+            'exchange_type': bot.exchange_type.value if bot.exchange_type else None,
+            'trading_pair': bot.trading_pair,
+            'trading_pairs': bot.trading_pairs or [],
+            'strategy_config': bot.strategy_config or {},
+            'risk_config': bot.risk_config or {},
+        }
     }
     token = jwt.encode(payload, secret, algorithm='HS256')
 
@@ -1001,6 +1125,7 @@ class RegisterByTokenRequest(BaseModel):
     marketplace_name: Optional[str] = None
     marketplace_description: Optional[str] = None
     price_on_marketplace: Optional[Decimal] = None
+
 
 
 @router.post("/register-by-token", response_model=schemas.BotMarketplaceRegistrationResponse, status_code=status.HTTP_201_CREATED)
@@ -1028,6 +1153,26 @@ def register_by_token(body: RegisterByTokenRequest, db: Session = Depends(get_db
     if not bot or bot.developer_id != owner_id:
         raise HTTPException(status_code=404, detail='Bot not found or not owned by token owner')
 
+    # 🆕 Get bot data from token and update bot record
+    bot_data = payload.get('bot_data', {})
+    if bot_data:
+        # Update bot with full data from Studio
+        bot.name = bot_data.get('name', bot.name)
+        bot.description = bot_data.get('description', bot.description)
+        bot.image_url = bot_data.get('image_url', bot.image_url)
+        bot.bot_type = bot_data.get('bot_type', bot.bot_type)
+        bot.timeframe = bot_data.get('timeframe', bot.timeframe)
+        bot.timeframes = bot_data.get('timeframes', bot.timeframes or [])
+        if bot_data.get('exchange_type'):
+            bot.exchange_type = models.ExchangeType(bot_data['exchange_type'])
+        bot.trading_pair = bot_data.get('trading_pair', bot.trading_pair)
+        bot.trading_pairs = bot_data.get('trading_pairs', bot.trading_pairs or [])
+        bot.strategy_config = bot_data.get('strategy_config', bot.strategy_config or {})
+        bot.risk_config = bot_data.get('risk_config', bot.risk_config or {})
+        
+        db.commit()
+        db.refresh(bot)
+
     reg_req = schemas.BotMarketplaceRegistrationRequest(
         user_principal_id=body.user_principal_id,
         bot_id=bot_id,
@@ -1054,6 +1199,16 @@ def register_by_token(body: RegisterByTokenRequest, db: Session = Depends(get_db
             "registered_at": registration_record.registered_at.isoformat() if registration_record.registered_at else None,
             "status": registration_record.status.value if hasattr(registration_record.status, 'value') else str(registration_record.status),
             "api_key": registration_record.api_key,
+            # 🆕 Show synced bot data
+            "synced_bot_data": {
+                "name": bot.name,
+                "bot_type": bot.bot_type,
+                "exchange_type": bot.exchange_type.value if bot.exchange_type else None,
+                "trading_pairs": bot.trading_pairs,
+                "timeframes": bot.timeframes,
+                "has_strategy_config": bool(bot.strategy_config),
+                "has_risk_config": bool(bot.risk_config),
+            } if bot_data else None,
         },
     )
 
@@ -1103,9 +1258,10 @@ def bot_by_token(token: str, db: Session = Depends(get_db)):
         'trading_type': trading_type,
         'timeframes': timeframes,
         'strategies': [],
-        'supported_exchanges': ['Binance'],
-        'supported_pairs': ['BTC/USDT'],
+        'supported_exchanges': [bot.exchange_type.value] if bot.exchange_type else ['BINANCE'],
+        'supported_pairs': bot.trading_pairs or [bot.trading_pair] if bot.trading_pair else ['BTC/USDT'],
         'risk_level': 'medium',
+        'bot_type': bot.bot_type,  # 🆕 Add bot_type (spot, futures, signals)
         'tags': tags,
         'performance': { 'roi': 15.0, 'winRate': 75, 'maxDrawdown': 10, 'sharpeRatio': 1.5 },
         'images': [],

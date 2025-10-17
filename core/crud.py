@@ -1334,13 +1334,16 @@ def get_subscription_with_bot(db: Session, subscription_id: int):
 def get_user_subscriptions(db: Session, user_id: int):
     return db.query(models.Subscription).filter(models.Subscription.user_id == user_id).all()
 
-def get_user_subscriptions_paginated(db: Session, user_id: int, skip: int = 0, limit: int = 50, status_filter: Optional[schemas.SubscriptionStatus] = None):
+def get_user_subscriptions_paginated(db: Session, user_id: int, skip: int = 0, limit: int = 50, status_filter: Optional[schemas.SubscriptionStatus] = None, bot_id: Optional[int] = None):
     query = db.query(models.Subscription).options(
         joinedload(models.Subscription.bot)
     ).filter(models.Subscription.user_id == user_id)
     
     if status_filter:
         query = query.filter(models.Subscription.status == status_filter)
+    
+    if bot_id:
+        query = query.filter(models.Subscription.bot_id == bot_id)
     
     total = query.count()
     subscriptions = query.offset(skip).limit(limit).all()

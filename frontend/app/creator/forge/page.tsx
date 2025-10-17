@@ -22,6 +22,7 @@ import toast from 'react-hot-toast'
 import { useCreateBot } from '@/hooks/useBots'
 import { useDefaultCredentials, useCredentials } from '@/hooks/useCredentials'
 import { usePlan } from '@/hooks/usePlan'
+import { useFeatureFlags } from '@/hooks/useFeatureFlags'
 import config from '@/lib/config'
 import BotPromptsTab from '@/components/BotPromptsTab'
 import PreTrialValidationModal from '@/components/PreTrialValidationModal'
@@ -216,6 +217,9 @@ export default function ForgePage() {
   // Plan limits
   const { currentPlan, limits, isLoadingPlan } = usePlan()
   const isPro = currentPlan?.plan_name === 'pro'
+  
+  // Feature flags
+  const { isPlanPackageEnabled, isLoadingPlanPackage } = useFeatureFlags()
 
   // Set default dates when Pro plan loads
   useEffect(() => {
@@ -461,8 +465,8 @@ export default function ForgePage() {
         return
       }
       
-      // Check plan limits before creating bot
-      if (limits && !limits.usage.can_create_bot) {
+      // Check plan limits before creating bot (only if plan package is enabled)
+      if (isPlanPackageEnabled && limits && !limits.usage.can_create_bot) {
         toast.error('🚫 Entity creation limit reached!')
         setShowUpgradeModal(true)
         return
@@ -836,6 +840,70 @@ export default function ForgePage() {
     setShowValidationModal(false)
     
     try {
+      // ✅ Check for trading pair conflicts with existing active subscriptions
+      const token = localStorage.getItem('access_token')
+      if (token && user?.id) {
+        try {
+          // Fetch all subscriptions for this bot by this developer
+          const checkResponse = await fetch(`${config.studioBaseUrl}/subscriptions?bot_id=${createdBotId}`, {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            }
+          })
+
+          if (checkResponse.ok) {
+            const allSubscriptions = await checkResponse.json()
+            
+            // Filter: only active subscriptions that haven't expired yet
+            const now = new Date()
+            const activeSubscriptions = allSubscriptions.filter((sub: any) => {
+              // Check both expires_at and marketplace_subscription_end
+              const endDate = sub.expires_at || sub.marketplace_subscription_end
+              if (!endDate) return false
+              const expireDate = new Date(endDate)
+              return sub.status === 'ACTIVE' && expireDate > now
+            })
+            
+            // Collect all trading pairs from current config
+            const requestedPairs = [trialConfig.tradingPair, ...trialConfig.secondaryTradingPairs]
+            
+            // Check if any requested pair is already in use (same exchange + network)
+            const conflictingPairs: string[] = []
+            for (const sub of activeSubscriptions) {
+              // Check if same network type
+              const sameNetwork = sub.network_type === trialConfig.networkType || 
+                                 (sub.network_type === 'TESTNET' && trialConfig.networkType === 'TESTNET') ||
+                                 (sub.network_type === 'MAINNET' && trialConfig.networkType === 'MAINNET')
+              
+              if (sameNetwork) {
+                const existingPairs = [sub.trading_pair, ...(sub.secondary_trading_pairs || [])]
+                for (const pair of requestedPairs) {
+                  if (existingPairs.includes(pair)) {
+                    conflictingPairs.push(`${pair} (${sub.network_type})`)
+                  }
+                }
+              }
+            }
+
+            if (conflictingPairs.length > 0) {
+              const uniqueConflicts = Array.from(new Set(conflictingPairs))
+              toast.error(
+                `⚠️ Trading pair conflict!\n\n` +
+                `The following trading pair(s) are already in active subscriptions:\n` +
+                `${uniqueConflicts.join(', ')}\n\n` +
+                `Please choose different trading pairs or stop the existing subscription first.`
+              )
+              setIsStartingTrial(false)
+              return
+            }
+          }
+        } catch (error) {
+          console.error('Error checking trading pair conflicts:', error)
+          // Continue anyway if check fails
+        }
+      }
+
       // Calculate start and end dates
       let startDate: Date
       let endDate: Date
@@ -1765,21 +1833,21 @@ export default function ForgePage() {
           </div>
         )}
 
-        {/* Step 4: Attach Prompts & Backtest */}
+        {/* Step 4: Attach Strategies & Backtest */}
         {step === 4 && (
           <div className="space-y-8">
-            {/* Attach Prompts Section - FIRST */}
+            {/* Attach Strategies Section - FIRST */}
             {createdBotId && (
               <div className="bg-gradient-to-r from-purple-900/30 to-indigo-900/30 p-6 rounded-lg border border-purple-700/50">
                 <div className="flex items-center justify-between mb-4">
                   <h4 className="text-2xl font-bold text-white flex items-center">
-                    🎯 Attach Prompt
+                    🎯 Attach Strategy
                     <span className="ml-2 px-2 py-1 bg-red-500/20 text-red-400 text-xs rounded-full">REQUIRED</span>
                   </h4>
                 </div>
                 <p className="text-sm text-gray-300 mb-4">
-                  Enhance your bot's decision-making by attaching custom prompt templates. 
-                  Prompts guide your bot's AI analysis and trading strategies.
+                  Enhance your bot's decision-making by attaching custom strategy templates. 
+                  Strategies guide your bot's AI analysis and trading strategies.
                 </p>
                 
                 {/* Embedded BotPromptsTab Component */}
@@ -1983,16 +2051,16 @@ export default function ForgePage() {
                 </div>
               </div>
 
-              {/* Prompt Setup Section */}
+              {/* Strategy Setup Section */}
               <div className="mb-6">
                 <div className="bg-gradient-to-br from-indigo-900/30 to-purple-800/30 p-5 rounded-lg border border-indigo-500/30">
                   <h4 className="text-lg font-semibold text-white mb-3 flex items-center">
                     <span className="mr-2">💬</span>
-                    Bot Prompt Setup
+                    Bot Strategy Setup
                     <span className="ml-2 px-2 py-0.5 text-xs bg-red-500 text-white rounded-full">REQUIRED</span>
                   </h4>
                   <div className="text-gray-300 space-y-2 text-sm">
-                    <p className="text-yellow-400 font-medium mb-2">⚠️ Bot requires a prompt to analyze market and make decisions!</p>
+                    <p className="text-yellow-400 font-medium mb-2">⚠️ Bot requires a strategy to analyze market and make decisions!</p>
                     <div className="space-y-1.5">
                       <div className="flex items-start">
                         <span className="mr-2">1️⃣</span>
@@ -2000,16 +2068,16 @@ export default function ForgePage() {
                       </div>
                       <div className="flex items-start">
                         <span className="mr-2">2️⃣</span>
-                        <span>Click on <strong className="text-indigo-400">"Prompt Management"</strong> tab</span>
+                        <span>Click on <strong className="text-indigo-400">"Strategy Management"</strong> tab</span>
                       </div>
                       <div className="flex items-start">
                         <span className="mr-2">3️⃣</span>
-                        <span>Attach at least one prompt to configure trading strategy</span>
+                        <span>Attach at least one strategy to configure trading strategy</span>
                       </div>
                     </div>
                     <div className="mt-3 p-2 bg-indigo-900/30 border border-indigo-500/20 rounded text-xs flex items-start">
                       <span className="mr-2">💡</span>
-                      <span>The prompt guides your bot's trading strategy and decision-making process. Without a prompt, the bot cannot operate.</span>
+                      <span>The strategy guides your bot's trading strategy and decision-making process. Without a strategy, the bot cannot operate.</span>
                     </div>
                   </div>
                 </div>

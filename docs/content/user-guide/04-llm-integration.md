@@ -1,6 +1,6 @@
 # 🤖 LLM Integration Guide
 
-Add AI intelligence to your trading bots with LLM (Large Language Model) integration.
+Add AI intelligence to your trading bots with LLM (Large Language Model) integration. Learn how to set up, configure, and use AI providers in QuantumForge Studio.
 
 ## 📋 Table of Contents
 

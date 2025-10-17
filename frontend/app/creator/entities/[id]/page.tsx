@@ -79,7 +79,7 @@ interface BotLog {
   signal_data?: any
 }
 
-type TabType = 'overview' | 'prompts' | 'risk-management' | 'settings' | 'analytics' | 'subscriptions'
+type TabType = 'overview' | 'strategies' | 'risk-management' | 'settings' | 'analytics' | 'subscriptions'
 
 export default function BotDetailPage() {
   const router = useRouter()
@@ -235,6 +235,77 @@ export default function BotDetailPage() {
     setShowValidationModal(false)
     
     try {
+      // ✅ Check for trading pair conflicts with existing active subscriptions
+      const token = localStorage.getItem('access_token')
+      if (token && user?.id) {
+        try {
+          // Fetch all subscriptions for this bot by this developer
+          const checkResponse = await fetch(`${config.studioBaseUrl}/subscriptions?bot_id=${bot.id}`, {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            }
+          })
+
+          if (checkResponse.ok) {
+            const allSubscriptions = await checkResponse.json()
+            console.log(`🔍 Found ${allSubscriptions.length} total subscriptions for bot ${bot.id}`)
+            
+            // Filter: only active subscriptions that haven't expired yet
+            const now = new Date()
+            const activeSubscriptions = allSubscriptions.filter((sub: any) => {
+              // Check both expires_at and marketplace_subscription_end
+              const endDate = sub.expires_at || sub.marketplace_subscription_end
+              if (!endDate) return false
+              const expireDate = new Date(endDate)
+              const isActive = sub.status === 'ACTIVE' && expireDate > now
+              if (isActive) {
+                console.log(`✅ Active subscription ${sub.id}: ${sub.trading_pair} on ${sub.network_type}, expires: ${endDate}`)
+              }
+              return isActive
+            })
+            
+            console.log(`🎯 Found ${activeSubscriptions.length} active non-expired subscriptions`)
+            
+            // Collect all trading pairs from current config
+            const requestedPairs = [trialConfig.tradingPair, ...trialConfig.secondaryTradingPairs]
+            
+            // Check if any requested pair is already in use (same exchange + network)
+            const conflictingPairs: string[] = []
+            for (const sub of activeSubscriptions) {
+              // Check if same network type
+              const sameNetwork = sub.network_type === trialConfig.networkType || 
+                                 (sub.network_type === 'TESTNET' && trialConfig.networkType === 'TESTNET') ||
+                                 (sub.network_type === 'MAINNET' && trialConfig.networkType === 'MAINNET')
+              
+              if (sameNetwork) {
+                const existingPairs = [sub.trading_pair, ...(sub.secondary_trading_pairs || [])]
+                for (const pair of requestedPairs) {
+                  if (existingPairs.includes(pair)) {
+                    conflictingPairs.push(`${pair} (${sub.network_type})`)
+                  }
+                }
+              }
+            }
+
+            if (conflictingPairs.length > 0) {
+              const uniqueConflicts = Array.from(new Set(conflictingPairs))
+              toast.error(
+                `⚠️ Trading pair conflict!\n\n` +
+                `The following trading pair(s) are already in active subscriptions:\n` +
+                `${uniqueConflicts.join(', ')}\n\n` +
+                `Please choose different trading pairs or stop the existing subscription first.`
+              )
+              setIsStartingTrial(false)
+              return
+            }
+          }
+        } catch (error) {
+          console.error('Error checking trading pair conflicts:', error)
+          // Continue anyway if check fails
+        }
+      }
+
       // Calculate start and end dates
       let startDate: Date
       let endDate: Date
@@ -525,12 +596,12 @@ export default function BotDetailPage() {
             </div>
           </div>
 
-          {/* Prompt Setup Section */}
+          {/* Strategy Setup Section */}
           <div className="mb-6">
             <div className="bg-gradient-to-br from-indigo-900/30 to-purple-800/30 p-5 rounded-lg border border-indigo-500/30">
               <h4 className="text-lg font-semibold text-white mb-3 flex items-center">
                 <span className="mr-2">💬</span>
-                Bot Prompt Setup
+                Bot Strategy Setup
                 <span className="ml-2 px-2 py-0.5 text-xs bg-red-500 text-white rounded-full">REQUIRED</span>
               </h4>
               <div className="text-gray-300 space-y-2 text-sm">
@@ -538,7 +609,7 @@ export default function BotDetailPage() {
                 <div className="space-y-1.5">
                   <div className="flex items-start">
                     <span className="mr-2">1️⃣</span>
-                    <span>Click on <strong className="text-indigo-400">"Prompt Management"</strong> tab above</span>
+                    <span>Click on <strong className="text-indigo-400">"Strategy Management"</strong> tab above</span>
                   </div>
                   <div className="flex items-start">
                     <span className="mr-2">2️⃣</span>
@@ -865,7 +936,7 @@ export default function BotDetailPage() {
             </Link>
           </div>
         )
-      case 'prompts':
+      case 'strategies':
         return <BotPromptsTab botId={bot.id} />
       case 'risk-management':
         return <RiskManagementTab botId={bot.id} />
@@ -908,18 +979,18 @@ export default function BotDetailPage() {
               </button>
             )}
             
-            {/* Show Prompts tab only for bot developer */}
+            {/* Show Strategies tab only for bot developer */}
             {bot.developer_id === user?.id && (
               <button
-                onClick={() => setActiveTab('prompts')}
+                onClick={() => setActiveTab('strategies')}
                 className={`whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm ${
-                  activeTab === 'prompts'
+                  activeTab === 'strategies'
                     ? 'border-purple-500 text-purple-400'
                     : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-300'
                 }`}
               >
                 <DocumentTextIcon className="h-5 w-5 inline-block mr-2" />
-                Prompts
+                Strategies
               </button>
             )}
             

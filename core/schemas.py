@@ -570,7 +570,7 @@ class SubscriptionBase(BaseModel):
     exchange_type: ExchangeType = ExchangeType.BINANCE
     trading_pair: str  # Primary trading pair
     secondary_trading_pairs: Optional[List[str]] = []  # Secondary pairs in priority order
-    timeframe: str = Field(..., pattern="^(1m|5m|15m|1h|2h|4h|6h|8h|12h|1d|1w)$")
+    timeframe: Optional[str] = Field(None, pattern="^(1m|5m|15m|1h|2h|4h|6h|8h|12h|1d|1w)$")
     strategy_config: Dict[str, Any] = {}
     execution_config: ExecutionConfig
     risk_config: RiskConfig

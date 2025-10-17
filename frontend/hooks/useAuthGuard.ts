@@ -41,7 +41,8 @@ export function useAuthGuard(options: UseAuthGuardOptions = {}) {
     }
 
     // If specific role is required
-    if (user && requiredRole && user.role !== requiredRole) {
+    // ADMIN has access to everything
+    if (user && requiredRole && user.role !== 'ADMIN' && user.role !== requiredRole) {
       console.log('AuthGuard: Insufficient permissions, user role:', user.role, 'required:', requiredRole)
       toast.error('You do not have permission to access this page')
       router.push('/dashboard')

@@ -95,11 +95,11 @@ export default function NewPromptPage() {
         is_active: formData.is_active
       })
       
-      toast.success('Prompt created successfully!')
+      toast.success('Strategy created successfully!')
       router.push('/creator/prompts')
     } catch (error) {
-      console.error('Error creating prompt:', error)
-      toast.error('Failed to create prompt. Please try again.')
+      console.error('Error creating strategy:', error)
+      toast.error('Failed to create strategy. Please try again.')
     } finally {
       setIsSubmitting(false)
     }
@@ -128,17 +128,17 @@ export default function NewPromptPage() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-600 via-blue-600 to-cyan-600 bg-clip-text text-transparent">
-                Create New Prompt
+                Create New Strategy
               </h1>
               <p className="text-gray-400 mt-2">
-                Create a new AI prompt template for trading analysis
+                Create a new AI strategy template for trading analysis
               </p>
             </div>
             <button
               onClick={handleCancel}
               className="btn btn-secondary px-4 py-2"
             >
-              ← Back to Prompts
+              ← Back to Strategies
             </button>
           </div>
         </div>
@@ -151,14 +151,14 @@ export default function NewPromptPage() {
             className="inline-flex items-center px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
           >
             <SparklesIcon className="h-5 w-5 mr-2" />
-            {showTemplates ? 'Hide' : 'Show'} Template Prompts
+            {showTemplates ? 'Hide' : 'Show'} Template Strategies
           </button>
           
           {showTemplates && (
             <div className="mt-4 bg-gray-800 rounded-lg p-4 border border-gray-700">
               <h3 className="text-lg font-semibold text-white mb-4 flex items-center">
                 <DocumentTextIcon className="h-5 w-5 mr-2" />
-                Choose from Template Prompts
+                Choose from Template Strategies
               </h3>
               
               {/* Category Tabs - Trading vs Risk Management */}
@@ -239,7 +239,7 @@ export default function NewPromptPage() {
                   No templates found in "{activeCategory}" category.
                 </p>
               ) : (
-                <p className="text-gray-400 text-center py-4">No template prompts available.</p>
+                <p className="text-gray-400 text-center py-4">No template strategies available.</p>
               )}
             </div>
           )}
@@ -259,7 +259,7 @@ export default function NewPromptPage() {
                   value={formData.name}
                   onChange={(e) => handleInputChange('name', e.target.value)}
                   className="w-full px-3 py-2 bg-dark-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-quantum-500"
-                  placeholder="Enter prompt name"
+                  placeholder="Enter strategy name"
                   required
                 />
               </div>
@@ -289,7 +289,7 @@ export default function NewPromptPage() {
                 value={formData.description}
                 onChange={(e) => handleInputChange('description', e.target.value)}
                 className="w-full px-3 py-2 bg-dark-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-quantum-500"
-                placeholder="Brief description of this prompt template"
+                placeholder="Brief description of this strategy template"
                 required
               />
             </div>
@@ -308,7 +308,7 @@ export default function NewPromptPage() {
               <MarkdownEditor
                 content={formData.content}
                 onChange={(content) => handleInputChange('content', content)}
-                placeholder="Enter your prompt template here... Use Markdown for formatting!"
+                placeholder="Enter your strategy template here... Use Markdown for formatting!"
                 className="w-full"
               />
             </div>
@@ -367,7 +367,7 @@ export default function NewPromptPage() {
                 disabled={isSubmitting || !formData.name || !formData.content}
                 className="btn btn-primary px-6 py-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isSubmitting ? 'Creating...' : 'Create Prompt'}
+                {isSubmitting ? 'Creating...' : 'Create Strategy'}
               </button>
             </div>
           </div>

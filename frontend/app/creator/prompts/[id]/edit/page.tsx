@@ -92,7 +92,7 @@ export default function EditPromptPage() {
       }, 500)
     } catch (error) {
       console.error('Error updating prompt:', error)
-      toast.error('Failed to update prompt. Please try again.')
+      toast.error('Failed to update strategy. Please try again.')
     } finally {
       setIsSubmitting(false)
     }
@@ -118,12 +118,12 @@ export default function EditPromptPage() {
       <div className="min-h-screen flex items-center justify-center neural-grid">
         <div className="card-quantum p-8 text-center">
           <h1 className="text-2xl font-bold text-gray-200 mb-4">Prompt Not Found</h1>
-          <p className="text-gray-400 mb-6">The requested prompt template could not be found.</p>
+          <p className="text-gray-400 mb-6">The requested strategy template could not be found.</p>
           <button
             onClick={() => router.push('/creator/prompts')}
             className="btn btn-primary px-6 py-2"
           >
-            Back to Prompts
+            Back to Strategies
           </button>
         </div>
       </div>
@@ -138,17 +138,17 @@ export default function EditPromptPage() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-600 via-blue-600 to-cyan-600 bg-clip-text text-transparent">
-                Edit Prompt
+                Edit Strategy
               </h1>
               <p className="text-gray-400 mt-2">
-                Modify the AI prompt template
+                Modify the AI strategy template
               </p>
             </div>
             <button
               onClick={handleCancel}
               className="btn btn-secondary px-4 py-2"
             >
-              ← Back to Prompts
+              ← Back to Strategies
             </button>
           </div>
         </div>
@@ -197,7 +197,7 @@ export default function EditPromptPage() {
                 value={formData.description}
                 onChange={(e) => handleInputChange('description', e.target.value)}
                 className="w-full px-3 py-2 bg-dark-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-quantum-500"
-                placeholder="Brief description of this prompt template"
+                placeholder="Brief description of this strategy template"
                 required
               />
             </div>
@@ -216,7 +216,7 @@ export default function EditPromptPage() {
               <MarkdownEditor
                 content={formData.content}
                 onChange={(content) => handleInputChange('content', content)}
-                placeholder="Enter your prompt template here... Use Markdown for formatting!"
+                placeholder="Enter your strategy template here... Use Markdown for formatting!"
                 className="w-full"
               />
             </div>
@@ -275,7 +275,7 @@ export default function EditPromptPage() {
                 disabled={isSubmitting || !formData.name || !formData.content}
                 className="btn btn-primary px-6 py-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isSubmitting ? 'Updating...' : 'Update Prompt'}
+                {isSubmitting ? 'Updating...' : 'Update Strategy'}
               </button>
             </div>
           </div>

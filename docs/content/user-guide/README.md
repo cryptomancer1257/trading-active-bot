@@ -6,13 +6,16 @@ This guide will help you onboard as a developer and create your first trading bo
 
 ## 🚀 Quick Start
 
-1. **[Getting Started](./01-getting-started.md)** - Set up your account and development environment
+1. **[Getting Started](./01-getting-started.md)** - Set up your account and access QuantumForge Studio
 2. **[Creating Your First Bot](./02-creating-your-first-bot.md)** - Build and deploy a simple trading bot
-3. **[Bot Configuration](./03-bot-configuration.md)** - Configure trading parameters, leverage, and risk management
-4. **[LLM Integration](./04-llm-integration.md)** - Add AI intelligence to your bot
-5. **[Prompt Engineering](./05-prompt-engineering.md)** - Create effective prompts for market analysis
-6. **[Multi-Pair Trading](./06-multi-pair-trading.md)** - Trade multiple pairs simultaneously
-7. **[Publishing to Marketplace](./07-publishing-to-marketplace.md)** - Share and monetize your bot
+3. **[Bot Templates](./02a-bot-templates.md)** - Understand available bot templates and their roles
+4. **[Bot Configuration](./03-bot-configuration.md)** - Configure trading parameters, leverage, and risk management
+5. **[LLM Integration](./04-llm-integration.md)** - Add AI intelligence to your bot
+6. **[Exchange API Configuration](./04b-exchange-api-configuration.md)** - Set up exchange API keys for backtesting
+7. **[Strategy Management](./05-prompt-engineering.md)** - Create and manage trading strategies
+8. **[Backtesting](./09-backtesting.md)** - Test your strategies on historical data
+9. **[Trading History & Statistics](./10-trading-history-statistics.md)** - View performance and analyze results
+10. **[Risk Management](./08-risk-management.md)** - Implement risk controls and position sizing
 
 ## 📖 Table of Contents
 

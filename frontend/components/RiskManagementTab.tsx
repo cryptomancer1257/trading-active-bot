@@ -250,7 +250,7 @@ export default function RiskManagementTab({ botId, subscriptionId }: RiskManagem
           <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-6 text-center">
             <div className="text-gray-400 mb-2">💡</div>
             <p className="text-gray-400">No suggested risk management prompts available</p>
-            <p className="text-sm text-gray-500">Create risk management prompts in Prompt Management</p>
+            <p className="text-sm text-gray-500">Create risk management strategies in Strategy Management</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -299,7 +299,7 @@ export default function RiskManagementTab({ botId, subscriptionId }: RiskManagem
           <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-6 text-center">
             <div className="text-gray-400 mb-2">🛡️</div>
             <p className="text-gray-400">No risk management prompts available</p>
-            <p className="text-sm text-gray-500">Create risk management prompts in Prompt Management</p>
+            <p className="text-sm text-gray-500">Create risk management strategies in Strategy Management</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
