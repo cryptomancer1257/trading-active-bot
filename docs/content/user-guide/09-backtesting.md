@@ -1,6 +1,6 @@
 # 📈 Backtesting Guide
 
-Learn how to test your trading strategies on historical data before risking real money.
+Learn how to test your trading strategies on historical data in QuantumForge Studio. This guide covers everything from setting up backtests to analyzing results and transitioning to live trading.
 
 ## 📋 Table of Contents
 

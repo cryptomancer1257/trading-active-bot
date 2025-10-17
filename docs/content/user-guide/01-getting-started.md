@@ -1,6 +1,16 @@
-# 🚀 Getting Started with QuantumForge
+# 🚀 Getting Started with QuantumForge Studio
 
-Welcome! This guide will help you set up your account and start building trading bots.
+Welcome to QuantumForge Studio! This comprehensive guide will walk you through creating, configuring, and managing AI trading bots on the **quantumforge.cryptomancer.ai** platform.
+
+## 🎯 What You'll Learn
+
+- ✅ How to create your first trading bot
+- ✅ Understanding bot templates and their roles
+- ✅ Setting up LLM providers for AI analysis
+- ✅ Configuring exchange API keys for backtesting
+- ✅ Running backtests and analyzing results
+- ✅ Managing risk and strategies
+- ✅ Viewing trading history and profit statistics
 
 ## 📋 Table of Contents
 
@@ -18,7 +28,7 @@ Welcome! This guide will help you set up your account and start building trading
 
 1. **Navigate to QuantumForge Studio**
    ```
-   https://studio.quantumforge.ai
+   https://quantumforge.cryptomancer.ai
    ```
 
 2. **Sign Up Options**

@@ -21,11 +21,19 @@ export const useFeatureFlags = () => {
       }
       return response.json();
     },
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    gcTime: 10 * 60 * 1000, // 10 minutes (renamed from cacheTime in v5)
-    refetchInterval: 60 * 1000, // Refetch every minute
+    staleTime: 0, // No cache for testing
+    gcTime: 0, // No cache for testing
+    refetchInterval: 5000, // Refetch every 5 seconds for testing
     retry: 1, // Only retry once
     retryDelay: 1000, // Wait 1 second before retry
+  });
+
+  // Debug logging
+  console.log('useFeatureFlags Debug:', {
+    planPackageStatus,
+    isLoadingPlanPackage,
+    planPackageError,
+    isEnabled: planPackageStatus?.is_enabled
   });
 
   return {
@@ -33,6 +41,6 @@ export const useFeatureFlags = () => {
     isLoadingPlanPackage,
     planPackageError,
     refetchPlanPackage,
-    isPlanPackageEnabled: planPackageStatus?.is_enabled ?? true, // Default to enabled
+    isPlanPackageEnabled: planPackageStatus?.is_enabled ?? false, // Default to disabled
   };
 };

@@ -17,6 +17,13 @@ export const useAuth = () => {
     const storedToken = localStorage.getItem('access_token');
     const storedUser = localStorage.getItem('user');
 
+    // Debug logging
+    console.log('useAuth debug:', {
+      storedToken: storedToken ? `${storedToken.substring(0, 20)}...` : null,
+      storedUser: storedUser ? 'exists' : null,
+      localStorageKeys: Object.keys(localStorage)
+    });
+
     if (storedToken && storedUser) {
       setToken(storedToken);
       try {
@@ -27,6 +34,14 @@ export const useAuth = () => {
     }
     setLoading(false);
   }, []);
+
+  // Debug logging
+  console.log('useAuth return:', {
+    user: user ? { id: user.id, email: user.email, role: user.role } : null,
+    token: token ? `${token.substring(0, 20)}...` : null,
+    loading,
+    isAuthenticated: !!user && !!token,
+  });
 
   return {
     user,

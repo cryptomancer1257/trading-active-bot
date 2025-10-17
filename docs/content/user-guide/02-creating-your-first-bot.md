@@ -1,6 +1,6 @@
 # 🤖 Creating Your First Trading Bot
 
-Learn how to create a simple yet effective trading bot in just a few minutes.
+Learn how to create a simple yet effective trading bot in QuantumForge Studio. This guide covers everything from choosing templates to deploying your first AI trading entity.
 
 ## 📋 Table of Contents
 

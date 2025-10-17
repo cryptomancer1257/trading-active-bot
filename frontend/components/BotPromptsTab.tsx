@@ -72,12 +72,12 @@ export default function BotPromptsTab({ botId }: BotPromptsTabProps) {
           custom_override: customOverride || undefined
         }
       })
-      toast.success('Prompt attached successfully!')
+      toast.success('Strategy attached successfully!')
       setShowAttachModal(false)
       setSelectedPrompt(null)
     } catch (error) {
       console.error('Error attaching prompt:', error)
-      toast.error('Failed to attach prompt')
+      toast.error('Failed to attach strategy')
     }
   }
 
@@ -86,7 +86,7 @@ export default function BotPromptsTab({ botId }: BotPromptsTabProps) {
       // Find the prompt template ID from the bot prompt
       const botPrompt = attachedPrompts.find(bp => bp.id === botPromptId)
       if (!botPrompt) {
-        toast.error('Prompt not found')
+        toast.error('Strategy not found')
         return
       }
       
@@ -94,10 +94,10 @@ export default function BotPromptsTab({ botId }: BotPromptsTabProps) {
         botId,
         promptId: botPrompt.prompt_template.id
       })
-      toast.success('Prompt detached successfully!')
+      toast.success('Strategy detached successfully!')
     } catch (error) {
       console.error('Error detaching prompt:', error)
-      toast.error('Failed to detach prompt')
+      toast.error('Failed to detach strategy')
     }
   }
 
@@ -106,7 +106,7 @@ export default function BotPromptsTab({ botId }: BotPromptsTabProps) {
       // Find the prompt template ID from the bot prompt
       const botPrompt = attachedPrompts.find(bp => bp.id === botPromptId)
       if (!botPrompt) {
-        toast.error('Prompt not found')
+        toast.error('Strategy not found')
         return
       }
       
@@ -115,10 +115,10 @@ export default function BotPromptsTab({ botId }: BotPromptsTabProps) {
         promptId: botPrompt.prompt_template.id,
         data: updateData
       })
-      toast.success('Prompt updated successfully!')
+      toast.success('Strategy updated successfully!')
     } catch (error) {
       console.error('Error updating prompt:', error)
-      toast.error('Failed to update prompt')
+      toast.error('Failed to update strategy')
     }
   }
 
@@ -145,7 +145,7 @@ export default function BotPromptsTab({ botId }: BotPromptsTabProps) {
     return (
       <div className="flex items-center justify-center py-8">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-        <span className="ml-2 text-gray-400">Loading prompts...</span>
+        <span className="ml-2 text-gray-400">Loading strategies...</span>
       </div>
     )
   }
@@ -156,7 +156,7 @@ export default function BotPromptsTab({ botId }: BotPromptsTabProps) {
       <div className="bg-red-900/30 border border-red-700 text-red-300 p-4 rounded-md">
         <div className="flex items-center">
           <ExclamationTriangleIcon className="h-5 w-5 mr-2" />
-          <span>Error loading prompts: {botPromptsError.message}</span>
+          <span>Error loading strategies: {botPromptsError.message}</span>
         </div>
       </div>
     )
@@ -164,12 +164,12 @@ export default function BotPromptsTab({ botId }: BotPromptsTabProps) {
 
   return (
     <div className="p-6 space-y-8">
-      {/* Attached Prompts */}
+      {/* Attached Strategies */}
       <div>
         <h3 className="text-xl font-semibold text-gray-200 mb-4 flex items-center">
-          Attached Prompts ({attachedPrompts.length})
+          Attached Strategies ({attachedPrompts.length})
           <span className="ml-2 text-sm text-gray-500 font-normal">
-            (Prompts currently linked to this bot)
+            (Strategies currently linked to this bot)
           </span>
         </h3>
         {attachedPrompts.length > 0 ? (
@@ -183,12 +183,12 @@ export default function BotPromptsTab({ botId }: BotPromptsTabProps) {
                         href={`/creator/prompts/${bp.prompt_template?.id}`}
                         className="text-lg font-medium text-white hover:text-blue-400 transition-colors cursor-pointer"
                       >
-                        {bp.prompt_template?.name || 'Unknown Prompt'}
+                        {bp.prompt_template?.name || 'Unknown Strategy'}
                       </Link>
                       <Link 
                         href={`/creator/prompts/${bp.prompt_template?.id}`}
                         className="p-1 rounded text-gray-400 hover:text-blue-400 hover:bg-blue-500/20 transition-colors"
-                        title="View Prompt Details"
+                        title="View Strategy Details"
                       >
                         <EyeIcon className="h-4 w-4" />
                       </Link>
@@ -214,7 +214,7 @@ export default function BotPromptsTab({ botId }: BotPromptsTabProps) {
                     <button
                       onClick={() => handleUpdatePrompt(bp.id, {})}
                       className="p-2 rounded-full text-blue-400 hover:bg-blue-500/20 hover:text-blue-300 transition-colors"
-                      title="Edit Prompt Settings"
+                      title="Edit Strategy Settings"
                       disabled={updatePromptMutation.isPending}
                     >
                       <PencilIcon className="h-5 w-5" />
@@ -222,7 +222,7 @@ export default function BotPromptsTab({ botId }: BotPromptsTabProps) {
                     <button
                       onClick={() => handleDetachPrompt(bp.id)}
                       className="p-2 rounded-full text-red-400 hover:bg-red-500/20 hover:text-red-300 transition-colors"
-                      title="Detach Prompt"
+                      title="Detach Strategy"
                       disabled={detachPromptMutation.isPending}
                     >
                       <TrashIcon className="h-5 w-5" />
@@ -233,15 +233,15 @@ export default function BotPromptsTab({ botId }: BotPromptsTabProps) {
             ))}
           </ul>
         ) : (
-          <p className="text-gray-400">No prompts attached to this bot yet.</p>
+          <p className="text-gray-400">No strategies attached to this bot yet.</p>
         )}
       </div>
 
-      {/* Suggested Prompts */}
+      {/* Suggested Strategies */}
       <div>
         <h3 className="text-xl font-semibold text-gray-200 mb-4 flex items-center">
           <LightBulbIcon className="h-6 w-6 text-yellow-400 mr-2" />
-          Suggested Prompts ({suggestedPrompts.length})
+          Suggested Strategies ({suggestedPrompts.length})
           <span className="ml-2 text-sm text-gray-500 font-normal">
             (Based on bot type and category)
           </span>
@@ -286,12 +286,12 @@ export default function BotPromptsTab({ botId }: BotPromptsTabProps) {
         )}
       </div>
 
-      {/* All Available Prompts */}
+      {/* All Available Strategies */}
       <div>
         <h3 className="text-xl font-semibold text-gray-200 mb-4 flex items-center">
-          All Available Prompts ({allPrompts.length})
+          All Available Strategies ({allPrompts.length})
           <span className="ml-2 text-sm text-gray-500 font-normal">
-            (Manually attach any prompt)
+            (Manually attach any strategy)
           </span>
         </h3>
         {allPrompts.length > 0 ? (
@@ -304,7 +304,7 @@ export default function BotPromptsTab({ botId }: BotPromptsTabProps) {
                       href={`/creator/prompts/${prompt.id}`}
                       className="text-lg font-medium text-white hover:text-blue-400 transition-colors cursor-pointer"
                     >
-                      {prompt.name || 'Unknown Prompt'}
+                      {prompt.name || 'Unknown Strategy'}
                     </Link>
                     <Link 
                       href={`/creator/prompts/${prompt.id}`}
@@ -338,26 +338,26 @@ export default function BotPromptsTab({ botId }: BotPromptsTabProps) {
               </div>
               <div className="flex-1">
                 <h4 className="text-lg font-semibold text-yellow-300 mb-2">
-                  No Prompts Found
+                  No Strategies Found
                 </h4>
                 <p className="text-gray-300 mb-4">
-                  You haven't created any prompt templates yet. Prompt templates help guide your bot's AI analysis and decision-making process.
+                  You haven't created any strategy templates yet. Strategy templates help guide your bot's AI analysis and decision-making process.
                 </p>
                 
                 <div className="bg-gray-800/50 rounded-lg p-4 mb-4">
-                  <h5 className="text-white font-medium mb-3">How to create prompts:</h5>
+                  <h5 className="text-white font-medium mb-3">How to create strategies:</h5>
                   <ol className="space-y-2 text-sm text-gray-300">
                     <li className="flex items-start">
                       <span className="flex-shrink-0 w-6 h-6 rounded-full bg-purple-500/20 text-purple-400 flex items-center justify-center mr-2 text-xs font-bold">1</span>
-                      <span>Visit the Prompt Management page</span>
+                      <span>Visit the Strategy Management page</span>
                     </li>
                     <li className="flex items-start">
                       <span className="flex-shrink-0 w-6 h-6 rounded-full bg-purple-500/20 text-purple-400 flex items-center justify-center mr-2 text-xs font-bold">2</span>
-                      <span>Click "Create New Prompt Template"</span>
+                      <span>Click "Create New Strategy Template"</span>
                     </li>
                     <li className="flex items-start">
                       <span className="flex-shrink-0 w-6 h-6 rounded-full bg-purple-500/20 text-purple-400 flex items-center justify-center mr-2 text-xs font-bold">3</span>
-                      <span>Configure your prompt with trading strategies</span>
+                      <span>Configure your strategy with trading strategies</span>
                     </li>
                     <li className="flex items-start">
                       <span className="flex-shrink-0 w-6 h-6 rounded-full bg-purple-500/20 text-purple-400 flex items-center justify-center mr-2 text-xs font-bold">4</span>
@@ -371,7 +371,7 @@ export default function BotPromptsTab({ botId }: BotPromptsTabProps) {
                   className="inline-flex items-center px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-md shadow-sm transition-colors"
                 >
                   <SparklesIcon className="h-5 w-5 mr-2" />
-                  Go to Prompt Management
+                  Go to Strategy Management
                 </Link>
               </div>
             </div>
@@ -379,11 +379,11 @@ export default function BotPromptsTab({ botId }: BotPromptsTabProps) {
         )}
       </div>
 
-      {/* Attach Prompt Modal */}
+      {/* Attach Strategy Modal */}
       {showAttachModal && selectedPrompt && (
         <div className="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50">
           <div className="bg-gray-800 p-6 rounded-lg shadow-xl max-w-md w-full border border-gray-700">
-            <h3 className="text-xl font-semibold text-white mb-4">Attach Prompt: {selectedPrompt.name}</h3>
+            <h3 className="text-xl font-semibold text-white mb-4">Attach Strategy: {selectedPrompt.name}</h3>
             <div className="space-y-4">
               <div>
                 <label htmlFor="priority" className="block text-sm font-medium text-gray-400">Priority</label>
@@ -407,7 +407,7 @@ export default function BotPromptsTab({ botId }: BotPromptsTabProps) {
                   onChange={(e) => setCustomOverride(e.target.value)}
                   rows={4}
                   className="mt-1 block w-full border border-gray-600 rounded-md shadow-sm p-2 bg-gray-700 text-white focus:ring-purple-500 focus:border-purple-500 sm:text-sm"
-                  placeholder="Enter bot-specific prompt modifications (e.g., 'Always use a bullish bias'). This will override the default prompt content for this bot."
+                  placeholder="Enter bot-specific strategy modifications (e.g., 'Always use a bullish bias'). This will override the default strategy content for this bot."
                 />
               </div>
               <div className="flex justify-end space-x-3">
@@ -421,7 +421,7 @@ export default function BotPromptsTab({ botId }: BotPromptsTabProps) {
                   onClick={() => handleAttachPrompt(selectedPrompt.id)}
                   className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500"
                 >
-                  Attach Prompt
+                  Attach Strategy
                 </button>
               </div>
             </div>
