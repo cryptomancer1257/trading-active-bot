@@ -1116,8 +1116,8 @@ def run_bot_logic(self, subscription_id: int):
             is_futures = bool(getattr(subscription.bot, 'bot_type', None) and str(subscription.bot.bot_type).upper() == 'FUTURES')
             bot_type = str(subscription.bot.bot_type).upper() if hasattr(subscription.bot, 'bot_type') and subscription.bot.bot_type else None
             
-            # Only create exchange client for old-style bots (not FUTURES/SPOT using advanced workflow)
-            if not is_futures and bot_type not in ['FUTURES', 'SPOT']:
+            # Only create exchange client for old-style bots (not FUTURES/SPOT/SIGNALS_FUTURES using advanced workflow)
+            if not is_futures and bot_type not in ['FUTURES', 'SPOT', 'SIGNALS_FUTURES']:
                 logger.info(f"Creating exchange client for subscription {subscription_id} (testnet={use_testnet})")
                 
                 exchange = ExchangeFactory.create_exchange(
@@ -1127,7 +1127,7 @@ def run_bot_logic(self, subscription_id: int):
                     testnet=use_testnet
                 )
             else:
-                # FUTURES and SPOT bots handle their own exchange clients
+                # FUTURES, SPOT, and SIGNALS_FUTURES bots handle their own exchange clients
                 exchange = None
             
             # Get current market data
@@ -1154,7 +1154,7 @@ def run_bot_logic(self, subscription_id: int):
                 current_price = 0.0  # Use fallback instead of returning
 
             # Set bot's exchange client (only for old-style bots)
-            if not is_futures and bot_type not in ['FUTURES', 'SPOT'] and exchange:
+            if not is_futures and bot_type not in ['FUTURES', 'SPOT', 'SIGNALS_FUTURES'] and exchange:
                 bot.exchange_client = exchange
             
             # Create subscription config
@@ -1167,8 +1167,8 @@ def run_bot_logic(self, subscription_id: int):
                 'user_id': subscription.user_id or 0  # 0 for marketplace users
                 }
 
-                # Execute bot prediction - Advanced workflow for Futures and Spot bots
-            if hasattr(subscription.bot, 'bot_type') and subscription.bot.bot_type and subscription.bot.bot_type.upper() in ['FUTURES', 'SPOT']:
+                # Execute bot prediction - Advanced workflow for Futures, Spot, and Signals bots
+            if hasattr(subscription.bot, 'bot_type') and subscription.bot.bot_type and subscription.bot.bot_type.upper() in ['FUTURES', 'SPOT', 'SIGNALS_FUTURES']:
                 logger.info(f"🚀 Using ADVANCED WORKFLOW for {subscription.bot.name} ({subscription.bot.bot_type.upper()})")
                 # Run async workflow in event loop
                 import asyncio
@@ -1264,9 +1264,9 @@ def run_bot_logic(self, subscription_id: int):
                             balance_info = f"\n💼 Account Balance ({mode_label}): Unable to fetch - {str(e)[:100]}\n"
             
                 # Execute actual trading (if not HOLD)
-                # Skip if advanced workflow already handled trading (FUTURES/SPOT bots)
+                # Skip if advanced workflow already handled trading (FUTURES/SPOT/SIGNALS_FUTURES bots)
                 trade_details = None
-                if not is_futures and subscription.bot.bot_type not in ['FUTURES', 'SPOT']:
+                if not is_futures and subscription.bot.bot_type not in ['FUTURES', 'SPOT', 'SIGNALS_FUTURES']:
                     trade_result = False
                     if final_action.action != "HOLD":
                         try:
@@ -2140,15 +2140,23 @@ def schedule_active_bots():
                 if should_run:
                     logger.info(f"Scheduling bot execution for subscription {subscription.id}")
                     
-                    if subscription.bot.bot_mode != "PASSIVE" and subscription.bot.bot_type in ["FUTURES", "SPOT"]:
+                    # Convert bot_type enum to string for comparison
+                    bot_type_str = str(subscription.bot.bot_type).upper() if subscription.bot.bot_type else None
+                    bot_mode_str = str(subscription.bot.bot_mode).upper() if subscription.bot.bot_mode else "ACTIVE"
+                    
+                    # Handle SIGNALS_FUTURES type (signals-only futures bot using bot template)
+                    if bot_type_str == "SIGNALS_FUTURES":
+                        run_bot_logic.delay(subscription.id)
+                        logger.info(f"✅ Triggered run_bot_logic for SIGNALS_FUTURES bot (subscription {subscription.id})")
+                    elif bot_mode_str != "PASSIVE" and bot_type_str in ["FUTURES", "SPOT"]:
                         # Active FUTURES and SPOT bots use run_bot_logic
                         run_bot_logic.delay(subscription.id)
-                        logger.info(f"✅ Triggered run_bot_logic for {subscription.bot.bot_type} bot (subscription {subscription.id})")
-                    elif subscription.bot.bot_type == "FUTURES_RPA":
+                        logger.info(f"✅ Triggered run_bot_logic for {bot_type_str} bot (subscription {subscription.id})")
+                    elif bot_type_str == "FUTURES_RPA":
                         run_bot_rpa_logic.delay(subscription.id)
                         logger.info(f"✅ Triggered run_bot_rpa_logic for RPA bot (subscription {subscription.id})")
                     else:
-                        # Handle PASSIVE bots (signal-only)
+                        # Handle PASSIVE bots (legacy signal-only using Robot Framework)
                         run_bot_signal_logic.delay(subscription.bot.id, subscription.id)
                         logger.info(f"✅ Triggered run_bot_signal_logic for PASSIVE bot (subscription {subscription.id})")
 
@@ -2931,11 +2939,19 @@ async def run_advanced_futures_workflow(bot, subscription_id: int, subscription_
         logger.info(f"   Proceeding with LLM analysis for {selected_trading_pair}...")
         logger.info("=" * 80)
         
-        # 1. Check account status (like main_execution)
+        # 1. Check account status (like main_execution) - Skip for SIGNALS_FUTURES
         logger.info("💰 Step 1: Checking account status...")
-        account_status = bot.check_account_status()
-        if account_status:
-            logger.info(f"Account Balance: ${account_status.get('available_balance', 0):.2f}")
+        
+        # SIGNALS_FUTURES bots don't need account status (signals-only, no trading)
+        bot_type_str = str(subscription.bot.bot_type).upper() if subscription.bot.bot_type else None
+        if bot_type_str == "SIGNALS_FUTURES":
+            logger.info("📡 SIGNALS_FUTURES bot - Skip account check (signals-only, no trading)")
+            account_status = None
+        else:
+            # Active trading bots need account balance check
+            account_status = bot.check_account_status()
+            if account_status:
+                logger.info(f"Account Balance: ${account_status.get('available_balance', 0):.2f}")
         
         # 2. Crawl multi-timeframe data (instead of single timeframe)
         logger.info("📊 Step 2: Crawling multi-timeframe data...")
@@ -3193,11 +3209,19 @@ async def run_advanced_futures_rpa_workflow(bot, subscription_id: int, subscript
         logger.info(f"   Proceeding with RPA + LLM analysis for {selected_trading_pair}...")
         logger.info("=" * 80)
         
-        # 1. Check account status
+        # 1. Check account status - Skip for SIGNALS_FUTURES
         logger.info("💰 Step 1: Checking account status...")
-        account_status = bot.check_account_status()
-        if account_status:
-            logger.info(f"Account Balance: ${account_status.get('available_balance', 0):.2f}")
+        
+        # SIGNALS_FUTURES bots don't need account status (signals-only, no trading)
+        bot_type_str = str(subscription.bot.bot_type).upper() if subscription.bot.bot_type else None
+        if bot_type_str == "SIGNALS_FUTURES":
+            logger.info("📡 SIGNALS_FUTURES bot - Skip account check (signals-only, no trading)")
+            account_status = None
+        else:
+            # Active trading bots need account balance check
+            account_status = bot.check_account_status()
+            if account_status:
+                logger.info(f"Account Balance: ${account_status.get('available_balance', 0):.2f}")
         
         # 2. Capture multi-timeframe data using RPA
         logger.info("📊 Step 2: Capturing multi-timeframe data with RPA...")

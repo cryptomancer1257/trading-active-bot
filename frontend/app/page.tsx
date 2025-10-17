@@ -202,7 +202,7 @@ export default function HomePage() {
                             <span className="text-green-400">✓</span> Mainnet
                           </span>
                           <span className="text-green-400 flex items-center gap-1">
-                            <span className="text-green-400">✓</span> 90% Revenue
+                            <span className="text-green-400">✓</span> Unlimited Subscriptions
                           </span>
                         </div>
                       )}

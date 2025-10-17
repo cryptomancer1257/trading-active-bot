@@ -296,6 +296,22 @@ class UniversalFuturesSignalsBot(CustomBot):
             traceback.print_exc()
             return Action.HOLD
     
+    async def setup_position(self, action: Action, confirmation: Any = None, subscription: Any = None) -> Dict[str, Any]:
+        """
+        Override setup_position to SKIP trade execution for signals-only bot
+        This bot only sends signals, does NOT execute trades
+        """
+        logger.info(f"📡 [SIGNALS BOT] Skipping trade execution - this is a signals-only bot")
+        logger.info(f"   Signal: {action.action} @ confidence {action.value * 100:.1f}%")
+        logger.info(f"   Reason: {action.reason}")
+        
+        return {
+            'status': 'skipped',
+            'reason': 'Signals-only bot - no trade execution',
+            'signal': action.action,
+            'confidence': action.value
+        }
+    
     async def _send_signal_notification(self, signal: Action, analysis: Dict[str, Any]):
         """Send signal notification to user via configured channels"""
         try:
