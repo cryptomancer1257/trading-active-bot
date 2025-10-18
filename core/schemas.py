@@ -88,6 +88,8 @@ class UserBase(BaseModel):
     developer_name: Optional[str] = None
     developer_bio: Optional[str] = None
     developer_website: Optional[str] = None
+    telegram_username: Optional[str] = None
+    discord_username: Optional[str] = None
 
 class UserCreate(BaseModel):
     email: EmailStr
@@ -101,6 +103,8 @@ class UserUpdate(BaseModel):
     developer_name: Optional[str] = None
     developer_bio: Optional[str] = None
     developer_website: Optional[str] = None
+    telegram_username: Optional[str] = Field(None, description="Telegram username for notifications (without @)")
+    discord_username: Optional[str] = Field(None, description="Discord username for notifications")
     api_key: Optional[str] = None
     api_secret: Optional[str] = None
 

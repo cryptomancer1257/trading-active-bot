@@ -139,6 +139,12 @@ class User(Base):
     developer_bio = Column(Text)
     developer_website = Column(String(255))
     
+    # Social media for notifications
+    telegram_username = Column(String(255), nullable=True)
+    discord_username = Column(String(255), nullable=True)
+    telegram_chat_id = Column(String(255), nullable=True)
+    discord_user_id = Column(String(255), nullable=True)
+    
     # API credentials for trading
     api_key = Column(String(255))
     api_secret = Column(String(255))

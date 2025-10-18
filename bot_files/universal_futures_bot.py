@@ -980,10 +980,14 @@ class UniversalFuturesBot(CustomBot):
     
     # ==================== DATA CRAWLING ====================
     
-    def crawl_data(self) -> Dict[str, Any]:
+    def crawl_data(self, trading_pair: str = None) -> Dict[str, Any]:
         """
         Crawl historical data for multiple timeframes from exchange
         Returns multi-timeframe OHLCV data
+        
+        Args:
+            trading_pair: Optional trading pair to crawl (e.g., 'ETH/USDT' or 'ETHUSDT')
+                         If not provided, uses self.trading_pair
         """
         import time
         from datetime import datetime
@@ -1033,7 +1037,10 @@ class UniversalFuturesBot(CustomBot):
         INITIAL_LOOKBACK_MULT = 1.5
         MAX_RETRIES = 3
         
-        self.trading_pair = self.trading_pair.replace('/', '')
+        # Use provided trading_pair or fall back to self.trading_pair
+        # This prevents race conditions when multiple workers use the same bot instance
+        actual_trading_pair = trading_pair if trading_pair else self.trading_pair
+        actual_trading_pair = actual_trading_pair.replace('/', '')
         
         # Use mainnet for data, fallback to testnet
         CLIENT = self.futures_client_mainnet if self.futures_client_mainnet else self.futures_client
@@ -1064,10 +1071,10 @@ class UniversalFuturesBot(CustomBot):
                     lookback = int(max(desired_limit, int(desired_limit * INITIAL_LOOKBACK_MULT)))
                     start_time = end_time - (lookback - 1) * interval_ms
                     
-                    logger.info(f"📊 [{i}/{len(self.timeframes)}] Fetching {lookback} {timeframe} candles for {self.trading_pair}")
+                    logger.info(f"📊 [{i}/{len(self.timeframes)}] Fetching {lookback} {timeframe} candles for {actual_trading_pair}")
                     
                     df = CLIENT.get_klines(
-                        symbol=self.trading_pair,
+                        symbol=actual_trading_pair,
                         interval=timeframe,
                         start_time=start_time,
                         end_time=end_time,
@@ -1087,7 +1094,7 @@ class UniversalFuturesBot(CustomBot):
                         
                         logger.warning(f"⚠️ {timeframe} needs backfill {len(df)}/{MIN_NEEDED}, retry {retries}...")
                         df_more = CLIENT.get_klines(
-                            symbol=self.trading_pair,
+                            symbol=actual_trading_pair,
                             interval=timeframe,
                             start_time=new_start,
                             end_time=new_end,

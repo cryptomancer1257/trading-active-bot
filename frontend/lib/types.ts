@@ -15,6 +15,8 @@ export interface User {
   developer_name?: string
   developer_bio?: string
   developer_website?: string
+  telegram_username?: string
+  discord_username?: string
   total_subscriptions?: number
   active_subscriptions?: number
   total_developed_bots?: number
@@ -34,6 +36,8 @@ export interface UserUpdate {
   developer_name?: string
   developer_bio?: string
   developer_website?: string
+  telegram_username?: string
+  discord_username?: string
 }
 
 // Auth Types
