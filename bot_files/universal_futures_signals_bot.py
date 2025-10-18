@@ -92,6 +92,7 @@ class UniversalFuturesSignalsBot(CustomBot):
         # Trading configuration
         raw_trading_pair = config.get('trading_pair', 'BTCUSDT')
         self.trading_pair = raw_trading_pair.replace('/', '')
+        logger.info(f"🎯 Bot initialized with trading_pair: {self.trading_pair} (from config: {config.get('trading_pair', 'NOT_PROVIDED')})")
         
         # Multi-timeframe configuration
         self.timeframes = config.get('timeframes', ['30m', '1h', '4h'])
@@ -441,10 +442,16 @@ class UniversalFuturesSignalsBot(CustomBot):
     
     # ==================== DATA CRAWLING ====================
     
-    def crawl_data(self) -> Dict[str, Any]:
+    def crawl_data(self, subscription_config: dict = None) -> Dict[str, Any]:
         """
         Crawl historical data for multiple timeframes from exchange
         Returns multi-timeframe OHLCV data
+        
+        Args:
+            subscription_config: Optional subscription configuration containing:
+                                - trading_pair: Trading pair to crawl
+                                - timeframes: List of timeframes to crawl
+                                If not provided, uses self.trading_pair and self.timeframes
         """
         import time
         from datetime import datetime
@@ -494,15 +501,27 @@ class UniversalFuturesSignalsBot(CustomBot):
         INITIAL_LOOKBACK_MULT = 1.5
         MAX_RETRIES = 3
         
-        self.trading_pair = self.trading_pair.replace('/', '')
+        # Extract trading_pair and timeframes from subscription_config
+        # This prevents race conditions when multiple workers use the same bot instance
+        if subscription_config:
+            config_trading_pair = subscription_config.get('trading_pair', self.trading_pair)
+            config_timeframes = subscription_config.get('timeframes', self.timeframes)
+        else:
+            config_trading_pair = self.trading_pair
+            config_timeframes = self.timeframes
+        
+        actual_trading_pair = config_trading_pair.replace('/', '') if config_trading_pair else self.trading_pair.replace('/', '')
+        actual_timeframes = config_timeframes if config_timeframes else self.timeframes
         
         logger.info(f"📊 Data crawling using MAINNET public API on {self.exchange_name}")
+        logger.info(f"📊 Crawling pair: {actual_trading_pair} (config={subscription_config.get('trading_pair') if subscription_config else None}, self={self.trading_pair})")
+        logger.info(f"📊 Crawling timeframes: {actual_timeframes} (config={subscription_config.get('timeframes') if subscription_config else None}, self={self.timeframes})")
         
         timeframes_data = {}
         try:
-            logger.info(f"🔄 Crawling data for timeframes: {self.timeframes}")
+            logger.info(f"🔄 Crawling data for timeframes: {actual_timeframes}")
             
-            for i, timeframe in enumerate(self.timeframes, 1):
+            for i, timeframe in enumerate(actual_timeframes, 1):
                 try:
                     if timeframe not in timeframe_to_ms:
                         raise ValueError(f"Unsupported timeframe: {timeframe}")
@@ -518,10 +537,10 @@ class UniversalFuturesSignalsBot(CustomBot):
                     lookback = int(max(desired_limit, int(desired_limit * INITIAL_LOOKBACK_MULT)))
                     start_time = end_time - (lookback - 1) * interval_ms
                     
-                    logger.info(f"📊 [{i}/{len(self.timeframes)}] Fetching {lookback} {timeframe} candles for {self.trading_pair}")
+                    logger.info(f"📊 [{i}/{len(actual_timeframes)}] Fetching {lookback} {timeframe} candles for {actual_trading_pair}")
                     
                     df = self.futures_client.get_klines(
-                        symbol=self.trading_pair,
+                        symbol=actual_trading_pair,
                         interval=timeframe,
                         start_time=start_time,
                         end_time=end_time,
@@ -541,7 +560,7 @@ class UniversalFuturesSignalsBot(CustomBot):
                         
                         logger.warning(f"⚠️ {timeframe} needs backfill {len(df)}/{MIN_NEEDED}, retry {retries}...")
                         df_more = self.futures_client.get_klines(
-                            symbol=self.trading_pair,
+                            symbol=actual_trading_pair,
                             interval=timeframe,
                             start_time=new_start,
                             end_time=new_end,
@@ -562,10 +581,10 @@ class UniversalFuturesSignalsBot(CustomBot):
                     records = _df_to_records(df)
                     timeframes_data[timeframe] = records
                     
-                    logger.info(f"✅ [{i}/{len(self.timeframes)}] Got {len(records)} {timeframe} candles")
+                    logger.info(f"✅ [{i}/{len(actual_timeframes)}] Got {len(records)} {timeframe} candles")
                     
                 except Exception as tf_err:
-                    logger.error(f"❌ [{i}/{len(self.timeframes)}] Failed to fetch {timeframe}: {tf_err}")
+                    logger.error(f"❌ [{i}/{len(actual_timeframes)}] Failed to fetch {timeframe}: {tf_err}")
                     timeframes_data[timeframe] = []
             
             report = {tf: len(candles) for tf, candles in timeframes_data.items()}
@@ -809,6 +828,12 @@ class UniversalFuturesSignalsBot(CustomBot):
             if "error" in llm_analysis:
                 logger.error(f"LLM analysis failed: {llm_analysis['error']}")
                 return Action(action="HOLD", value=0.0, reason=f"LLM error: {llm_analysis['error']}")
+            
+            # Debug: Log raw LLM response
+            logger.info(f"🔍 Raw LLM analysis keys: {list(llm_analysis.keys())}")
+            logger.info(f"🔍 parsed={llm_analysis.get('parsed')}, has_recommendation={'recommendation' in llm_analysis}")
+            if not llm_analysis.get("parsed", False) or "recommendation" not in llm_analysis:
+                logger.warning(f"⚠️ LLM response structure: {llm_analysis}")
             
             # Parse recommendation
             if llm_analysis.get("parsed", False) and "recommendation" in llm_analysis:
