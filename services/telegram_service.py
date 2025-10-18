@@ -56,12 +56,28 @@ class TelegramService:
     async def run_polling(self):
         logger.info("Running Telegram bot in polling mode")
         try:
-            app = ApplicationBuilder().token(self.bot_token).build()
-            self.add_handlers(app)
-            logger.info("🤖 Bot running in polling mode (dev)")
-            await app.initialize() 
-            await app.start()
-            await app.updater.start_polling()
+            # Use synchronous polling in a separate thread
+            import threading
+            import time
+            
+            def start_polling_sync():
+                try:
+                    app = ApplicationBuilder().token(self.bot_token).build()
+                    self.add_handlers(app)
+                    logger.info("🤖 Bot running in polling mode (dev)")
+                    app.run_polling()
+                except Exception as e:
+                    logger.error(f"❌ Error in polling thread: {e}")
+            
+            # Start polling in background thread
+            polling_thread = threading.Thread(target=start_polling_sync, daemon=True)
+            polling_thread.start()
+            logger.info("✅ Bot polling started in background thread")
+            
+            # Keep the async function alive
+            while True:
+                await asyncio.sleep(1)
+                
         except Exception as e:
             logger.error(f"❌ Error starting bot: {e}")
             raise
@@ -143,10 +159,35 @@ class TelegramService:
                     chat_id = int(chat_id)
                 except ValueError:
                     pass
+            print(f"🔍 DEBUG: Looking for user_settings with telegram_username='{user_name}'")
             user_settings = crud.get_users_setting_by_telegram_username(db, telegram_username=user_name)
+            print(f"🔍 DEBUG: Found {len(user_settings) if user_settings else 0} user_settings")
+            
             if not user_settings or len(user_settings) == 0:
+                print(f"❌ DEBUG: No user_settings found for username '{user_name}'")
                 await self.send_telegram_message(chat_id, "❌ Account not found. Please rent bot first.")
                 return {"ok": False}
+            
+            # If multiple user_settings found, prioritize the one with active subscriptions
+            if len(user_settings) > 1:
+                # Find user_settings with most active subscriptions
+                best_user_setting = None
+                max_active_subs = 0
+                
+                for us in user_settings:
+                    # Count active subscriptions for this user
+                    active_subs = db.query(models.Subscription).filter(
+                        models.Subscription.user_id == us.id,
+                        models.Subscription.status == 'ACTIVE'
+                    ).count()
+                    
+                    if active_subs > max_active_subs:
+                        max_active_subs = active_subs
+                        best_user_setting = us
+                
+                if best_user_setting:
+                    user_settings = [best_user_setting]
+                    print(f"📱 Selected user_settings {best_user_setting.id} with {max_active_subs} active subscriptions")
 
             updated = False
             for user_setting in user_settings:

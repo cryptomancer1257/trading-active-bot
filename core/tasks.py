@@ -2141,8 +2141,14 @@ def schedule_active_bots():
                     logger.info(f"Scheduling bot execution for subscription {subscription.id}")
                     
                     # Convert bot_type enum to string for comparison
-                    bot_type_str = str(subscription.bot.bot_type).upper() if subscription.bot.bot_type else None
-                    bot_mode_str = str(subscription.bot.bot_mode).upper() if subscription.bot.bot_mode else "ACTIVE"
+                    bot_type_str = str(subscription.bot.bot_type).upper().strip() if subscription.bot.bot_type else None
+                    bot_mode_str = str(subscription.bot.bot_mode).upper().strip() if subscription.bot.bot_mode else "ACTIVE"
+                    
+                    # Remove "BotType." prefix if present
+                    if bot_type_str and "." in bot_type_str:
+                        bot_type_str = bot_type_str.split(".")[-1]
+                    
+                    logger.info(f"📊 Routing bot: subscription={subscription.id}, bot_type={bot_type_str}, bot_mode={bot_mode_str}")
                     
                     # Handle SIGNALS_FUTURES type (signals-only futures bot using bot template)
                     if bot_type_str == "SIGNALS_FUTURES":
