@@ -43,6 +43,7 @@ def format_notification_message(
     take_profit=None,
     timeframe=None,
     trading_pair=None,
+    risk_reward_ratio=None,
 ):
     """
     Format notification message for all channels (Telegram, Discord, Email)
@@ -62,12 +63,17 @@ def format_notification_message(
         available_str = available if available is not None else "N/A"
         total_wallet_str = total_wallet if total_wallet is not None else "N/A"
         msg = (
-            f"{bot_name}\n"
+            f"🌐 {bot_name}\n"
             f"TESTNET Account Balance:\n"
             f" 💰 Available: ${available_str:,.2f} USDT\n"
             f" 💎 Total Wallet: ${total_wallet_str:,.2f} USDT\n"
-            f"Action: {action}"
         )
+        
+        # Add trading pair if provided
+        if trading_pair:
+            msg += f"💱 Pair: {trading_pair}\n"
+        
+        msg += f"🎯 Action: {action}"
 
     if action and action.upper() != "HOLD":
         if entry_price is not None:
@@ -78,6 +84,21 @@ def format_notification_message(
             msg += f"\n🛑 Stop Loss: ${stop_loss:,.2f}"
         if take_profit is not None:
             msg += f"\n🎯 Take Profit: ${take_profit:,.2f}"
+        
+        # Calculate and add Risk:Reward ratio
+        if risk_reward_ratio is not None:
+            msg += f"\n⚖️ R:R: {risk_reward_ratio}"
+        elif entry_price and stop_loss and take_profit:
+            # Auto-calculate if not provided
+            try:
+                risk = abs(float(entry_price) - float(stop_loss))
+                reward = abs(float(take_profit) - float(entry_price))
+                if risk > 0:
+                    rr_ratio = reward / risk
+                    msg += f"\n⚖️ R:R: 1:{rr_ratio:.2f}"
+            except (ValueError, TypeError, ZeroDivisionError):
+                pass  # Skip R:R if calculation fails
+                
     msg += f"\n💭 Reason: {reason}"
     return msg
 
@@ -1432,18 +1453,42 @@ def run_bot_logic(self, subscription_id: int):
                         except Exception:
                             pass
 
-                        # Format message for all channels using unified format
-                        # Extract values safely from trade_result
-                        entry_price_val = trade_result.get('entry_price') if trade_result else None
-                        quantity_val = trade_result.get('quantity') if trade_result else None
-                        stop_loss_val = (trade_result.get("stop_loss", {}).get("price") if isinstance(trade_result.get("stop_loss"), dict) else None) if trade_result else None
-                        take_profit_val = (trade_result.get("take_profit", {}).get("price") if isinstance(trade_result.get("take_profit"), dict) else None) if trade_result else None
-                        
                         # Check if this is a SIGNALS bot (no account_status needed)
                         bot_type_str = str(subscription.bot.bot_type).upper() if subscription.bot.bot_type else None
                         if bot_type_str and "." in bot_type_str:
                             bot_type_str = bot_type_str.split(".")[-1]
                         is_signals_bot = (bot_type_str == "SIGNALS_FUTURES")
+                        
+                        # Extract values: SIGNALS bot from recommendation, ACTIVE bot from trade_result
+                        if is_signals_bot and hasattr(final_action, 'recommendation') and final_action.recommendation:
+                            # SIGNALS bot: Extract from LLM recommendation
+                            rec = final_action.recommendation
+                            try:
+                                entry_price_str = str(rec.get('entry_price', '')).replace(',', '').strip()
+                                entry_price_val = float(entry_price_str) if entry_price_str and entry_price_str not in ['Market', 'N/A', ''] else None
+                            except (ValueError, TypeError):
+                                entry_price_val = None
+                            
+                            try:
+                                stop_loss_str = str(rec.get('stop_loss', '')).replace(',', '').strip()
+                                stop_loss_val = float(stop_loss_str) if stop_loss_str and stop_loss_str not in ['N/A', ''] else None
+                            except (ValueError, TypeError):
+                                stop_loss_val = None
+                            
+                            try:
+                                take_profit_str = str(rec.get('take_profit', '')).replace(',', '').strip()
+                                take_profit_val = float(take_profit_str) if take_profit_str and take_profit_str not in ['N/A', ''] else None
+                            except (ValueError, TypeError):
+                                take_profit_val = None
+                            
+                            quantity_val = None  # Signals bot doesn't have quantity
+                            logger.info(f"📊 SIGNALS bot notification: entry={entry_price_val}, sl={stop_loss_val}, tp={take_profit_val}")
+                        else:
+                            # ACTIVE bot: Extract from trade_result
+                            entry_price_val = trade_result.get('entry_price') if trade_result else None
+                            quantity_val = trade_result.get('quantity') if trade_result else None
+                            stop_loss_val = (trade_result.get("stop_loss", {}).get("price") if isinstance(trade_result.get("stop_loss"), dict) else None) if trade_result else None
+                            take_profit_val = (trade_result.get("take_profit", {}).get("price") if isinstance(trade_result.get("take_profit"), dict) else None) if trade_result else None
                         
                         if is_signals_bot:
                             # SIGNALS bot: No balance info, add timeframe
@@ -1471,6 +1516,7 @@ def run_bot_logic(self, subscription_id: int):
                                 quantity=quantity_val,
                                 stop_loss=stop_loss_val,
                                 take_profit=take_profit_val,
+                                trading_pair=trading_pair,
                             )
                         if telegram_chat_id:
                             send_telegram_notification.delay(telegram_chat_id, message)
@@ -1845,6 +1891,7 @@ def run_bot_rpa_logic(self, subscription_id: int):
                             quantity=trade_result.get('quantity') if trade_result else None,
                             stop_loss=trade_result.get("stop_loss", {}).get("price") if trade_result else None,
                             take_profit=trade_result.get("take_profit", {}).get("price") if trade_result else None,
+                            trading_pair=trading_pair,
                         )
                         if telegram_chat_id:
                             send_telegram_notification.delay(telegram_chat_id, message)
