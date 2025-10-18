@@ -310,9 +310,9 @@ class LLMIntegrationService:
                                     {
                                         "recommendation": {
                                             "action": "BUY" | "SELL" | "HOLD",
-                                            "entry_price": "<string or null>",
-                                            "stop_loss": "<string or null>",
-                                            "take_profit": "<string or null>",
+                                            "entry_price": "<numeric price>",
+                                            "stop_loss": "<numeric price>",
+                                            "take_profit": "<numeric price>",
                                             "risk_reward": "<string like '1:2' or null>",
                                             "strategy": "<MA, MACD, RSI, BollingerBands, Fibonacci_Retracement or combination>",
                                             "confidence": "<0-100>",
@@ -321,11 +321,16 @@ class LLMIntegrationService:
                                         }
                                     }
                                     
-                                    SIGNALS BOT REQUIREMENTS:
-                                    - Stop Loss & Take Profit: MUST be calculated by LLM based on technical levels (not from Risk Config)
-                                    - Reasoning: DETAILED explanation with trend analysis, entry rationale, and risk considerations
-                                    - Market Volatility: Assess current market conditions (ATR, volume, price swings)
-                                    - Risk/Reward: Calculate based on entry, SL, and TP levels
+                                    SIGNALS BOT REQUIREMENTS - CRITICAL:
+                                    - **Entry Price**: Use current market price or specific level based on technical analysis
+                                    - **Stop Loss**: Set below entry for BUY (e.g., entry * 0.99), above entry for SELL (e.g., entry * 1.01)
+                                    - **Take Profit**: MUST BE DIFFERENT from entry price!
+                                      * For BUY: take_profit MUST be HIGHER than entry_price (e.g., entry + risk_amount * reward_ratio)
+                                      * For SELL: take_profit MUST be LOWER than entry_price (e.g., entry - risk_amount * reward_ratio)
+                                      * Example: If entry=3892, SL=3870 (risk=$22), then TP for 1:1 = 3892 + 22 = 3914 (NOT 3892!)
+                                    - **Risk/Reward**: Calculate as (TP - Entry) / (Entry - SL) for BUY, or (Entry - TP) / (SL - Entry) for SELL
+                                    - **Reasoning**: DETAILED explanation with trend analysis, entry rationale, and risk considerations
+                                    - **Market Volatility**: Assess current market conditions (ATR, volume, price swings)
                                     - RETURN ONLY VALID JSON - no additional text outside the JSON object
                                     """
                         else:

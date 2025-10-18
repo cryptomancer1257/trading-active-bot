@@ -864,6 +864,47 @@ class UniversalFuturesSignalsBot(CustomBot):
                 risk_reward = recommendation.get("risk_reward", "N/A")
                 market_volatility = recommendation.get("market_volatility", "MEDIUM")
                 
+                # Validate Take Profit is different from Entry Price
+                try:
+                    entry_float = float(str(entry_price).replace(',', ''))
+                    tp_float = float(str(take_profit).replace(',', ''))
+                    sl_float = float(str(stop_loss).replace(',', ''))
+                    
+                    # Check if TP = Entry (invalid!)
+                    if abs(tp_float - entry_float) < 0.01:  # Within $0.01
+                        logger.warning(f"⚠️ Invalid TP detected: TP={tp_float} ≈ Entry={entry_float}")
+                        
+                        # Auto-fix: Calculate proper TP based on SL
+                        risk_amount = abs(entry_float - sl_float)
+                        if action == "BUY":
+                            # For BUY: TP should be above entry
+                            tp_float = entry_float + risk_amount  # 1:1 risk-reward
+                            logger.info(f"🔧 Auto-fixed TP for BUY: {entry_float} + {risk_amount} = {tp_float}")
+                        elif action == "SELL":
+                            # For SELL: TP should be below entry
+                            tp_float = entry_float - risk_amount  # 1:1 risk-reward
+                            logger.info(f"🔧 Auto-fixed TP for SELL: {entry_float} - {risk_amount} = {tp_float}")
+                        
+                        take_profit = str(tp_float)
+                    
+                    # Validate TP direction
+                    if action == "BUY" and tp_float <= entry_float:
+                        logger.warning(f"⚠️ Invalid TP for BUY: TP={tp_float} <= Entry={entry_float}")
+                        risk_amount = abs(entry_float - sl_float)
+                        tp_float = entry_float + risk_amount
+                        take_profit = str(tp_float)
+                        logger.info(f"🔧 Corrected TP for BUY: {tp_float}")
+                    
+                    if action == "SELL" and tp_float >= entry_float:
+                        logger.warning(f"⚠️ Invalid TP for SELL: TP={tp_float} >= Entry={entry_float}")
+                        risk_amount = abs(sl_float - entry_float)
+                        tp_float = entry_float - risk_amount
+                        take_profit = str(tp_float)
+                        logger.info(f"🔧 Corrected TP for SELL: {tp_float}")
+                        
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"⚠️ Could not validate TP: {e}")
+                
                 if action == "CLOSE":
                     action = "SELL"
                 
