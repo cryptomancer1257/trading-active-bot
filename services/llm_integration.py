@@ -261,6 +261,14 @@ class LLMIntegrationService:
                 # Get database session
                 db = next(get_db())
                 
+                # Get bot to check bot_type for SIGNALS_FUTURES
+                bot = crud.get_bot(db, bot_id)
+                bot_type_str = str(bot.bot_type).upper().strip() if bot and bot.bot_type else None
+                if bot_type_str and "." in bot_type_str:
+                    bot_type_str = bot_type_str.split(".")[-1]
+                
+                is_signals_futures = (bot_type_str == "SIGNALS_FUTURES")
+                
                 # Get bot's attached prompt
                 bot_prompts = crud.get_bot_prompts(db, bot_id)
                 if bot_prompts:
@@ -289,8 +297,31 @@ class LLMIntegrationService:
                         for key, value in variables.items():
                             bot_prompt = bot_prompt.replace(f'{{{key}}}', value)
                         
-                        # Append mandatory output format to ensure consistent JSON response
-                        output_format = """
+                        # Append mandatory output format (different for SIGNALS_FUTURES)
+                        if is_signals_futures:
+                            output_format = """
+
+                                    OUTPUT FORMAT (Human-Readable)
+                                    Recommendation:
+                                        Action: BUY | SELL | HOLD
+                                        Entry Price: <string or null>
+                                        Stop Loss: <string or null>
+                                        Take Profit: <string or null>
+                                        Risk/Reward: <string like '1:2' or null>
+                                        Strategy: <MA, MACD, RSI, BollingerBands, Fibonacci_Retracement hoặc kết hợp>
+                                        Confidence: <0-100>
+                                        Reasoning: <DETAIL 3–5 sentences: analyze the trend, entry point, technical/fundamental reasons, and risk management>
+                                        Market Volatility: <LOW | MEDIUM | HIGH> - Assess the current level of market volatility
+                        
+                                    
+                                    SIGNALS BOT REQUIREMENTS:
+                                    - Stop Loss & Take Profit: MUST be calculated by LLM based on technical levels (not from Risk Config)
+                                    - Reasoning: DETAILED explanation with trend analysis, entry rationale, and risk considerations
+                                    - Market Volatility: Assess current market conditions (ATR, volume, price swings)
+                                    - Risk/Reward: Calculate based on entry, SL, and TP levels
+                                    """
+                        else:
+                            output_format = """
 
                                     OUTPUT FORMAT (STRICT JSON SCHEMA):
                                     {
@@ -299,15 +330,16 @@ class LLMIntegrationService:
                                         "entry_price": "<string or null>",
                                         "strategy": "<MA, MACD, RSI, BollingerBands, Fibonacci_Retracement hoặc kết hợp>",
                                         "confidence": "<0-100>",
-                                        "reasoning": "<ngắn gọn 1-2 câu giải thích tại sao>"
+                                        "reasoning": "<briefly explain in 1–2 sentences why>"
                                     }
                                     }
                                     
                                     NOTE: Stop Loss and Take Profit are automatically calculated from Risk Config (developer-configured parameters), not from LLM.
                                     """
+                        
                         bot_prompt = bot_prompt + output_format
                         
-                        logger.info(f"Using dynamic prompt from bot {bot_id} with output format")
+                        logger.info(f"Using dynamic prompt from bot {bot_id} (bot_type={bot_type_str}) with {'SIGNALS' if is_signals_futures else 'STANDARD'} output format")
                         return bot_prompt
                         
             except Exception as e:

@@ -3010,25 +3010,32 @@ async def run_advanced_futures_workflow(bot, subscription_id: int, subscription_
             logger.info(f"   Risk/Reward: {rec.get('risk_reward', 'N/A')}")
 
         if signal.action != "HOLD":
-            # 4.5. Apply Risk Management (NEW)
-            logger.info("🛡️ Step 4.5: Applying Risk Management rules...")
-            risk_approved, risk_reason, adjusted_signal = apply_risk_management(
-                subscription, signal, analysis, account_status, db
-            )
+            # 4.5. Apply Risk Management (NEW) - Skip for SIGNALS_FUTURES
+            bot_type_str = str(subscription.bot.bot_type).upper() if subscription.bot.bot_type else None
+            if bot_type_str and "." in bot_type_str:
+                bot_type_str = bot_type_str.split(".")[-1]
+            
+            if bot_type_str == "SIGNALS_FUTURES":
+                logger.info("📡 Step 4.5: SIGNALS_FUTURES bot - Skip risk management (signals only, no trading)")
+            else:
+                logger.info("🛡️ Step 4.5: Applying Risk Management rules...")
+                risk_approved, risk_reason, adjusted_signal = apply_risk_management(
+                    subscription, signal, analysis, account_status, db
+                )
 
-            if not risk_approved:
-                logger.warning("=" * 80)
-                logger.warning(f"🚫 TRADE REJECTED BY RISK MANAGEMENT")
-                logger.warning(f"   Reason: {risk_reason}")
-                logger.warning("=" * 80)
-                from bots.bot_sdk.Action import Action
-                return Action(action="HOLD", value=0.0, reason=f"Risk Management: {risk_reason}"), account_status, None
+                if not risk_approved:
+                    logger.warning("=" * 80)
+                    logger.warning(f"🚫 TRADE REJECTED BY RISK MANAGEMENT")
+                    logger.warning(f"   Reason: {risk_reason}")
+                    logger.warning("=" * 80)
+                    from bots.bot_sdk.Action import Action
+                    return Action(action="HOLD", value=0.0, reason=f"Risk Management: {risk_reason}"), account_status, None
 
-            logger.info("=" * 80)
-            logger.info(f"✅ TRADE APPROVED BY RISK MANAGEMENT")
-            logger.info(f"   Details: {risk_reason}")
-            logger.info("=" * 80)
-            signal = adjusted_signal  # Use adjusted signal (e.g., leverage may be capped)
+                logger.info("=" * 80)
+                logger.info(f"✅ TRADE APPROVED BY RISK MANAGEMENT")
+                logger.info(f"   Details: {risk_reason}")
+                logger.info("=" * 80)
+                signal = adjusted_signal  # Use adjusted signal (e.g., leverage may be capped)
 
             # 5. Execute advanced position setup (if not HOLD)
             logger.info(f"🚀 Step 5: Executing ADVANCED POSITION SETUP for {signal.action}...")
@@ -3289,18 +3296,25 @@ async def run_advanced_futures_rpa_workflow(bot, subscription_id: int, subscript
             logger.info(f"   Stop Loss: {rec.get('stop_loss', 'N/A')}")
             logger.info(f"   Risk/Reward: {rec.get('risk_reward', 'N/A')}")
         
-        # 4.5. Apply Risk Management (NEW)
-        logger.info("🛡️ Step 4.5: Applying Risk Management rules...")
-        risk_approved, risk_reason, adjusted_action = apply_risk_management(
-            subscription, action, {}, account_status, db
-        )
+        # 4.5. Apply Risk Management (NEW) - Skip for SIGNALS_FUTURES
+        bot_type_str = str(subscription.bot.bot_type).upper() if subscription.bot.bot_type else None
+        if bot_type_str and "." in bot_type_str:
+            bot_type_str = bot_type_str.split(".")[-1]
         
-        if not risk_approved:
-            logger.warning(f"🚫 Trade rejected by Risk Management: {risk_reason}")
-            return Action(action="HOLD", value=0.0, reason=f"Risk Management: {risk_reason}"), account_status, None
-        
-        logger.info(f"✅ Risk Management approved: {risk_reason}")
-        action = adjusted_action  # Use adjusted action
+        if bot_type_str == "SIGNALS_FUTURES":
+            logger.info("📡 Step 4.5: SIGNALS_FUTURES bot - Skip risk management (signals only, no trading)")
+        else:
+            logger.info("🛡️ Step 4.5: Applying Risk Management rules...")
+            risk_approved, risk_reason, adjusted_action = apply_risk_management(
+                subscription, action, {}, account_status, db
+            )
+            
+            if not risk_approved:
+                logger.warning(f"🚫 Trade rejected by Risk Management: {risk_reason}")
+                return Action(action="HOLD", value=0.0, reason=f"Risk Management: {risk_reason}"), account_status, None
+            
+            logger.info(f"✅ Risk Management approved: {risk_reason}")
+            action = adjusted_action  # Use adjusted action
         
         # 5. Execute advanced position setup (if not HOLD)
         if action.action != "HOLD":

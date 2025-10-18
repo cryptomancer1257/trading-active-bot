@@ -165,11 +165,11 @@ def create_subscription(
         subscription = crud.create_subscription(db, sub=sub_in, user_id=current_user.id)
         
         # Start the bot execution cycle based on bot type and mode
-        if bot.bot_mode != models.BotMode.PASSIVE and bot.bot_type in [models.BotType.FUTURES, models.BotType.SPOT]:
+        if bot.bot_mode != models.BotMode.PASSIVE and bot.bot_type in [models.BotType.FUTURES.value, models.BotType.SPOT.value]:
             # Active FUTURES and SPOT bots
             run_bot_logic.apply_async(args=[subscription.id], countdown=10)
             logger.info(f"✅ Triggered run_bot_logic for {bot.bot_type.value} bot (subscription {subscription.id})")
-        elif bot.bot_type == models.BotType.FUTURES_RPA:
+        elif bot.bot_type == models.BotType.FUTURES_RPA.value:
             # RPA bots
             run_bot_rpa_logic.apply_async(args=[subscription.id], countdown=10)
             logger.info(f"✅ Triggered run_bot_rpa_logic for RPA bot (subscription {subscription.id})")

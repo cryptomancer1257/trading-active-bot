@@ -62,12 +62,21 @@ class TelegramService:
             
             def start_polling_sync():
                 try:
+                    # Create new event loop for this thread
+                    import asyncio
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    
                     app = ApplicationBuilder().token(self.bot_token).build()
                     self.add_handlers(app)
                     logger.info("🤖 Bot running in polling mode (dev)")
-                    app.run_polling()
+                    
+                    # Run polling in the new event loop
+                    loop.run_until_complete(app.run_polling())
                 except Exception as e:
                     logger.error(f"❌ Error in polling thread: {e}")
+                    import traceback
+                    traceback.print_exc()
             
             # Start polling in background thread
             polling_thread = threading.Thread(target=start_polling_sync, daemon=True)

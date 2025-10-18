@@ -128,11 +128,21 @@ class NotificationService(ABC):
         timeframe = data.get('timeframe', 'N/A')
         timestamp = data.get('timestamp', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
         
+        # Market volatility display
+        market_volatility = data.get('market_volatility', 'MEDIUM').upper()
+        volatility_emoji_map = {
+            'LOW': '🟢',
+            'MEDIUM': '🟡',
+            'HIGH': '🔴'
+        }
+        volatility_emoji = volatility_emoji_map.get(market_volatility, '🟡')
+        
         # Build message
         message = f"{emoji} **{signal_type.value} SIGNAL - {symbol}**\n\n"
         message += f"**Exchange:** {exchange}\n"
         message += f"**Timeframe:** {timeframe}\n"
-        message += f"**Confidence:** {confidence}%\n\n"
+        message += f"**Confidence:** {confidence}%\n"
+        message += f"**Market Volatility:** {volatility_emoji} {market_volatility}\n\n"
         
         if signal_type in [SignalType.BUY, SignalType.SELL]:
             message += f"**Entry Price:** {entry_price}\n"

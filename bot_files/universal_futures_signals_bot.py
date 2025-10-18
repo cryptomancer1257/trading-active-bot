@@ -285,7 +285,12 @@ class UniversalFuturesSignalsBot(CustomBot):
             
             # Step 4: Send notification if signal is actionable
             if signal.action in ['BUY', 'SELL'] and self.notification_manager:
+                logger.info(f"📢 [SIGNALS BOT] Sending {signal.action} notification...")
                 asyncio.create_task(self._send_signal_notification(signal, analysis))
+            elif signal.action == 'HOLD':
+                logger.info(f"📢 [SIGNALS BOT] HOLD signal - no notification sent")
+            elif not self.notification_manager:
+                logger.warning(f"📢 [SIGNALS BOT] Notification manager not available")
             
             logger.info(f"✅ [SIGNALS BOT] Completed - Signal: {signal.name}")
             return signal
@@ -315,6 +320,8 @@ class UniversalFuturesSignalsBot(CustomBot):
     async def _send_signal_notification(self, signal: Action, analysis: Dict[str, Any]):
         """Send signal notification to user via configured channels"""
         try:
+            logger.info(f"📢 [SIGNALS BOT] Preparing notification for {signal.action} signal...")
+            
             # Map Action to SignalType
             signal_type_map = {
                 'BUY': SignalType.BUY,
@@ -335,11 +342,15 @@ class UniversalFuturesSignalsBot(CustomBot):
                 'stop_loss': recommendation.get('stop_loss', 'N/A'),
                 'take_profit': recommendation.get('take_profit', 'N/A'),
                 'risk_reward': recommendation.get('risk_reward', 'N/A'),
+                'market_volatility': recommendation.get('market_volatility', 'MEDIUM'),
                 'reasoning': signal.reason,
                 'strategy': recommendation.get('strategy', 'Multi-timeframe Analysis'),
                 'timeframe': self.primary_timeframe,
                 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             }
+            
+            logger.info(f"📢 [SIGNALS BOT] Signal data: {signal_data}")
+            logger.info(f"📢 [SIGNALS BOT] User config: {self.user_notification_config}")
             
             # Send notification
             results = await self.notification_manager.send_signal(
@@ -349,10 +360,10 @@ class UniversalFuturesSignalsBot(CustomBot):
                 user_config=self.user_notification_config
             )
             
-            logger.info(f"📢 Notification sent: {results}")
+            logger.info(f"📢 [SIGNALS BOT] Notification sent: {results}")
             
         except Exception as e:
-            logger.error(f"Failed to send signal notification: {e}")
+            logger.error(f"❌ [SIGNALS BOT] Failed to send signal notification: {e}")
             import traceback
             traceback.print_exc()
     
@@ -820,12 +831,13 @@ class UniversalFuturesSignalsBot(CustomBot):
                 
                 reasoning = recommendation.get("reasoning", "LLM analysis")
                 
-                # Extract recommendation details
+                # Extract recommendation details (SIGNALS_FUTURES includes SL/TP from LLM)
                 entry_price = recommendation.get("entry_price", "Market")
                 take_profit = recommendation.get("take_profit", "N/A")
                 stop_loss = recommendation.get("stop_loss", "N/A")
                 strategy = recommendation.get("strategy", "Multi-timeframe")
                 risk_reward = recommendation.get("risk_reward", "N/A")
+                market_volatility = recommendation.get("market_volatility", "MEDIUM")
                 
                 if action == "CLOSE":
                     action = "SELL"
@@ -835,7 +847,9 @@ class UniversalFuturesSignalsBot(CustomBot):
                     confidence = 0.0
                     reasoning = f"Invalid LLM action: {action}"
                 
-                logger.info(f"🤖 LLM: {action} ({confidence*100:.1f}%) - {reasoning[:50]}...")
+                logger.info(f"🤖 LLM: {action} ({confidence*100:.1f}%) - {reasoning[:80]}...")
+                logger.info(f"   Entry: {entry_price} | SL: {stop_loss} | TP: {take_profit} | R:R: {risk_reward}")
+                logger.info(f"   Market Volatility: {market_volatility}")
                 
                 full_recommendation = {
                     "action": action,
@@ -845,6 +859,7 @@ class UniversalFuturesSignalsBot(CustomBot):
                     "stop_loss": stop_loss,
                     "strategy": strategy,
                     "risk_reward": risk_reward,
+                    "market_volatility": market_volatility,
                     "reasoning": reasoning
                 }
                 
