@@ -372,8 +372,18 @@ class BotInDB(BotBase):
     approved_at: Optional[datetime] = None
     approved_by: Optional[int] = None
     
+    # Performance metrics (calculated dynamically)
+    total_pnl: Optional[Decimal] = Decimal('0.0')
+    win_rate: Optional[float] = 0.0
+    total_trades: Optional[int] = 0
+    winning_trades: Optional[int] = 0
+    
     class Config:
         from_attributes = True
+        # Allow arbitrary types for computed fields
+        arbitrary_types_allowed = True
+        # Populate by field name to include dynamic attributes
+        populate_by_name = True
 
 class BotPublic(BaseModel):
     id: int
@@ -383,6 +393,7 @@ class BotPublic(BaseModel):
     category_id: Optional[int] = None
     version: str
     bot_type: Optional[str] = None
+    bot_mode: Optional[str] = None
     code_path: Optional[str] = None
     price_per_month: Decimal
     is_free: bool
@@ -391,6 +402,13 @@ class BotPublic(BaseModel):
     total_reviews: int
     default_config: Optional[Dict[str, Any]] = None
     created_at: datetime
+    status: Optional[str] = None
+    
+    # Performance metrics (calculated dynamically)
+    total_pnl: Optional[float] = 0.0
+    win_rate: Optional[float] = 0.0
+    total_trades: Optional[int] = 0
+    winning_trades: Optional[int] = 0
     
     class Config:
         from_attributes = True

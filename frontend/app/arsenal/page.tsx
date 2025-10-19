@@ -6,9 +6,9 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import Link from 'next/link'
 
-// Fetch bots from API
-const fetchPublicBots = async () => {
-  const response = await api.get('/bots/?limit=100')
+// Fetch bots from API with sorting
+const fetchPublicBots = async (sortBy: string = 'performance', order: string = 'desc') => {
+  const response = await api.get(`/bots/?limit=100&sort_by=${sortBy}&order=${order}`)
   return response.data
 }
 
@@ -45,12 +45,34 @@ const mapBotToDisplay = (bot: any) => {
   }
   const gradient = gradients[bot.bot_type] || 'from-gray-500 to-gray-600'
   
+  // Use actual performance data from backend
+  const totalPnl = parseFloat(bot.total_pnl || 0)
+  const winRate = parseFloat(bot.win_rate || 0)
+  const totalTrades = parseInt(bot.total_trades || 0)
+  const winningTrades = parseInt(bot.winning_trades || 0)
+  
+  // Format performance display - prioritize P&L if available
+  let performanceDisplay = '0.0%'
+  if (totalPnl !== 0) {
+    // Show P&L if there are transactions
+    const performanceSign = totalPnl >= 0 ? '+' : ''
+    performanceDisplay = `${performanceSign}$${totalPnl.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  } else if (winRate > 0) {
+    // Fallback to win rate if no P&L but has win rate
+    performanceDisplay = `${winRate.toFixed(1)}%`
+  }
+  
   return {
     id: bot.id,
     name: bot.name,
     description: bot.description || 'No description available',
     category,
-    performance: `+${bot.average_rating || 0}%`,
+    performance: performanceDisplay,
+    performanceValue: totalPnl, // For sorting
+    winRate: winRate,
+    totalPnl: totalPnl,
+    totalTrades: totalTrades,
+    winningTrades: winningTrades,
     risk,
     status,
     creator: bot.developer?.username || 'Unknown',
@@ -63,21 +85,29 @@ export default function ArsenalPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedCategory, setSelectedCategory] = useState("All")
   const [selectedRisk, setSelectedRisk] = useState("All")
+  const [currentPage, setCurrentPage] = useState(1)
+  const [sortBy, setSortBy] = useState<'performance' | 'deployments' | 'name'>('performance')
+  const botsPerPage = 10
 
-  // Fetch bots from API
+  // Fetch bots from API with sorting
   const { data: botsData, isLoading, error } = useQuery({
-    queryKey: ['public-bots'],
-    queryFn: fetchPublicBots,
+    queryKey: ['public-bots', sortBy],
+    queryFn: () => {
+      // Map frontend sortBy to backend sort_by
+      const backendSortBy = sortBy === 'performance' ? 'total_pnl' : sortBy === 'deployments' ? 'rating' : 'name'
+      return fetchPublicBots(backendSortBy, 'desc')
+    },
     staleTime: 60000, // Cache for 1 minute
   })
 
-  // Map and filter bots
-  const filteredBots = useMemo(() => {
-    if (!botsData?.bots) return []
+  // Map, filter, and paginate bots (backend already sorted)
+  const { filteredBots, totalPages, allFilteredCount, allFilteredBots } = useMemo(() => {
+    if (!botsData?.bots) return { filteredBots: [], totalPages: 0, allFilteredCount: 0, allFilteredBots: [] }
     
     const mappedBots = botsData.bots.map(mapBotToDisplay)
     
-    return mappedBots.filter((bot: any) => {
+    // Filter bots (backend already sorted)
+    const filtered = mappedBots.filter((bot: any) => {
       const matchesSearch = bot.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                            bot.description.toLowerCase().includes(searchTerm.toLowerCase())
       const matchesCategory = selectedCategory === "All" || bot.category === selectedCategory
@@ -85,7 +115,20 @@ export default function ArsenalPage() {
       
       return matchesSearch && matchesCategory && matchesRisk
     })
-  }, [botsData, searchTerm, selectedCategory, selectedRisk])
+    
+    // No need to sort here - backend already sorted by total_pnl
+    
+    const totalPages = Math.ceil(filtered.length / botsPerPage)
+    const startIndex = (currentPage - 1) * botsPerPage
+    const paginatedBots = filtered.slice(startIndex, startIndex + botsPerPage)
+    
+    return { 
+      filteredBots: paginatedBots, 
+      totalPages, 
+      allFilteredCount: filtered.length,
+      allFilteredBots: filtered // Keep all filtered bots for stats calculation
+    }
+  }, [botsData, searchTerm, selectedCategory, selectedRisk, currentPage])
 
   const getRiskColor = (risk: string) => {
     switch (risk) {
@@ -160,7 +203,7 @@ export default function ArsenalPage() {
           Each AI entity represents years of algorithmic evolution.
         </p>
         <p className="text-sm text-gray-500 mt-2">
-          Total Bots: {botsData?.total || 0} | Showing: {filteredBots.length}
+          Total Bots: {botsData?.total || 0} | Showing: {filteredBots.length} of {allFilteredCount} (Page {currentPage}/{totalPages})
         </p>
       </div>
 
@@ -174,9 +217,29 @@ export default function ArsenalPage() {
               type="text"
               placeholder="Search AI entities..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => {
+                setSearchTerm(e.target.value)
+                setCurrentPage(1) // Reset to page 1 on search
+              }}
               className="form-input pl-10 w-full"
             />
+          </div>
+
+          {/* Sort By */}
+          <div className="flex items-center space-x-2">
+            <BoltIcon className="h-5 w-5 text-gray-400" />
+            <select
+              value={sortBy}
+              onChange={(e) => {
+                setSortBy(e.target.value as 'performance' | 'deployments' | 'name')
+                setCurrentPage(1) // Reset to page 1 on sort change
+              }}
+              className="form-input"
+            >
+              <option value="performance">🏆 Top Performance</option>
+              <option value="deployments">👥 Most Popular</option>
+              <option value="name">📝 Name (A-Z)</option>
+            </select>
           </div>
 
           {/* Category Filter */}
@@ -184,7 +247,10 @@ export default function ArsenalPage() {
             <FunnelIcon className="h-5 w-5 text-gray-400" />
             <select
               value={selectedCategory}
-              onChange={(e) => setSelectedCategory(e.target.value)}
+              onChange={(e) => {
+                setSelectedCategory(e.target.value)
+                setCurrentPage(1) // Reset to page 1 on filter change
+              }}
               className="form-input"
             >
               {categories.map(category => (
@@ -198,7 +264,10 @@ export default function ArsenalPage() {
             <ShieldCheckIcon className="h-5 w-5 text-gray-400" />
             <select
               value={selectedRisk}
-              onChange={(e) => setSelectedRisk(e.target.value)}
+              onChange={(e) => {
+                setSelectedRisk(e.target.value)
+                setCurrentPage(1) // Reset to page 1 on filter change
+              }}
               className="form-input"
             >
               {riskLevels.map(risk => (
@@ -213,25 +282,25 @@ export default function ArsenalPage() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
         <div className="card-cyber p-6 text-center animate-fade-in" style={{ animationDelay: '0.1s' }}>
           <div className="text-3xl font-bold cyber-text animate-neural-pulse">
-            {filteredBots.length}
+            {allFilteredCount}
           </div>
           <div className="text-sm text-gray-400 mt-1">Active Entities</div>
         </div>
         <div className="card-cyber p-6 text-center animate-fade-in" style={{ animationDelay: '0.2s' }}>
           <div className="text-3xl font-bold text-neural-400 animate-neural-pulse">
-            {filteredBots.reduce((sum: number, bot: any) => sum + bot.deployments, 0).toLocaleString()}
+            {allFilteredBots.reduce((sum: number, bot: any) => sum + bot.deployments, 0).toLocaleString()}
           </div>
           <div className="text-sm text-gray-400 mt-1">Total Deployments</div>
         </div>
         <div className="card-cyber p-6 text-center animate-fade-in" style={{ animationDelay: '0.3s' }}>
           <div className="text-3xl font-bold text-cyber-400 animate-neural-pulse">
-            {Math.round(filteredBots.reduce((sum: number, bot: any) => sum + parseFloat(bot.performance.replace('%', '').replace('+', '')), 0) / filteredBots.length)}%
+            {allFilteredBots.length > 0 ? Math.round(allFilteredBots.reduce((sum: number, bot: any) => sum + bot.winRate, 0) / allFilteredBots.length) : 0}%
           </div>
-          <div className="text-sm text-gray-400 mt-1">Avg Performance</div>
+          <div className="text-sm text-gray-400 mt-1">Avg Win Rate</div>
         </div>
         <div className="card-cyber p-6 text-center animate-fade-in" style={{ animationDelay: '0.4s' }}>
           <div className="text-3xl font-bold text-yellow-400 animate-neural-pulse">
-            {filteredBots.filter((bot: any) => bot.status === 'Active').length}
+            {allFilteredBots.filter((bot: any) => bot.status === 'Active').length}
           </div>
           <div className="text-sm text-gray-400 mt-1">Online Now</div>
         </div>
@@ -274,12 +343,12 @@ export default function ArsenalPage() {
             {/* Stats */}
             <div className="grid grid-cols-3 gap-4 mb-4">
               <div className="text-center">
-                <div className="text-lg font-bold text-neural-400">{bot.performance}</div>
-                <div className="text-xs text-gray-500">Performance</div>
+                <div className="text-lg font-bold text-neural-400">{bot.winRate.toFixed(1)}%</div>
+                <div className="text-xs text-gray-500">Win Rate</div>
               </div>
               <div className="text-center">
-                <div className="text-lg font-bold text-cyber-400">{bot.deployments.toLocaleString()}</div>
-                <div className="text-xs text-gray-500">Deployments</div>
+                <div className="text-lg font-bold text-cyber-400">{bot.performance}</div>
+                <div className="text-xs text-gray-500">P&L</div>
               </div>
               <div className="text-center">
                 <div className="text-lg font-bold text-quantum-400">{bot.category}</div>
@@ -322,13 +391,96 @@ export default function ArsenalPage() {
       </div>
 
       {/* No Results */}
-      {filteredBots.length === 0 && (
+      {filteredBots.length === 0 && allFilteredCount === 0 && (
         <div className="card-quantum p-12 text-center">
           <CpuChipIcon className="h-16 w-16 text-gray-600 mx-auto mb-4 animate-neural-pulse" />
           <h3 className="text-xl font-bold text-gray-300 mb-2">No AI Entities Found</h3>
           <p className="text-gray-400">
             Try adjusting your search criteria or explore different categories.
           </p>
+        </div>
+      )}
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="card-quantum p-6 mt-8 flex items-center justify-between">
+          <div className="text-sm text-gray-400">
+            Showing {((currentPage - 1) * botsPerPage) + 1} - {Math.min(currentPage * botsPerPage, allFilteredCount)} of {allFilteredCount} bots
+          </div>
+          
+          <div className="flex space-x-2">
+            {/* Previous Button */}
+            <button
+              onClick={() => {
+                setCurrentPage(prev => Math.max(1, prev - 1))
+                window.scrollTo({ top: 0, behavior: 'smooth' })
+              }}
+              disabled={currentPage === 1}
+              className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                currentPage === 1
+                  ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                  : 'bg-quantum-600 hover:bg-quantum-700 text-white'
+              }`}
+            >
+              ← Previous
+            </button>
+
+            {/* Page Numbers */}
+            <div className="hidden md:flex space-x-2">
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => {
+                // Show first page, last page, current page, and pages around current
+                if (
+                  page === 1 ||
+                  page === totalPages ||
+                  (page >= currentPage - 1 && page <= currentPage + 1)
+                ) {
+                  return (
+                    <button
+                      key={page}
+                      onClick={() => {
+                        setCurrentPage(page)
+                        window.scrollTo({ top: 0, behavior: 'smooth' })
+                      }}
+                      className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                        currentPage === page
+                          ? 'bg-quantum-600 text-white'
+                          : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+                      }`}
+                    >
+                      {page}
+                    </button>
+                  )
+                } else if (
+                  (page === currentPage - 2 && page > 1) ||
+                  (page === currentPage + 2 && page < totalPages)
+                ) {
+                  return <span key={page} className="px-2 text-gray-500">...</span>
+                }
+                return null
+              })}
+            </div>
+
+            {/* Next Button */}
+            <button
+              onClick={() => {
+                setCurrentPage(prev => Math.min(totalPages, prev + 1))
+                window.scrollTo({ top: 0, behavior: 'smooth' })
+              }}
+              disabled={currentPage === totalPages}
+              className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                currentPage === totalPages
+                  ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                  : 'bg-quantum-600 hover:bg-quantum-700 text-white'
+              }`}
+            >
+              Next →
+            </button>
+          </div>
+
+          {/* Mobile Page Info */}
+          <div className="md:hidden text-sm text-gray-400">
+            Page {currentPage} of {totalPages}
+          </div>
         </div>
       )}
 
