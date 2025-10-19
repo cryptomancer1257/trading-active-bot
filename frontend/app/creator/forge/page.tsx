@@ -50,22 +50,13 @@ const botSchema = z.object({
   risk_percentage: z.number().min(0.1).max(10).default(2),
   stop_loss_percentage: z.number().min(0.1).max(20).default(5),
   take_profit_percentage: z.number().min(0.5).max(50).default(10),
-  // LLM Configuration
+  // LLM Configuration (now managed by platform)
   llm_provider: z.string().optional(),
   llm_model: z.string().optional(),
   enable_image_analysis: z.boolean().default(false),
   enable_sentiment_analysis: z.boolean().default(false),
-}).refine((data) => {
-  // Validate llm_provider is required for AI-powered bots
-  const aiEnabledTypes = ['LLM', 'FUTURES', 'FUTURES_RPA', 'SPOT'];
-  if (aiEnabledTypes.includes(data.bot_type)) {
-    return data.llm_provider && data.llm_provider !== '';
-  }
-  return true;
-}, {
-  message: 'LLM Provider is required for AI-powered entities',
-  path: ['llm_provider'],
 })
+// Note: LLM Provider validation removed - platform now manages LLM providers centrally
 
 type BotFormData = z.infer<typeof botSchema>
 

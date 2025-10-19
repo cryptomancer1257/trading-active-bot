@@ -1462,6 +1462,54 @@ class LLMProviderInDB(LLMProviderBase):
         from_attributes = True
 
 # ============================================
+# PLATFORM LLM PROVIDER SCHEMAS (Admin Only)
+# ============================================
+
+class PlatformLLMProviderBase(BaseModel):
+    """Base schema for platform LLM providers"""
+    provider_type: LLMProviderType
+    name: str = Field(..., min_length=1, max_length=255)
+    api_key: str = Field(..., min_length=1)
+    base_url: Optional[str] = Field(None, max_length=500)
+    is_active: bool = True
+    is_default: bool = False
+
+class PlatformLLMProviderCreate(PlatformLLMProviderBase):
+    """Schema for creating platform LLM providers (Admin only)"""
+    models: Optional[List[LLMModelCreate]] = []
+
+class PlatformLLMProviderUpdate(BaseModel):
+    """Schema for updating platform LLM providers (Admin only)"""
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    api_key: Optional[str] = Field(None, min_length=1)
+    base_url: Optional[str] = Field(None, max_length=500)
+    is_active: Optional[bool] = None
+    is_default: Optional[bool] = None
+
+class PlatformLLMProviderInDB(PlatformLLMProviderBase):
+    """Schema for platform LLM providers in database"""
+    id: int
+    created_by: Optional[int] = None
+    models: List[LLMModelInDB] = []
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+class PlatformLLMModelCreate(LLMModelBase):
+    """Schema for creating platform LLM models"""
+    pass
+
+class PlatformLLMModelUpdate(BaseModel):
+    """Schema for updating platform LLM models"""
+    model_name: Optional[str] = Field(None, min_length=1, max_length=255)
+    display_name: Optional[str] = Field(None, min_length=1, max_length=255)
+    is_active: Optional[bool] = None
+    max_tokens: Optional[int] = Field(None, gt=0)
+    cost_per_1k_tokens: Optional[float] = Field(None, ge=0)
+
+# ============================================
 # USER PLAN SCHEMAS (Free vs Pro)
 # ============================================
 

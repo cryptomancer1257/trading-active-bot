@@ -159,7 +159,8 @@ export default function Navbar() {
                                 </Link>
                               )}
                             </Menu.Item>
-                            <Menu.Item>
+                            {/* LLM Providers - Hidden: Platform now manages LLM providers */}
+                            {/* <Menu.Item>
                               {({ active }) => (
                                 <a
                                   href="/creator/llm-providers"
@@ -175,7 +176,7 @@ export default function Navbar() {
                                   LLM Providers
                                 </a>
                               )}
-                            </Menu.Item>
+                            </Menu.Item> */}
                           </>
                         )}
                         <Menu.Item>
@@ -295,7 +296,8 @@ export default function Navbar() {
                       >
                         API Credentials
                       </Disclosure.Button>
-                      <Disclosure.Button
+                      {/* LLM Providers - Hidden: Platform now manages LLM providers */}
+                      {/* <Disclosure.Button
                         as="a"
                         href="/creator/llm-providers"
                         onClick={(e) => {
@@ -304,7 +306,7 @@ export default function Navbar() {
                         className="block px-4 py-2 text-base font-medium text-gray-500 hover:text-gray-800 hover:bg-gray-100"
                       >
                         LLM Providers
-                      </Disclosure.Button>
+                      </Disclosure.Button> */}
                     </>
                   )}
                   <Disclosure.Button
