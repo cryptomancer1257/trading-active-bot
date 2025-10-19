@@ -43,6 +43,8 @@ interface AnalyticsData {
     action: string
     quantity: number
     entry_price: number
+    stop_loss?: number  // NEW: Stop Loss
+    take_profit?: number  // NEW: Take Profit
     exit_price: number
     realized_pnl: number
     status: string  // NEW: OPEN or CLOSED
@@ -353,6 +355,8 @@ export default function BotAnalytics({ botId }: BotAnalyticsProps) {
                   <th className="py-3 px-4 text-center">Status</th>
                   <th className="py-3 px-4 text-right">Quantity</th>
                   <th className="py-3 px-4 text-right">Entry</th>
+                  <th className="py-3 px-4 text-right">SL</th>
+                  <th className="py-3 px-4 text-right">TP</th>
                   <th className="py-3 px-4 text-right">Current/Exit</th>
                   <th className="py-3 px-4 text-right">P&L</th>
                 </tr>
@@ -408,6 +412,12 @@ export default function BotAnalytics({ botId }: BotAnalyticsProps) {
                       </td>
                       <td className="py-3 px-4 text-right text-gray-300">
                         ${tx.entry_price.toFixed(2)}
+                      </td>
+                      <td className="py-3 px-4 text-right text-red-400">
+                        {tx.stop_loss ? `$${tx.stop_loss.toFixed(2)}` : 'N/A'}
+                      </td>
+                      <td className="py-3 px-4 text-right text-green-400">
+                        {tx.take_profit ? `$${tx.take_profit.toFixed(2)}` : 'N/A'}
                       </td>
                       <td className="py-3 px-4 text-right text-gray-300">
                         {currentPrice > 0 ? (

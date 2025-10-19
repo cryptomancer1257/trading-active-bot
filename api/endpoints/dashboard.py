@@ -76,6 +76,8 @@ async def get_dashboard_activity(
                 'symbol': tx.symbol,
                 'price': float(tx.entry_price) if tx.entry_price else None,
                 'quantity': float(tx.quantity) if tx.quantity else None,
+                'stop_loss': float(tx.stop_loss) if tx.stop_loss else None,
+                'take_profit': float(tx.take_profit) if tx.take_profit else None,
                 'pnl': pnl,
                 'is_profit': is_profit,
                 'status': tx.status,

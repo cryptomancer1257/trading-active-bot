@@ -80,11 +80,12 @@ class UniversalFuturesBot(CustomBot):
         logger.info(f"🤖 [BOT INIT] bot_id={self.bot_id}, subscription_id={subscription_id}")
         
         # Exchange configuration - support both 'exchange_type' and 'exchange' keys
-        self.exchange_name = (
-            config.get('exchange_type') or 
-            config.get('exchange') or 
-            'BINANCE'
-        ).upper()
+        exchange_raw = config.get('exchange_type') or config.get('exchange') or 'BINANCE'
+        # Handle enum or string
+        if hasattr(exchange_raw, 'value'):
+            self.exchange_name = str(exchange_raw.value).upper()
+        else:
+            self.exchange_name = str(exchange_raw).upper()
         
         if self.exchange_name not in self.SUPPORTED_EXCHANGES:
             raise ValueError(
