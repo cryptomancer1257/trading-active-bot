@@ -960,7 +960,9 @@ export default function BotDetailPage() {
       case 'risk-management':
         return <RiskManagementTab botId={bot.id} />
       case 'analytics':
-        return <BotAnalytics botId={bot.id} />
+        // Check if current user is the bot owner
+        const isOwner = user?.id === bot.developer_id
+        return <BotAnalytics botId={bot.id} isOwner={isOwner} />
       case 'subscriptions':
         return <BotSubscriptions botId={bot.id} />
       default:
