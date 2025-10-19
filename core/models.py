@@ -1094,6 +1094,65 @@ class LLMModel(Base):
 
 
 # =====================================================
+# Platform-Managed LLM Providers (Admin Only)
+# =====================================================
+
+class PlatformLLMProvider(Base):
+    """Platform-managed LLM Provider configurations (Admin only)"""
+    __tablename__ = "platform_llm_providers"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    provider_type = Column(Enum(LLMProviderType), nullable=False)
+    name = Column(String(255), nullable=False, unique=True)
+    api_key = Column(Text, nullable=False)  # Encrypted - Platform's API key
+    base_url = Column(String(500), nullable=True)
+    is_active = Column(Boolean, default=True)
+    is_default = Column(Boolean, default=False)  # Default provider for all users
+    created_by = Column(Integer, nullable=True)  # Admin user ID who created this
+    
+    # Timestamps
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    
+    # Relationships
+    models = relationship("PlatformLLMModel", back_populates="provider", cascade="all, delete-orphan")
+    
+    # Indexes for faster queries
+    __table_args__ = (
+        Index('idx_platform_llm_providers_provider_type', 'provider_type'),
+        Index('idx_platform_llm_providers_is_active', 'is_active'),
+        Index('idx_platform_llm_providers_is_default', 'is_default'),
+    )
+
+
+class PlatformLLMModel(Base):
+    """LLM Models for platform providers"""
+    __tablename__ = "platform_llm_models"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    provider_id = Column(Integer, ForeignKey("platform_llm_providers.id"), nullable=False)
+    model_name = Column(String(255), nullable=False)  # e.g., "gpt-4o"
+    display_name = Column(String(255), nullable=False)  # e.g., "GPT-4o"
+    is_active = Column(Boolean, default=True)
+    max_tokens = Column(Integer, nullable=True)
+    cost_per_1k_tokens = Column(DECIMAL(10, 6), nullable=True)
+    
+    # Timestamps
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    
+    # Relationships
+    provider = relationship("PlatformLLMProvider", back_populates="models")
+    
+    # Indexes for faster queries
+    __table_args__ = (
+        Index('idx_platform_llm_models_provider_id', 'provider_id'),
+        Index('idx_platform_llm_models_model_name', 'model_name'),
+        Index('idx_platform_llm_models_is_active', 'is_active'),
+    )
+
+
+# =====================================================
 # LLM Subscription and Billing Models
 # =====================================================
 

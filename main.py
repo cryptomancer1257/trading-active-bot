@@ -25,7 +25,7 @@ from api.endpoints import exchange_credentials, user_principals, futures_bot, ma
 from api.endpoints import paypal_payments
 from api.endpoints import prompts, llm_prompts
 from api.endpoints import bot_prompts
-from api.endpoints import llm_providers
+from api.endpoints import llm_providers, admin_llm_providers
 from api.endpoints import credentials
 from api.endpoints import risk_management
 from api.endpoints import dashboard
@@ -96,6 +96,7 @@ app.include_router(prompts.router, prefix="/prompts", tags=["Trading Strategy Te
 app.include_router(llm_prompts.router, prefix="/prompts", tags=["LLM Prompts"])  # /prompts/* routes (less specific)
 app.include_router(bot_prompts.router, prefix="/bot-prompts", tags=["Bot prompts"])
 app.include_router(llm_providers.router, prefix="/developer/llm-providers", tags=["LLM Providers"])
+app.include_router(admin_llm_providers.router, prefix="/admin/llm-providers", tags=["Admin LLM Providers"])
 app.include_router(credentials.router, prefix="/developer/credentials", tags=["Developer"])
 app.include_router(risk_management.router, prefix="/v1/risk-management", tags=["Risk Management"])
 app.include_router(dashboard.router, prefix="/v1/dashboard", tags=["Dashboard"])

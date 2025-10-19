@@ -165,36 +165,18 @@ class UniversalFuturesSignalsBot(CustomBot):
                 
                 if preferred_provider:
                     logger.info(f"🎯 Bot configured to use LLM provider: {preferred_provider}")
-                if llm_model:
-                    logger.info(f"🎯 Bot configured to use specific model: {llm_model}")
                 
-                if not llm_model and preferred_provider:
-                    llm_model = preferred_provider
-                    logger.info(f"ℹ️  No specific model configured, using provider: {preferred_provider}")
+                # Note: Platform now manages LLM models automatically
+                # No need to override model - platform will select the best model for the provider
                 
-                llm_config = {
-                    'openai_api_key': os.getenv('OPENAI_API_KEY'),
-                    'claude_api_key': os.getenv('CLAUDE_API_KEY'),
-                    'gemini_api_key': os.getenv('GEMINI_API_KEY'),
-                    'openai_model': config.get('openai_model', 'gpt-4o'),
-                    'claude_model': config.get('claude_model', 'claude-3-5-sonnet-20241022'),
-                    'gemini_model': config.get('gemini_model', 'gemini-2.5-flash')
-                }
-                
-                if llm_model:
-                    if preferred_provider == 'openai':
-                        llm_config['openai_model'] = llm_model
-                    elif preferred_provider in ['anthropic', 'claude']:
-                        llm_config['claude_model'] = llm_model
-                    elif preferred_provider == 'gemini':
-                        llm_config['gemini_model'] = llm_model
-                
+                # Create LLM service (platform-managed)
                 self.llm_service = create_llm_service(
-                    config=llm_config,
+                    config={},  # Empty config - platform provides everything
                     developer_id=developer_id,
                     db=db,
                     preferred_provider=preferred_provider,
-                    bot_id=bot_id
+                    bot_id=bot_id,
+                    subscription_id=subscription_id  # ✅ Pass subscription_id for usage tracking
                 )
                 
                 logger.info(f"✅ LLM service initialized for signals bot")

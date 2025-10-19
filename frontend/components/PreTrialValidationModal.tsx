@@ -1,7 +1,6 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { useLLMProviders, useActiveLLMProviders } from '@/hooks/useLLMProviders'
 import { useCredentials, useDefaultCredentials } from '@/hooks/useCredentials'
 import { Bot } from '@/lib/types'
 import config from '@/lib/config'
@@ -15,10 +14,8 @@ interface PreTrialValidationModalProps {
 }
 
 interface ValidationResult {
-  hasLLMProvider: boolean
   hasExchangeCredentials: boolean
   hasPrompt: boolean
-  missingLLMProvider: boolean
   missingCredentials: boolean
   missingPrompt: boolean
   exchangeType: string
@@ -26,6 +23,7 @@ interface ValidationResult {
   networkType: string
   promptCount: number
 }
+// Note: LLM Provider validation removed - platform now manages LLM providers centrally
 
 export default function PreTrialValidationModal({
   isOpen,
@@ -36,10 +34,6 @@ export default function PreTrialValidationModal({
 }: PreTrialValidationModalProps) {
   const [validation, setValidation] = useState<ValidationResult | null>(null)
   const [isValidating, setIsValidating] = useState(false)
-
-  // Fetch LLM providers
-  const { data: llmProviders, isLoading: isLoadingLLM } = useLLMProviders()
-  const activeLLMProviders = useActiveLLMProviders()
 
   // Fetch exchange credentials
   const { data: credentials, isLoading: isLoadingCredentials } = useCredentials()
@@ -57,18 +51,15 @@ export default function PreTrialValidationModal({
   )
 
   useEffect(() => {
-    if (isOpen && !isLoadingLLM && !isLoadingCredentials) {
+    if (isOpen && !isLoadingCredentials) {
       validateConfiguration()
     }
-  }, [isOpen, isLoadingLLM, isLoadingCredentials, llmProviders, credentials, bot, networkType])
+  }, [isOpen, isLoadingCredentials, credentials, bot, networkType])
 
   const validateConfiguration = async () => {
     setIsValidating(true)
 
     try {
-      // Check LLM providers
-      const hasActiveLLMProvider = activeLLMProviders && activeLLMProviders.length > 0
-      
       // Check if bot is passive signals bot (skip exchange credentials check)
       const isPassiveBot = (bot as any).bot_mode === 'PASSIVE'
       
@@ -107,10 +98,8 @@ export default function PreTrialValidationModal({
       }
 
       const validationResult: ValidationResult = {
-        hasLLMProvider: hasActiveLLMProvider,
         hasExchangeCredentials: hasMatchingCredentials,
         hasPrompt: hasPrompts,
-        missingLLMProvider: !hasActiveLLMProvider,
         missingCredentials: !hasMatchingCredentials && !isPassiveBot, // Only show as missing if not passive
         missingPrompt: !hasPrompts,
         exchangeType,
@@ -128,13 +117,9 @@ export default function PreTrialValidationModal({
   }
 
   const handleProceed = () => {
-    if (validation?.hasLLMProvider && validation?.hasExchangeCredentials && validation?.hasPrompt) {
+    if (validation?.hasExchangeCredentials && validation?.hasPrompt) {
       onProceed()
     }
-  }
-
-  const openLLMProvidersPage = () => {
-    window.open('/creator/llm-providers', '_blank')
   }
 
   const openCredentialsPage = () => {
@@ -176,7 +161,7 @@ export default function PreTrialValidationModal({
 
         {/* Content */}
         <div className="p-6">
-          {isValidating || isLoadingLLM || isLoadingCredentials ? (
+          {isValidating || isLoadingCredentials ? (
             <div className="flex items-center justify-center py-8">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-500"></div>
               <span className="ml-3 text-gray-300">Validating configuration...</span>
@@ -206,44 +191,19 @@ export default function PreTrialValidationModal({
                 </div>
               </div>
 
-              {/* LLM Provider Check */}
-              <div className={`rounded-lg p-4 border ${
-                validation.hasLLMProvider 
-                  ? 'bg-green-900/30 border-green-500/30' 
-                  : 'bg-red-900/30 border-red-500/30'
-              }`}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center">
-                    <span className="text-2xl mr-3">
-                      {validation.hasLLMProvider ? '✅' : '❌'}
-                    </span>
-                    <div>
-                      <h4 className="text-lg font-semibold text-white">
-                        LLM Provider Configuration
-                      </h4>
-                      <p className="text-sm text-gray-300">
-                        {validation.hasLLMProvider 
-                          ? `Found ${activeLLMProviders.length} active LLM provider(s)`
-                          : 'No active LLM providers found'
-                        }
-                      </p>
-                    </div>
+              {/* LLM Provider - Platform Managed */}
+              <div className="rounded-lg p-4 border bg-green-900/30 border-green-500/30">
+                <div className="flex items-center">
+                  <span className="text-2xl mr-3">✅</span>
+                  <div>
+                    <h4 className="text-lg font-semibold text-white">
+                      LLM Provider Configuration
+                    </h4>
+                    <p className="text-sm text-gray-300">
+                      Platform-managed LLM providers are automatically configured
+                    </p>
                   </div>
-                  {validation.missingLLMProvider && (
-                    <button
-                      onClick={openLLMProvidersPage}
-                      className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors text-sm"
-                    >
-                      Configure LLM
-                    </button>
-                  )}
                 </div>
-                {validation.missingLLMProvider && (
-                  <div className="mt-3 p-3 bg-red-900/20 border border-red-500/20 rounded text-sm text-red-300">
-                    <p className="font-medium mb-1">⚠️ LLM Provider Required</p>
-                    <p>This bot requires an LLM provider (OpenAI, Anthropic, Google, etc.) to analyze markets and make trading decisions.</p>
-                  </div>
-                )}
               </div>
 
               {/* Exchange Credentials Check */}
@@ -348,7 +308,7 @@ export default function PreTrialValidationModal({
               {/* Summary */}
               <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
                 <h4 className="text-lg font-semibold text-white mb-3">Configuration Status</h4>
-                {validation.hasLLMProvider && validation.hasExchangeCredentials && validation.hasPrompt ? (
+                {validation.hasExchangeCredentials && validation.hasPrompt ? (
                   <div className="text-green-400 flex items-center">
                     <span className="mr-2">🎉</span>
                     <span>All configurations are ready! You can start your {networkType === 'TESTNET' ? 'free trial' : 'trade'}.</span>
@@ -374,14 +334,14 @@ export default function PreTrialValidationModal({
           </button>
           <button
             onClick={handleProceed}
-            disabled={!validation?.hasLLMProvider || !validation?.hasExchangeCredentials || !validation?.hasPrompt}
+            disabled={!validation?.hasExchangeCredentials || !validation?.hasPrompt}
             className={`px-6 py-2 rounded-lg font-medium transition-colors ${
-              validation?.hasLLMProvider && validation?.hasExchangeCredentials && validation?.hasPrompt
+              validation?.hasExchangeCredentials && validation?.hasPrompt
                 ? 'bg-green-600 hover:bg-green-700 text-white'
                 : 'bg-gray-700 text-gray-400 cursor-not-allowed'
             }`}
           >
-            {validation?.hasLLMProvider && validation?.hasExchangeCredentials && validation?.hasPrompt
+            {validation?.hasExchangeCredentials && validation?.hasPrompt
               ? 'Start Free Trial' 
               : 'Configure Missing Items'
             }
