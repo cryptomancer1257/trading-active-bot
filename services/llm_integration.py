@@ -45,7 +45,7 @@ class LLMIntegrationService:
     """
     
     def __init__(self, config: Dict[str, Any] = None, developer_id: int = None, db = None, 
-                 preferred_provider: str = None, bot_id: int = None):
+                 preferred_provider: str = None, bot_id: int = None, subscription_id: int = None):
         """
         Initialize LLM Integration Service
         
@@ -55,11 +55,13 @@ class LLMIntegrationService:
             db: Database session for loading provider configs
             preferred_provider: Preferred provider ("openai", "claude", "gemini") - from bot config
             bot_id: Bot ID for logging
+            subscription_id: Subscription ID for usage tracking
         """
         self.config = config or {}
         self.developer_id = developer_id
         self.db = db
         self.bot_id = bot_id
+        self.subscription_id = subscription_id
         
         # Try to load developer's LLM provider configuration first (BYOK - Priority!)
         provider_config = None
@@ -75,10 +77,10 @@ class LLMIntegrationService:
                     preferred_provider=preferred_provider  # ✅ Use bot's preference!
                 )
                 
-                if source_type == "USER_CONFIGURED":
-                    logger.info(f"✅ Using developer's LLM provider: {provider_config['provider']} ({provider_config['model']})")
+                if source_type in ["USER_CONFIGURED", "PLATFORM"]:
+                    logger.info(f"✅ Using {source_type} LLM provider: {provider_config['provider']} ({provider_config['model']})")
                     
-                    # Override config with developer's provider
+                    # Override config with provider (developer's or platform's)
                     # Extract the enum value and convert to uppercase for comparison
                     provider_enum = provider_config['provider']
                     provider_type = str(provider_enum.value).upper() if hasattr(provider_enum, 'value') else str(provider_enum).upper()
@@ -86,7 +88,7 @@ class LLMIntegrationService:
                     if provider_type == 'OPENAI':
                         self.config['openai_api_key'] = provider_config['api_key']
                         self.config['openai_model'] = provider_config['model']
-                    elif provider_type in ['ANTHROPIC']:
+                    elif provider_type in ['ANTHROPIC', 'CLAUDE']:
                         self.config['claude_api_key'] = provider_config['api_key']
                         self.config['claude_model'] = provider_config['model']
                     elif provider_type == 'GEMINI':
@@ -103,7 +105,7 @@ class LLMIntegrationService:
                     self._provider_config = provider_config
                     self._provider_selector = selector
                 else:
-                    logger.warning(f"⚠️ Developer {developer_id} is using platform provider (not implemented yet)")
+                    logger.warning(f"⚠️ Unknown provider source type: {source_type}")
                     self._provider_config = None
                     self._provider_selector = None
                     
@@ -142,7 +144,8 @@ class LLMIntegrationService:
         # in each analyze_with_* method
         
         if self._provider_config:
-            logger.info(f"✅ LLM Integration initialized with developer's {self._provider_config['provider']} provider (FREE)")
+            source = "PLATFORM" if self._provider_config.get('is_platform_managed') else "DEVELOPER"
+            logger.info(f"✅ LLM Integration initialized with {source} {self._provider_config['provider']} provider")
         else:
             logger.info("ℹ️  LLM Integration initialized with environment variables")
     
@@ -241,6 +244,159 @@ class LLMIntegrationService:
         else:
             self.gemini_client = None
             logger.warning("Gemini client not available")
+    
+    def _log_llm_usage(
+        self,
+        provider: str,
+        model: str,
+        input_tokens: int,
+        output_tokens: int,
+        request_type: str = "market_analysis",
+        success: bool = True,
+        error_message: str = None,
+        request_duration_ms: int = None
+    ):
+        """
+        Log LLM API usage to database
+        
+        Args:
+            provider: Provider name (OPENAI, CLAUDE, GEMINI)
+            model: Model name used
+            input_tokens: Number of input tokens
+            output_tokens: Number of output tokens
+            request_type: Type of request (market_analysis, signal_generation, etc.)
+            success: Whether request succeeded
+            error_message: Error message if failed
+            request_duration_ms: Request duration in milliseconds
+        """
+        if not self.developer_id or not self.db:
+            logger.debug("Skipping usage logging - no developer_id or db session")
+            return
+        
+        try:
+            from services.llm_provider_selector import LLMProviderSelector
+            from core import models
+            
+            # Use cached provider config from __init__ (already selected with preferred_provider)
+            if not self._provider_config or not self._provider_selector:
+                logger.warning("⚠️ No provider config cached, skipping usage logging")
+                return
+            
+            provider_config = self._provider_config
+            selector = self._provider_selector
+            
+            # Calculate cost based on LATEST VERIFIED pricing (per 1M tokens)
+            # Source: Official provider pricing pages (verified October 2024)
+            # Note: LLM providers do NOT return cost in API response, only token counts
+            cost_usd = 0.0
+            model_lower = model.lower()
+            
+            if provider.upper() == 'OPENAI':
+                # OpenAI pricing (verified October 2024: openai.com/pricing)
+                # Order matters: check specific models before generic ones
+                if 'o1-mini' in model_lower:
+                    # o1-mini: $3.00/1M input, $12.00/1M output
+                    cost_usd = (input_tokens / 1_000_000 * 3.00) + (output_tokens / 1_000_000 * 12.00)
+                elif 'o1-preview' in model_lower or model_lower == 'o1':
+                    # o1-preview or o1: $15.00/1M input, $60.00/1M output
+                    cost_usd = (input_tokens / 1_000_000 * 15.00) + (output_tokens / 1_000_000 * 60.00)
+                elif 'gpt-4o-mini' in model_lower:
+                    # gpt-4o-mini: $0.150/1M input, $0.600/1M output
+                    cost_usd = (input_tokens / 1_000_000 * 0.150) + (output_tokens / 1_000_000 * 0.600)
+                elif 'gpt-4o' in model_lower:
+                    # gpt-4o: $2.50/1M input, $10.00/1M output
+                    cost_usd = (input_tokens / 1_000_000 * 2.50) + (output_tokens / 1_000_000 * 10.00)
+                elif 'gpt-4-turbo' in model_lower or 'gpt-4-1106' in model_lower:
+                    # gpt-4-turbo: $10.00/1M input, $30.00/1M output
+                    cost_usd = (input_tokens / 1_000_000 * 10.00) + (output_tokens / 1_000_000 * 30.00)
+                elif 'gpt-4' in model_lower:
+                    # gpt-4 (8K context): $30.00/1M input, $60.00/1M output
+                    cost_usd = (input_tokens / 1_000_000 * 30.00) + (output_tokens / 1_000_000 * 60.00)
+                elif 'gpt-3.5-turbo' in model_lower:
+                    # gpt-3.5-turbo: $0.50/1M input, $1.50/1M output
+                    cost_usd = (input_tokens / 1_000_000 * 0.50) + (output_tokens / 1_000_000 * 1.50)
+                else:
+                    # Default to gpt-4o-mini pricing (most cost-effective)
+                    cost_usd = (input_tokens / 1_000_000 * 0.150) + (output_tokens / 1_000_000 * 0.600)
+                    
+            elif provider.upper() in ['CLAUDE', 'ANTHROPIC']:
+                # Claude pricing (verified October 2024: docs.anthropic.com/pricing)
+                # Order matters: check specific versions before generic names
+                if 'opus' in model_lower:
+                    # claude-3-opus-20240229: $15.00/1M input, $75.00/1M output
+                    cost_usd = (input_tokens / 1_000_000 * 15.00) + (output_tokens / 1_000_000 * 75.00)
+                elif ('3-7-sonnet' in model_lower or '3.7-sonnet' in model_lower or 
+                      '3-5-sonnet' in model_lower or '3.5-sonnet' in model_lower or 
+                      'sonnet' in model_lower):
+                    # claude-3-7-sonnet-latest, claude-3-5-sonnet-*: $3.00/1M input, $15.00/1M output
+                    # Note: >200K context has higher rates ($6/$22.50) but we use base rate
+                    cost_usd = (input_tokens / 1_000_000 * 3.00) + (output_tokens / 1_000_000 * 15.00)
+                elif ('3-5-haiku' in model_lower or '3.5-haiku' in model_lower):
+                    # claude-3-5-haiku-20241022: $0.80/1M input, $4.00/1M output
+                    cost_usd = (input_tokens / 1_000_000 * 0.80) + (output_tokens / 1_000_000 * 4.00)
+                elif 'haiku' in model_lower:
+                    # claude-3-haiku-20240307: $0.25/1M input, $1.25/1M output
+                    cost_usd = (input_tokens / 1_000_000 * 0.25) + (output_tokens / 1_000_000 * 1.25)
+                else:
+                    # Default to Sonnet pricing
+                    cost_usd = (input_tokens / 1_000_000 * 3.00) + (output_tokens / 1_000_000 * 15.00)
+                    
+            elif provider.upper() == 'GEMINI':
+                # Gemini pricing (verified October 2024: ai.google.dev/pricing)
+                # Order matters: check specific versions before generic names
+                if '2.5' in model_lower and 'pro' in model_lower:
+                    # gemini-2.5-pro: $1.25/1M input, $5.00/1M output
+                    cost_usd = (input_tokens / 1_000_000 * 1.25) + (output_tokens / 1_000_000 * 5.00)
+                elif '2.5' in model_lower and 'flash-lite' in model_lower:
+                    # gemini-2.5-flash-lite: $0.038/1M input, $0.15/1M output
+                    cost_usd = (input_tokens / 1_000_000 * 0.038) + (output_tokens / 1_000_000 * 0.15)
+                elif '2.5' in model_lower and 'flash' in model_lower:
+                    # gemini-2.5-flash: $0.075/1M input, $0.30/1M output
+                    cost_usd = (input_tokens / 1_000_000 * 0.075) + (output_tokens / 1_000_000 * 0.30)
+                elif '2.0' in model_lower and 'flash' in model_lower:
+                    # gemini-2.0-flash-001: FREE during experimental phase
+                    cost_usd = 0.0
+                elif '1.5' in model_lower and 'pro' in model_lower:
+                    # gemini-1.5-pro: $1.25/1M input, $5.00/1M output
+                    cost_usd = (input_tokens / 1_000_000 * 1.25) + (output_tokens / 1_000_000 * 5.00)
+                elif '1.5' in model_lower and 'flash' in model_lower:
+                    # gemini-1.5-flash-002: $0.075/1M input, $0.30/1M output
+                    cost_usd = (input_tokens / 1_000_000 * 0.075) + (output_tokens / 1_000_000 * 0.30)
+                elif '1.0' in model_lower and 'pro' in model_lower:
+                    # gemini-1.0-pro: $0.50/1M input, $1.50/1M output
+                    cost_usd = (input_tokens / 1_000_000 * 0.50) + (output_tokens / 1_000_000 * 1.50)
+                elif 'flash-lite' in model_lower:
+                    # Default Flash Lite pricing (2.5 Flash Lite)
+                    cost_usd = (input_tokens / 1_000_000 * 0.038) + (output_tokens / 1_000_000 * 0.15)
+                elif 'flash' in model_lower:
+                    # Default Flash pricing (2.5 Flash)
+                    cost_usd = (input_tokens / 1_000_000 * 0.075) + (output_tokens / 1_000_000 * 0.30)
+                elif 'pro' in model_lower:
+                    # Default Pro pricing (2.5 Pro)
+                    cost_usd = (input_tokens / 1_000_000 * 1.25) + (output_tokens / 1_000_000 * 5.00)
+                else:
+                    # Default to Flash pricing (most cost-effective non-free option)
+                    cost_usd = (input_tokens / 1_000_000 * 0.075) + (output_tokens / 1_000_000 * 0.30)
+            
+            # Log usage
+            selector.log_usage(
+                developer_id=self.developer_id,
+                provider_config=provider_config,
+                bot_id=self.bot_id,
+                subscription_id=self.subscription_id,
+                request_type=request_type,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                cost_usd=cost_usd,
+                success=success,
+                error_message=error_message,
+                request_duration_ms=request_duration_ms
+            )
+            
+            logger.info(f"✅ Logged LLM usage: {provider}/{model} - {input_tokens + output_tokens} tokens (${cost_usd:.4f})")
+            
+        except Exception as e:
+            logger.error(f"Failed to log LLM usage: {e}")
     
     def _get_analysis_prompt(self, bot_id: int = None, timeframes: list = None) -> str:
         """Get dynamic trading analysis prompt from bot's attached prompt template"""
@@ -631,6 +787,7 @@ Please respond in JSON format:
         if not self.openai_client:
             return {"error": "OpenAI client not available"}
         
+        start_time = time.time()
         try:
             # Extract timeframes from market_data
             timeframes = list(market_data.get("timeframes", {}).keys())
@@ -651,10 +808,38 @@ Please respond in JSON format:
                 max_tokens=2000
             )
             
+            # Log usage
+            duration_ms = int((time.time() - start_time) * 1000)
+            input_tokens = response.usage.prompt_tokens if hasattr(response, 'usage') else 0
+            output_tokens = response.usage.completion_tokens if hasattr(response, 'usage') else 0
+            
+            self._log_llm_usage(
+                provider='OPENAI',
+                model=self.openai_model,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                request_type='market_analysis',
+                success=True,
+                request_duration_ms=duration_ms
+            )
+            
             content = response.choices[0].message.content
             return self._parse_llm_response(content)
             
         except Exception as e:
+            # Log failed request
+            duration_ms = int((time.time() - start_time) * 1000)
+            self._log_llm_usage(
+                provider='OPENAI',
+                model=self.openai_model,
+                input_tokens=0,
+                output_tokens=0,
+                request_type='market_analysis',
+                success=False,
+                error_message=str(e),
+                request_duration_ms=duration_ms
+            )
+            
             logger.error(f"OpenAI analysis error: {e}")
             return {"error": f"OpenAI analysis failed: {str(e)}"}
     
@@ -663,6 +848,7 @@ Please respond in JSON format:
         if not self.claude_client:
             return {"error": "Claude client not available"}
         
+        start_time = time.time()
         try:
             # Extract timeframes from market_data
             timeframes = list(market_data.get("timeframes", {}).keys())
@@ -681,10 +867,38 @@ Please respond in JSON format:
                 ]
             )
             
+            # Log usage
+            duration_ms = int((time.time() - start_time) * 1000)
+            input_tokens = response.usage.input_tokens if hasattr(response, 'usage') else 0
+            output_tokens = response.usage.output_tokens if hasattr(response, 'usage') else 0
+            
+            self._log_llm_usage(
+                provider='CLAUDE',
+                model=self.claude_model,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                request_type='market_analysis',
+                success=True,
+                request_duration_ms=duration_ms
+            )
+            
             content = response.content[0].text
             return self._parse_llm_response(content)
             
         except Exception as e:
+            # Log failed request
+            duration_ms = int((time.time() - start_time) * 1000)
+            self._log_llm_usage(
+                provider='CLAUDE',
+                model=self.claude_model,
+                input_tokens=0,
+                output_tokens=0,
+                request_type='market_analysis',
+                success=False,
+                error_message=str(e),
+                request_duration_ms=duration_ms
+            )
+            
             logger.error(f"Claude analysis error: {e}")
             return {"error": f"Claude analysis failed: {str(e)}"}
     
@@ -693,6 +907,7 @@ Please respond in JSON format:
         if not self.gemini_client:
             return {"error": "Gemini client not available"}
         
+        start_time = time.time()
         try:
             # Extract timeframes from market_data
             timeframes = list(market_data.get("timeframes", {}).keys())
@@ -707,10 +922,39 @@ Please respond in JSON format:
                 prompt
             )
             
+            # Log usage
+            duration_ms = int((time.time() - start_time) * 1000)
+            # Gemini usage metadata
+            input_tokens = response.usage_metadata.prompt_token_count if hasattr(response, 'usage_metadata') else 0
+            output_tokens = response.usage_metadata.candidates_token_count if hasattr(response, 'usage_metadata') else 0
+            
+            self._log_llm_usage(
+                provider='GEMINI',
+                model=self.gemini_model,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                request_type='market_analysis',
+                success=True,
+                request_duration_ms=duration_ms
+            )
+            
             content = response.text
             return self._parse_llm_response(content)
             
         except Exception as e:
+            # Log failed request
+            duration_ms = int((time.time() - start_time) * 1000)
+            self._log_llm_usage(
+                provider='GEMINI',
+                model=self.gemini_model,
+                input_tokens=0,
+                output_tokens=0,
+                request_type='market_analysis',
+                success=False,
+                error_message=str(e),
+                request_duration_ms=duration_ms
+            )
+            
             logger.error(f"Gemini analysis error: {e}")
             return {"error": f"Gemini analysis failed: {str(e)}"}
     
@@ -1226,7 +1470,7 @@ Please analyze this information and provide specific capital management recommen
 
 # Factory function to create service instance
 def create_llm_service(config: Dict[str, Any] = None, developer_id: int = None, db = None,
-                       preferred_provider: str = None, bot_id: int = None) -> LLMIntegrationService:
+                       preferred_provider: str = None, bot_id: int = None, subscription_id: int = None) -> LLMIntegrationService:
     """
     Factory function to create LLM Integration Service
     
@@ -1236,12 +1480,14 @@ def create_llm_service(config: Dict[str, Any] = None, developer_id: int = None, 
         db: Database session for loading provider configs
         preferred_provider: Preferred provider ("openai", "claude", "gemini") - from bot config
         bot_id: Bot ID for logging
+        subscription_id: Subscription ID for usage tracking
         
     Returns:
         LLMIntegrationService instance
     """
     return LLMIntegrationService(config=config, developer_id=developer_id, db=db,
-                                 preferred_provider=preferred_provider, bot_id=bot_id)
+                                 preferred_provider=preferred_provider, bot_id=bot_id, 
+                                 subscription_id=subscription_id)
 
 # Test function
 def test_llm_integration():

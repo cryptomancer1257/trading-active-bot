@@ -39,11 +39,11 @@ def create_credentials(
 ):
     """Create new exchange credentials"""
     
-    # Only developers can create credentials
-    if current_user.role != models.UserRole.DEVELOPER:
+    # Only developers and admins can create credentials
+    if current_user.role not in [models.UserRole.DEVELOPER, models.UserRole.ADMIN]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only developers can manage exchange credentials"
+            detail="Only developers and admins can manage exchange credentials"
         )
     
     try:
@@ -68,10 +68,10 @@ def list_credentials(
 ):
     """Get all credentials for current user"""
     
-    if current_user.role != models.UserRole.DEVELOPER:
+    if current_user.role not in [models.UserRole.DEVELOPER, models.UserRole.ADMIN]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only developers can manage exchange credentials"
+            detail="Only developers and admins can manage exchange credentials"
         )
     
     credentials = crud.get_user_developer_credentials(
@@ -90,10 +90,10 @@ def get_credentials(
 ):
     """Get specific credentials with decrypted secrets (for owner only)"""
     
-    if current_user.role != models.UserRole.DEVELOPER:
+    if current_user.role not in [models.UserRole.DEVELOPER, models.UserRole.ADMIN]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only developers can manage exchange credentials"
+            detail="Only developers and admins can manage exchange credentials"
         )
     
     credentials = crud.get_developer_credentials_by_id(
@@ -138,10 +138,11 @@ def get_default_credentials(
 ):
     """Get default credentials for specific exchange/type/network combination"""
     
-    if current_user.role != models.UserRole.DEVELOPER:
+    # Allow both DEVELOPER and ADMIN roles
+    if current_user.role not in [models.UserRole.DEVELOPER, models.UserRole.ADMIN]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only developers can manage exchange credentials"
+            detail="Only developers and admins can manage exchange credentials"
         )
     
     credentials = crud.get_default_developer_credentials(
@@ -184,10 +185,10 @@ def update_credentials(
 ):
     """Update exchange credentials"""
     
-    if current_user.role != models.UserRole.DEVELOPER:
+    if current_user.role not in [models.UserRole.DEVELOPER, models.UserRole.ADMIN]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only developers can manage exchange credentials"
+            detail="Only developers and admins can manage exchange credentials"
         )
     
     updated_credentials = crud.update_developer_exchange_credentials(
@@ -217,11 +218,11 @@ def delete_credentials(
     
     logger.info(f"DELETE request for credential {credentials_id} by user {current_user.id} ({current_user.email})")
     
-    if current_user.role != models.UserRole.DEVELOPER:
-        logger.warning(f"User {current_user.id} is not a developer, role={current_user.role}")
+    if current_user.role not in [models.UserRole.DEVELOPER, models.UserRole.ADMIN]:
+        logger.warning(f"User {current_user.id} is not a developer/admin, role={current_user.role}")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only developers can manage exchange credentials"
+            detail="Only developers and admins can manage exchange credentials"
         )
     
     deleted_credentials = crud.delete_developer_exchange_credentials(
@@ -248,10 +249,10 @@ def mark_credentials_used(
 ):
     """Mark credentials as recently used (updates last_used_at)"""
     
-    if current_user.role != models.UserRole.DEVELOPER:
+    if current_user.role not in [models.UserRole.DEVELOPER, models.UserRole.ADMIN]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only developers can manage exchange credentials"
+            detail="Only developers and admins can manage exchange credentials"
         )
     
     # Verify ownership

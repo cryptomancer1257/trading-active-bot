@@ -73,6 +73,20 @@ def create_subscription(
 ):
     """User subscribes to a bot"""
     try:
+        # ✅ Check Free Plan restriction: Testnet only
+        user_plan = db.query(models.UserPlan).filter(
+            models.UserPlan.user_id == current_user.id,
+            models.UserPlan.status == models.PlanStatus.ACTIVE
+        ).first()
+        
+        if user_plan and user_plan.plan_name == models.PlanName.FREE:
+            # Free Plan: Force testnet, reject mainnet
+            if hasattr(sub_in, 'is_testnet') and not sub_in.is_testnet:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Free Plan users can only use Testnet. Upgrade to Pro Plan for Mainnet trading."
+                )
+        
         # Check if bot exists and is approved
         bot = crud.get_bot_by_id(db, sub_in.bot_id)
         if not bot or bot.status != schemas.BotStatus.APPROVED:
@@ -202,6 +216,20 @@ def create_trial_subscription(
     try:
         # ✅ Check user's subscription limit (Free: 5 total, Pro: unlimited)
         plan_checker.check_user_subscription_limit(current_user, db)
+        
+        # ✅ Check Free Plan restriction: Testnet only
+        user_plan = db.query(models.UserPlan).filter(
+            models.UserPlan.user_id == current_user.id,
+            models.UserPlan.status == models.PlanStatus.ACTIVE
+        ).first()
+        
+        if user_plan and user_plan.plan_name == models.PlanName.FREE:
+            # Free Plan: Force testnet, reject mainnet
+            if not trial_in.is_testnet:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Free Plan users can only use Testnet. Upgrade to Pro Plan for Mainnet trading."
+                )
         
         # Check if bot exists and is approved
         bot = crud.get_bot_by_id(db, trial_in.bot_id)
