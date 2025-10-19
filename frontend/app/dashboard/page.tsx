@@ -12,6 +12,7 @@ import {
   ShieldCheckIcon
 } from '@heroicons/react/24/outline'
 import ActivityFeed from '@/components/ActivityFeed'
+import QuotaUsageCard from '@/components/QuotaUsageCard'
 
 export default function DashboardPage() {
   const { user, loading } = useAuthGuard({ requireAuth: true })
@@ -217,6 +218,11 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+
+      {/* Quota Usage Section */}
+      <div className="mb-8">
+        <QuotaUsageCard />
+      </div>
 
       {/* Neural Command Center */}
       <div className="card-quantum animate-fade-in" style={{ animationDelay: '0.5s' }}>

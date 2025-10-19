@@ -7,6 +7,8 @@ import Navbar from '@/components/layout/Navbar'
 import QueryProvider from '@/components/providers/QueryProvider'
 import GoogleOAuthProvider from '@/components/providers/GoogleOAuthProvider'
 import BackendStatus from '@/components/debug/BackendStatus'
+import QuotaWarningBanner from '@/components/QuotaWarningBanner'
+import GlobalQuotaHandler from '@/components/GlobalQuotaHandler'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -36,10 +38,12 @@ export default function RootLayout({
             <AuthProvider>
               <div className="min-h-screen bg-dark-900 neural-grid">
                 <Navbar />
+                <QuotaWarningBanner />
                 <main className="flex-1 relative z-10">
                   {children}
                 </main>
               </div>
+              <GlobalQuotaHandler />
               <Toaster
               position="top-right"
               toastOptions={{

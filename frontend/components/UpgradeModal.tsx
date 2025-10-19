@@ -7,15 +7,29 @@ import { PayPalButtons, PayPalScriptProvider } from '@paypal/react-paypal-js'
 interface UpgradeModalProps {
   isOpen: boolean
   onClose: () => void
+  targetPlan?: 'pro' | 'ultra' // Default to 'pro' for backward compatibility
 }
 
-export default function UpgradeModal({ isOpen, onClose }: UpgradeModalProps) {
+export default function UpgradeModal({ isOpen, onClose, targetPlan = 'pro' }: UpgradeModalProps) {
   const { planConfigs, upgradeToPro } = usePlan()
   const [isProcessing, setIsProcessing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
 
   if (!isOpen) return null
+
+  // Plan configuration
+  const isPro = targetPlan === 'pro'
+  const planPrice = isPro ? 60 : 500
+  const planName = isPro ? 'Pro' : 'Ultra'
+  const planIcon = isPro ? '⚡' : '💎'
+  const planGradient = isPro 
+    ? 'from-purple-500 to-pink-500' 
+    : 'from-yellow-500 to-orange-500'
+  const planBgGradient = isPro
+    ? 'from-purple-50 to-pink-50'
+    : 'from-yellow-50 to-orange-50'
+  const planBorder = isPro ? 'border-purple-200' : 'border-yellow-200'
 
   const handlePayPalApprove = async (data: any) => {
     setIsProcessing(true)
@@ -57,26 +71,26 @@ export default function UpgradeModal({ isOpen, onClose }: UpgradeModalProps) {
           {success ? (
             <div className="text-center py-12">
               <div className="text-6xl mb-4">🎉</div>
-              <h3 className="text-2xl font-bold text-green-600 mb-2">Welcome to Pro!</h3>
+              <h3 className="text-2xl font-bold text-green-600 mb-2">Welcome to {planName}!</h3>
               <p className="text-gray-600">Your plan has been upgraded successfully</p>
             </div>
           ) : (
             <>
               {/* Header */}
               <div className="text-center mb-4">
-                <div className="inline-flex items-center justify-center w-14 h-14 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full mb-3">
-                  <span className="text-2xl">⚡</span>
+                <div className={`inline-flex items-center justify-center w-14 h-14 bg-gradient-to-r ${planGradient} rounded-full mb-3`}>
+                  <span className="text-2xl">{planIcon}</span>
                 </div>
-                <h2 className="text-xl md:text-2xl font-bold text-gray-900 mb-1">Upgrade to Pro - $10/month</h2>
-                <p className="text-xs md:text-sm text-gray-600">Unlock unlimited potential</p>
+                <h2 className="text-xl md:text-2xl font-bold text-gray-900 mb-1">Upgrade to {planName} - ${planPrice}/month</h2>
+                <p className="text-xs md:text-sm text-gray-600">Unlock {isPro ? 'unlimited' : 'ultimate'} potential</p>
               </div>
 
-              {/* Pro Benefits (Compact List) */}
-              <div className="bg-gradient-to-br from-purple-50 to-pink-50 border-2 border-purple-200 rounded-lg p-4 mb-4">
+              {/* Benefits (Dynamic based on plan) */}
+              <div className={`bg-gradient-to-br ${planBgGradient} border-2 ${planBorder} rounded-lg p-4 mb-4`}>
                 <div className="flex flex-col gap-2 text-xs md:text-sm">
                   <div className="flex items-center text-gray-900 font-medium">
                     <span className="mr-2 text-green-500">✓</span>
-                    Unlimited bots
+                    {isPro ? '20 bots' : '♾️ Unlimited bots'}
                   </div>
                   <div className="flex items-center text-gray-900 font-medium">
                     <span className="mr-2 text-green-500">✓</span>
@@ -86,6 +100,18 @@ export default function UpgradeModal({ isOpen, onClose }: UpgradeModalProps) {
                     <span className="mr-2 text-green-500">✓</span>
                     Publish to marketplace
                   </div>
+                  {!isPro && (
+                    <>
+                      <div className="flex items-center text-gray-900 font-medium">
+                        <span className="mr-2 text-green-500">✓</span>
+                        2,400 API calls per day
+                      </div>
+                      <div className="flex items-center text-gray-900 font-medium">
+                        <span className="mr-2 text-green-500">✓</span>
+                        24/7 Dedicated support
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
 

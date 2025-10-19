@@ -89,43 +89,39 @@ export default function PlansPage() {
           </div>
         )}
 
-        {/* Plan Comparison */}
-        <div className="grid md:grid-cols-2 gap-8 mb-8">
+        {/* Plan Comparison - 3 Tiers */}
+        <div className="grid md:grid-cols-3 gap-6 mb-8">
           {/* Free Plan */}
-          <div className={`bg-white rounded-2xl shadow-lg p-8 ${!isPro ? 'ring-2 ring-blue-500' : ''}`}>
-            <div className="text-center mb-6">
-              <div className="inline-flex items-center justify-center w-16 h-16 bg-gray-100 rounded-full mb-4">
-                <span className="text-3xl">🆓</span>
+          <div className={`bg-white rounded-2xl shadow-lg p-6 ${!isPro ? 'ring-2 ring-blue-500' : ''}`}>
+            <div className="text-center mb-4">
+              <div className="inline-flex items-center justify-center w-12 h-12 bg-gray-100 rounded-full mb-3">
+                <span className="text-2xl">🆓</span>
               </div>
-              <h2 className="text-2xl font-bold text-gray-900">Free Plan</h2>
-              <div className="text-4xl font-bold text-gray-900 my-4">$0</div>
-              <p className="text-gray-600">Perfect for testing and learning</p>
+              <h2 className="text-xl font-bold text-gray-900">Free</h2>
+              <div className="text-3xl font-bold text-gray-900 my-3">$0</div>
+              <p className="text-sm text-gray-600">forever</p>
             </div>
 
-            <ul className="space-y-4 mb-8">
+            <ul className="space-y-3 mb-6 text-sm">
               <li className="flex items-start">
-                <span className="text-green-500 mr-3 mt-1">✓</span>
-                <span className="text-gray-700"><strong>{planConfigs?.free.max_bots}</strong> trading bots maximum</span>
+                <span className="text-green-500 mr-2 mt-0.5">✓</span>
+                <span className="text-gray-700"><strong>{planConfigs?.free.max_bots}</strong> bots</span>
               </li>
               <li className="flex items-start">
-                <span className="text-green-500 mr-3 mt-1">✓</span>
-                <span className="text-gray-700"><strong>{planConfigs?.free.max_subscriptions_per_bot}</strong> subscriptions per bot</span>
+                <span className="text-green-500 mr-2 mt-0.5">✓</span>
+                <span className="text-gray-700"><strong>{planConfigs?.free.max_subscriptions_per_bot}</strong> max subscriptions</span>
               </li>
               <li className="flex items-start">
-                <span className="text-green-500 mr-3 mt-1">✓</span>
-                <span className="text-gray-700"><strong>Testnet</strong> environment only</span>
+                <span className="text-green-500 mr-2 mt-0.5">✓</span>
+                <span className="text-gray-700"><strong>Testnet Only</strong></span>
               </li>
               <li className="flex items-start">
-                <span className="text-green-500 mr-3 mt-1">✓</span>
-                <span className="text-gray-700"><strong>{planConfigs?.free.subscription_expiry_days}-day</strong> free trial subscriptions</span>
+                <span className="text-green-500 mr-2 mt-0.5">✓</span>
+                <span className="text-gray-700"><strong>{planConfigs?.free.compute_quota_per_day || 24}</strong> API calls/day</span>
               </li>
               <li className="flex items-start">
-                <span className="text-gray-400 mr-3 mt-1">✗</span>
-                <span className="text-gray-400 line-through">Publish to marketplace</span>
-              </li>
-              <li className="flex items-start">
-                <span className="text-gray-400 mr-3 mt-1">✗</span>
-                <span className="text-gray-400 line-through">Revenue sharing</span>
+                <span className="text-gray-400 mr-2 mt-0.5">✗</span>
+                <span className="text-gray-400">Publish to marketplace</span>
               </li>
             </ul>
 
@@ -137,74 +133,122 @@ export default function PlansPage() {
           </div>
 
           {/* Pro Plan */}
-          <div className={`bg-gradient-to-br from-purple-50 to-pink-50 rounded-2xl shadow-xl p-8 relative ${isPro ? 'ring-2 ring-purple-500' : ''}`}>
-            <div className="absolute -top-4 left-1/2 transform -translate-x-1/2 bg-gradient-to-r from-purple-500 to-pink-500 text-white px-4 py-2 rounded-full text-sm font-bold shadow-lg">
+          <div className={`bg-gradient-to-br from-purple-50 to-pink-50 rounded-2xl shadow-xl p-6 relative ${isPro ? 'ring-2 ring-purple-500' : ''}`}>
+            <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-gradient-to-r from-purple-500 to-pink-500 text-white px-3 py-1 rounded-full text-xs font-bold shadow-lg">
               ⚡ RECOMMENDED
             </div>
 
-            <div className="text-center mb-6 pt-4">
-              <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full mb-4">
-                <span className="text-3xl">⚡</span>
+            <div className="text-center mb-4 pt-2">
+              <div className="inline-flex items-center justify-center w-12 h-12 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full mb-3">
+                <span className="text-2xl">⚡</span>
               </div>
-              <h2 className="text-2xl font-bold text-gray-900">Pro Plan</h2>
-              <div className="text-4xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent my-4">
-                $10
+              <h2 className="text-xl font-bold text-gray-900">Pro</h2>
+              <div className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent my-3">
+                $60
               </div>
-              <p className="text-gray-600">per month • Cancel anytime</p>
+              <p className="text-sm text-gray-600">per month</p>
             </div>
 
-            <ul className="space-y-4 mb-8">
+            <ul className="space-y-3 mb-6 text-sm">
               <li className="flex items-start">
-                <span className="text-purple-600 mr-3 mt-1">✓</span>
-                <span className="text-gray-900 font-medium"><strong>Unlimited</strong> trading bots</span>
+                <span className="text-purple-600 mr-2 mt-0.5">✓</span>
+                <span className="text-gray-900"><strong>{planConfigs?.pro.max_bots || 20}</strong> bots</span>
               </li>
               <li className="flex items-start">
-                <span className="text-purple-600 mr-3 mt-1">✓</span>
-                <span className="text-gray-900 font-medium"><strong>Unlimited</strong> subscriptions per bot</span>
+                <span className="text-purple-600 mr-2 mt-0.5">✓</span>
+                <span className="text-gray-900"><strong>{planConfigs?.pro.max_subscriptions_per_bot || 20}</strong> subscriptions</span>
               </li>
               <li className="flex items-start">
-                <span className="text-purple-600 mr-3 mt-1">✓</span>
-                <span className="text-gray-900 font-medium"><strong>Mainnet</strong> environment access</span>
+                <span className="text-purple-600 mr-2 mt-0.5">✓</span>
+                <span className="text-gray-900"><strong>Testnet + Mainnet</strong></span>
               </li>
               <li className="flex items-start">
-                <span className="text-purple-600 mr-3 mt-1">✓</span>
-                <span className="text-gray-900 font-medium"><strong>Unlimited</strong> subscription duration</span>
+                <span className="text-purple-600 mr-2 mt-0.5">✓</span>
+                <span className="text-gray-900"><strong>{planConfigs?.pro.compute_quota_per_day || 240}</strong> API calls/day</span>
               </li>
               <li className="flex items-start">
-                <span className="text-purple-600 mr-3 mt-1">✓</span>
-                <span className="text-gray-900 font-medium"><strong>Publish</strong> to marketplace</span>
+                <span className="text-purple-600 mr-2 mt-0.5">✓</span>
+                <span className="text-gray-900"><strong>✅ Full Access</strong> marketplace</span>
               </li>
               <li className="flex items-start">
-                <span className="text-purple-600 mr-3 mt-1">✓</span>
-                <span className="text-gray-900 font-medium"><strong>90%</strong> revenue share</span>
+                <span className="text-purple-600 mr-2 mt-0.5">✓</span>
+                <span className="text-gray-900"><strong>24/7 Support</strong></span>
               </li>
             </ul>
 
             {isPro ? (
-              <div className="space-y-3">
-                <div className="text-center text-sm text-purple-600 font-medium mb-4">
+              <div className="space-y-2">
+                <div className="text-center text-xs text-purple-600 font-medium">
                   ✓ Current Plan
                 </div>
                 {currentPlan?.expiry_date && (
-                  <p className="text-center text-sm text-gray-600">
-                    Renews on {new Date(currentPlan.expiry_date).toLocaleDateString()}
+                  <p className="text-center text-xs text-gray-600">
+                    Renews {new Date(currentPlan.expiry_date).toLocaleDateString()}
                   </p>
                 )}
                 <button
                   onClick={() => setShowCancelConfirm(true)}
-                  className="w-full px-6 py-3 border border-gray-300 rounded-lg text-gray-700 font-medium hover:bg-gray-50 transition-colors"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 font-medium hover:bg-gray-50"
                 >
-                  Cancel Subscription
+                  Cancel
                 </button>
               </div>
             ) : (
               <button
                 onClick={() => setShowUpgradeModal(true)}
-                className="w-full px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all shadow-lg hover:shadow-xl transform hover:scale-105"
+                className="w-full px-4 py-2.5 bg-gradient-to-r from-purple-600 to-pink-600 text-white text-sm font-bold rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all shadow-lg hover:shadow-xl"
               >
-                Upgrade to Pro Now
+                Upgrade to Pro
               </button>
             )}
+          </div>
+
+          {/* Ultra Plan */}
+          <div className="bg-gradient-to-br from-yellow-50 to-orange-50 rounded-2xl shadow-xl p-6 border-2 border-yellow-400/50">
+            <div className="text-center mb-4">
+              <div className="inline-flex items-center justify-center w-12 h-12 bg-gradient-to-r from-yellow-400 to-orange-500 rounded-full mb-3">
+                <span className="text-2xl">💎</span>
+              </div>
+              <h2 className="text-xl font-bold text-gray-900">Ultra</h2>
+              <div className="text-3xl font-bold bg-gradient-to-r from-yellow-600 to-orange-600 bg-clip-text text-transparent my-3">
+                $500
+              </div>
+              <p className="text-sm text-gray-600">per month</p>
+            </div>
+
+            <ul className="space-y-3 mb-6 text-sm">
+              <li className="flex items-start">
+                <span className="text-yellow-600 mr-2 mt-0.5">✓</span>
+                <span className="text-gray-900"><strong>∞ Unlimited</strong> bots</span>
+              </li>
+              <li className="flex items-start">
+                <span className="text-yellow-600 mr-2 mt-0.5">✓</span>
+                <span className="text-gray-900"><strong>∞ Unlimited</strong> subscriptions</span>
+              </li>
+              <li className="flex items-start">
+                <span className="text-yellow-600 mr-2 mt-0.5">✓</span>
+                <span className="text-gray-900"><strong>Testnet + Mainnet</strong></span>
+              </li>
+              <li className="flex items-start">
+                <span className="text-yellow-600 mr-2 mt-0.5">✓</span>
+                <span className="text-gray-900"><strong>{planConfigs?.ultra?.compute_quota_per_day || 2400}</strong> API calls/day</span>
+              </li>
+              <li className="flex items-start">
+                <span className="text-yellow-600 mr-2 mt-0.5">✓</span>
+                <span className="text-gray-900"><strong>✅ Full Access</strong> marketplace</span>
+              </li>
+              <li className="flex items-start">
+                <span className="text-yellow-600 mr-2 mt-0.5">✓</span>
+                <span className="text-gray-900"><strong>24/7 Dedicated</strong> support</span>
+              </li>
+            </ul>
+
+            <button
+              onClick={() => setShowUpgradeModal(true)}
+              className="w-full px-4 py-2.5 bg-gradient-to-r from-yellow-500 to-orange-500 text-white text-sm font-bold rounded-lg hover:from-yellow-600 hover:to-orange-600 transition-all shadow-lg hover:shadow-xl"
+            >
+              Upgrade to Ultra
+            </button>
           </div>
         </div>
 

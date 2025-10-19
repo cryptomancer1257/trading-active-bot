@@ -101,9 +101,10 @@ class PlanChecker:
                 detail=f"Your plan is {user_plan.status.value}. Please activate or upgrade your plan."
             )
         
-        # Count user's existing bots
+        # Count user's existing APPROVED bots only
         bot_count = db.query(models.Bot).filter(
-            models.Bot.developer_id == user.id
+            models.Bot.developer_id == user.id,
+            models.Bot.status == models.BotStatus.APPROVED
         ).count()
         
         # Pro plan has unlimited bots (set to 999999)

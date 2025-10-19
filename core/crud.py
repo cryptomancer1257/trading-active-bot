@@ -347,11 +347,14 @@ def get_public_bots(db: Session, skip: int = 0, limit: int = 50, category_id: Op
     return bots, total
 
 def get_bots_by_developer(db: Session, developer_id: int):
-    """Get all bots by developer with real-time counts"""
+    """Get all bots by developer with real-time counts (excluding archived)"""
     from sqlalchemy import func
     
-    # Get bots
-    bots = db.query(models.Bot).filter(models.Bot.developer_id == developer_id).all()
+    # Get bots (exclude archived bots)
+    bots = db.query(models.Bot).filter(
+        models.Bot.developer_id == developer_id,
+        models.Bot.status != models.BotStatus.ARCHIVED
+    ).all()
     
     # Add real-time counts for each bot
     for bot in bots:
