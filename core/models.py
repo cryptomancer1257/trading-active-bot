@@ -27,6 +27,7 @@ class BotType(enum.Enum):
     FUTURES = "FUTURES"
     FUTURES_RPA = "FUTURES_RPA"
     FUTURES_API = "FUTURES_API"
+    SIGNALS_FUTURES = "SIGNALS_FUTURES"  # Signals-only futures bot
 
 class SubscriptionStatus(enum.Enum):
     ACTIVE = "ACTIVE"
@@ -137,6 +138,12 @@ class User(Base):
     developer_name = Column(String(255))
     developer_bio = Column(Text)
     developer_website = Column(String(255))
+    
+    # Social media for notifications
+    telegram_username = Column(String(255), nullable=True)
+    discord_username = Column(String(255), nullable=True)
+    telegram_chat_id = Column(String(255), nullable=True)
+    discord_user_id = Column(String(255), nullable=True)
     
     # API credentials for trading
     api_key = Column(String(255))
@@ -389,7 +396,10 @@ class Subscription(Base):
     trial_expires_at = Column(DateTime)          # Trial expiration (can be different from expires_at)
     trading_pair = Column(String(20))  # Primary trading pair like BTC/USDT
     secondary_trading_pairs = Column(JSON)  # List of secondary trading pairs (priority order) e.g. ["ETH/USDT", "BNB/USDT"]
-
+    exchange_type = Column(Enum(ExchangeType), default=ExchangeType.BINANCE)
+    timeframe = Column(String(10))
+    timeframes = Column(JSON)
+    trade_mode = Column(String(20))
     # New fields for marketplace bot registration
     user_principal_id = Column(String(255))  # ICP Principal ID
     trade_evaluation_period = Column(Integer)  # Minutes for bot analysis period

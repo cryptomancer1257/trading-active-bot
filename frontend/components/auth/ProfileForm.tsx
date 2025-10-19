@@ -12,6 +12,8 @@ const profileSchema = z.object({
   developer_name: z.string().optional(),
   developer_bio: z.string().optional(),
   developer_website: z.string().url('Website không hợp lệ').optional().or(z.literal('')),
+  telegram_username: z.string().optional(),
+  discord_username: z.string().optional(),
 })
 
 type ProfileFormData = z.infer<typeof profileSchema>
@@ -30,6 +32,8 @@ export default function ProfileForm() {
       developer_name: user?.developer_name || '',
       developer_bio: user?.developer_bio || '',
       developer_website: user?.developer_website || '',
+      telegram_username: user?.telegram_username || '',
+      discord_username: user?.discord_username || '',
     },
   })
 
@@ -176,6 +180,51 @@ export default function ProfileForm() {
                     {errors.developer_website && (
                       <p className="form-error">{errors.developer_website.message}</p>
                     )}
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                    <div>
+                      <label htmlFor="telegram_username" className="form-label">
+                        Telegram Username
+                      </label>
+                      <div className="mt-1 flex rounded-md shadow-sm">
+                        <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-gray-300 bg-gray-50 text-gray-500 text-sm">
+                          @
+                        </span>
+                        <input
+                          {...register('telegram_username')}
+                          type="text"
+                          id="telegram_username"
+                          className="form-input rounded-l-none"
+                          placeholder="username"
+                        />
+                      </div>
+                      <p className="mt-1 text-sm text-gray-500">
+                        Để nhận thông báo từ bot (không bao gồm @)
+                      </p>
+                      {errors.telegram_username && (
+                        <p className="form-error">{errors.telegram_username.message}</p>
+                      )}
+                    </div>
+
+                    <div>
+                      <label htmlFor="discord_username" className="form-label">
+                        Discord Username
+                      </label>
+                      <input
+                        {...register('discord_username')}
+                        type="text"
+                        id="discord_username"
+                        className="form-input"
+                        placeholder="username#1234"
+                      />
+                      <p className="mt-1 text-sm text-gray-500">
+                        Để nhận thông báo từ bot
+                      </p>
+                      {errors.discord_username && (
+                        <p className="form-error">{errors.discord_username.message}</p>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>

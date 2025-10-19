@@ -69,13 +69,18 @@ export default function PreTrialValidationModal({
       // Check LLM providers
       const hasActiveLLMProvider = activeLLMProviders && activeLLMProviders.length > 0
       
-      // Check exchange credentials
-      const hasMatchingCredentials = credentials?.some(cred => 
-        cred.exchange_type === exchangeType &&
-        cred.credential_type === credentialType &&
-        cred.network_type === networkType &&
-        cred.is_active
-      ) || !!defaultCredentials
+      // Check if bot is passive signals bot (skip exchange credentials check)
+      const isPassiveBot = (bot as any).bot_mode === 'PASSIVE'
+      
+      // Check exchange credentials (skip for passive bots)
+      const hasMatchingCredentials = isPassiveBot ? true : (
+        credentials?.some(cred => 
+          cred.exchange_type === exchangeType &&
+          cred.credential_type === credentialType &&
+          cred.network_type === networkType &&
+          cred.is_active
+        ) || !!defaultCredentials
+      )
 
       // Check prompts
       let hasPrompts = false
@@ -106,7 +111,7 @@ export default function PreTrialValidationModal({
         hasExchangeCredentials: hasMatchingCredentials,
         hasPrompt: hasPrompts,
         missingLLMProvider: !hasActiveLLMProvider,
-        missingCredentials: !hasMatchingCredentials,
+        missingCredentials: !hasMatchingCredentials && !isPassiveBot, // Only show as missing if not passive
         missingPrompt: !hasPrompts,
         exchangeType,
         credentialType,
@@ -242,44 +247,63 @@ export default function PreTrialValidationModal({
               </div>
 
               {/* Exchange Credentials Check */}
-              <div className={`rounded-lg p-4 border ${
-                validation.hasExchangeCredentials 
-                  ? 'bg-green-900/30 border-green-500/30' 
-                  : 'bg-red-900/30 border-red-500/30'
-              }`}>
-                <div className="flex items-center justify-between">
+              {(bot as any).bot_mode !== 'PASSIVE' && (
+                <div className={`rounded-lg p-4 border ${
+                  validation.hasExchangeCredentials 
+                    ? 'bg-green-900/30 border-green-500/30' 
+                    : 'bg-red-900/30 border-red-500/30'
+                }`}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center">
+                      <span className="text-2xl mr-3">
+                        {validation.hasExchangeCredentials ? '✅' : '❌'}
+                      </span>
+                      <div>
+                        <h4 className="text-lg font-semibold text-white">
+                          Exchange API Credentials
+                        </h4>
+                        <p className="text-sm text-gray-300">
+                          {validation.hasExchangeCredentials 
+                            ? `${exchangeType} ${credentialType} credentials configured for ${networkType}`
+                            : `No ${exchangeType} ${credentialType} credentials found for ${networkType}`
+                          }
+                        </p>
+                      </div>
+                    </div>
+                    {validation.missingCredentials && (
+                      <button
+                        onClick={openCredentialsPage}
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm"
+                      >
+                        Configure API
+                      </button>
+                    )}
+                  </div>
+                  {validation.missingCredentials && (
+                    <div className="mt-3 p-3 bg-red-900/20 border border-red-500/20 rounded text-sm text-red-300">
+                      <p className="font-medium mb-1">⚠️ Exchange API Credentials Required</p>
+                      <p>This bot needs {exchangeType} {credentialType} API credentials for {networkType} to execute trades.</p>
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {/* Passive Bot Info */}
+              {(bot as any).bot_mode === 'PASSIVE' && (
+                <div className="rounded-lg p-4 border bg-blue-900/30 border-blue-500/30">
                   <div className="flex items-center">
-                    <span className="text-2xl mr-3">
-                      {validation.hasExchangeCredentials ? '✅' : '❌'}
-                    </span>
+                    <span className="text-2xl mr-3">ℹ️</span>
                     <div>
                       <h4 className="text-lg font-semibold text-white">
-                        Exchange API Credentials
+                        Signals Bot (Passive Mode)
                       </h4>
                       <p className="text-sm text-gray-300">
-                        {validation.hasExchangeCredentials 
-                          ? `${exchangeType} ${credentialType} credentials configured for ${networkType}`
-                          : `No ${exchangeType} ${credentialType} credentials found for ${networkType}`
-                        }
+                        This is a passive signals bot. It will send trading signals without executing trades, so exchange API credentials are not required.
                       </p>
                     </div>
                   </div>
-                  {validation.missingCredentials && (
-                    <button
-                      onClick={openCredentialsPage}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm"
-                    >
-                      Configure API
-                    </button>
-                  )}
                 </div>
-                {validation.missingCredentials && (
-                  <div className="mt-3 p-3 bg-red-900/20 border border-red-500/20 rounded text-sm text-red-300">
-                    <p className="font-medium mb-1">⚠️ Exchange API Credentials Required</p>
-                    <p>This bot needs {exchangeType} {credentialType} API credentials for {networkType} to execute trades.</p>
-                  </div>
-                )}
-              </div>
+              )}
 
               {/* Prompt Check */}
               <div className={`rounded-lg p-4 border ${

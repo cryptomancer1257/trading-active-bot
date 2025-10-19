@@ -92,6 +92,7 @@ class UniversalFuturesSignalsBot(CustomBot):
         # Trading configuration
         raw_trading_pair = config.get('trading_pair', 'BTCUSDT')
         self.trading_pair = raw_trading_pair.replace('/', '')
+        logger.info(f"🎯 Bot initialized with trading_pair: {self.trading_pair} (from config: {config.get('trading_pair', 'NOT_PROVIDED')})")
         
         # Multi-timeframe configuration
         self.timeframes = config.get('timeframes', ['30m', '1h', '4h'])
@@ -285,7 +286,12 @@ class UniversalFuturesSignalsBot(CustomBot):
             
             # Step 4: Send notification if signal is actionable
             if signal.action in ['BUY', 'SELL'] and self.notification_manager:
+                logger.info(f"📢 [SIGNALS BOT] Sending {signal.action} notification...")
                 asyncio.create_task(self._send_signal_notification(signal, analysis))
+            elif signal.action == 'HOLD':
+                logger.info(f"📢 [SIGNALS BOT] HOLD signal - no notification sent")
+            elif not self.notification_manager:
+                logger.warning(f"📢 [SIGNALS BOT] Notification manager not available")
             
             logger.info(f"✅ [SIGNALS BOT] Completed - Signal: {signal.name}")
             return signal
@@ -296,9 +302,27 @@ class UniversalFuturesSignalsBot(CustomBot):
             traceback.print_exc()
             return Action.HOLD
     
+    async def setup_position(self, action: Action, confirmation: Any = None, subscription: Any = None) -> Dict[str, Any]:
+        """
+        Override setup_position to SKIP trade execution for signals-only bot
+        This bot only sends signals, does NOT execute trades
+        """
+        logger.info(f"📡 [SIGNALS BOT] Skipping trade execution - this is a signals-only bot")
+        logger.info(f"   Signal: {action.action} @ confidence {action.value * 100:.1f}%")
+        logger.info(f"   Reason: {action.reason}")
+        
+        return {
+            'status': 'skipped',
+            'reason': 'Signals-only bot - no trade execution',
+            'signal': action.action,
+            'confidence': action.value
+        }
+    
     async def _send_signal_notification(self, signal: Action, analysis: Dict[str, Any]):
         """Send signal notification to user via configured channels"""
         try:
+            logger.info(f"📢 [SIGNALS BOT] Preparing notification for {signal.action} signal...")
+            
             # Map Action to SignalType
             signal_type_map = {
                 'BUY': SignalType.BUY,
@@ -319,11 +343,15 @@ class UniversalFuturesSignalsBot(CustomBot):
                 'stop_loss': recommendation.get('stop_loss', 'N/A'),
                 'take_profit': recommendation.get('take_profit', 'N/A'),
                 'risk_reward': recommendation.get('risk_reward', 'N/A'),
+                'market_volatility': recommendation.get('market_volatility', 'MEDIUM'),
                 'reasoning': signal.reason,
                 'strategy': recommendation.get('strategy', 'Multi-timeframe Analysis'),
                 'timeframe': self.primary_timeframe,
                 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             }
+            
+            logger.info(f"📢 [SIGNALS BOT] Signal data: {signal_data}")
+            logger.info(f"📢 [SIGNALS BOT] User config: {self.user_notification_config}")
             
             # Send notification
             results = await self.notification_manager.send_signal(
@@ -333,10 +361,10 @@ class UniversalFuturesSignalsBot(CustomBot):
                 user_config=self.user_notification_config
             )
             
-            logger.info(f"📢 Notification sent: {results}")
+            logger.info(f"📢 [SIGNALS BOT] Notification sent: {results}")
             
         except Exception as e:
-            logger.error(f"Failed to send signal notification: {e}")
+            logger.error(f"❌ [SIGNALS BOT] Failed to send signal notification: {e}")
             import traceback
             traceback.print_exc()
     
@@ -414,10 +442,16 @@ class UniversalFuturesSignalsBot(CustomBot):
     
     # ==================== DATA CRAWLING ====================
     
-    def crawl_data(self) -> Dict[str, Any]:
+    def crawl_data(self, subscription_config: dict = None) -> Dict[str, Any]:
         """
         Crawl historical data for multiple timeframes from exchange
         Returns multi-timeframe OHLCV data
+        
+        Args:
+            subscription_config: Optional subscription configuration containing:
+                                - trading_pair: Trading pair to crawl
+                                - timeframes: List of timeframes to crawl
+                                If not provided, uses self.trading_pair and self.timeframes
         """
         import time
         from datetime import datetime
@@ -467,15 +501,27 @@ class UniversalFuturesSignalsBot(CustomBot):
         INITIAL_LOOKBACK_MULT = 1.5
         MAX_RETRIES = 3
         
-        self.trading_pair = self.trading_pair.replace('/', '')
+        # Extract trading_pair and timeframes from subscription_config
+        # This prevents race conditions when multiple workers use the same bot instance
+        if subscription_config:
+            config_trading_pair = subscription_config.get('trading_pair', self.trading_pair)
+            config_timeframes = subscription_config.get('timeframes', self.timeframes)
+        else:
+            config_trading_pair = self.trading_pair
+            config_timeframes = self.timeframes
+        
+        actual_trading_pair = config_trading_pair.replace('/', '') if config_trading_pair else self.trading_pair.replace('/', '')
+        actual_timeframes = config_timeframes if config_timeframes else self.timeframes
         
         logger.info(f"📊 Data crawling using MAINNET public API on {self.exchange_name}")
+        logger.info(f"📊 Crawling pair: {actual_trading_pair} (config={subscription_config.get('trading_pair') if subscription_config else None}, self={self.trading_pair})")
+        logger.info(f"📊 Crawling timeframes: {actual_timeframes} (config={subscription_config.get('timeframes') if subscription_config else None}, self={self.timeframes})")
         
         timeframes_data = {}
         try:
-            logger.info(f"🔄 Crawling data for timeframes: {self.timeframes}")
+            logger.info(f"🔄 Crawling data for timeframes: {actual_timeframes}")
             
-            for i, timeframe in enumerate(self.timeframes, 1):
+            for i, timeframe in enumerate(actual_timeframes, 1):
                 try:
                     if timeframe not in timeframe_to_ms:
                         raise ValueError(f"Unsupported timeframe: {timeframe}")
@@ -491,10 +537,10 @@ class UniversalFuturesSignalsBot(CustomBot):
                     lookback = int(max(desired_limit, int(desired_limit * INITIAL_LOOKBACK_MULT)))
                     start_time = end_time - (lookback - 1) * interval_ms
                     
-                    logger.info(f"📊 [{i}/{len(self.timeframes)}] Fetching {lookback} {timeframe} candles for {self.trading_pair}")
+                    logger.info(f"📊 [{i}/{len(actual_timeframes)}] Fetching {lookback} {timeframe} candles for {actual_trading_pair}")
                     
                     df = self.futures_client.get_klines(
-                        symbol=self.trading_pair,
+                        symbol=actual_trading_pair,
                         interval=timeframe,
                         start_time=start_time,
                         end_time=end_time,
@@ -514,7 +560,7 @@ class UniversalFuturesSignalsBot(CustomBot):
                         
                         logger.warning(f"⚠️ {timeframe} needs backfill {len(df)}/{MIN_NEEDED}, retry {retries}...")
                         df_more = self.futures_client.get_klines(
-                            symbol=self.trading_pair,
+                            symbol=actual_trading_pair,
                             interval=timeframe,
                             start_time=new_start,
                             end_time=new_end,
@@ -535,10 +581,10 @@ class UniversalFuturesSignalsBot(CustomBot):
                     records = _df_to_records(df)
                     timeframes_data[timeframe] = records
                     
-                    logger.info(f"✅ [{i}/{len(self.timeframes)}] Got {len(records)} {timeframe} candles")
+                    logger.info(f"✅ [{i}/{len(actual_timeframes)}] Got {len(records)} {timeframe} candles")
                     
                 except Exception as tf_err:
-                    logger.error(f"❌ [{i}/{len(self.timeframes)}] Failed to fetch {timeframe}: {tf_err}")
+                    logger.error(f"❌ [{i}/{len(actual_timeframes)}] Failed to fetch {timeframe}: {tf_err}")
                     timeframes_data[timeframe] = []
             
             report = {tf: len(candles) for tf, candles in timeframes_data.items()}
@@ -783,6 +829,12 @@ class UniversalFuturesSignalsBot(CustomBot):
                 logger.error(f"LLM analysis failed: {llm_analysis['error']}")
                 return Action(action="HOLD", value=0.0, reason=f"LLM error: {llm_analysis['error']}")
             
+            # Debug: Log raw LLM response
+            logger.info(f"🔍 Raw LLM analysis keys: {list(llm_analysis.keys())}")
+            logger.info(f"🔍 parsed={llm_analysis.get('parsed')}, has_recommendation={'recommendation' in llm_analysis}")
+            if not llm_analysis.get("parsed", False) or "recommendation" not in llm_analysis:
+                logger.warning(f"⚠️ LLM response structure: {llm_analysis}")
+            
             # Parse recommendation
             if llm_analysis.get("parsed", False) and "recommendation" in llm_analysis:
                 recommendation = llm_analysis["recommendation"]
@@ -804,12 +856,54 @@ class UniversalFuturesSignalsBot(CustomBot):
                 
                 reasoning = recommendation.get("reasoning", "LLM analysis")
                 
-                # Extract recommendation details
+                # Extract recommendation details (SIGNALS_FUTURES includes SL/TP from LLM)
                 entry_price = recommendation.get("entry_price", "Market")
                 take_profit = recommendation.get("take_profit", "N/A")
                 stop_loss = recommendation.get("stop_loss", "N/A")
                 strategy = recommendation.get("strategy", "Multi-timeframe")
                 risk_reward = recommendation.get("risk_reward", "N/A")
+                market_volatility = recommendation.get("market_volatility", "MEDIUM")
+                
+                # Validate Take Profit is different from Entry Price
+                try:
+                    entry_float = float(str(entry_price).replace(',', ''))
+                    tp_float = float(str(take_profit).replace(',', ''))
+                    sl_float = float(str(stop_loss).replace(',', ''))
+                    
+                    # Check if TP = Entry (invalid!)
+                    if abs(tp_float - entry_float) < 0.01:  # Within $0.01
+                        logger.warning(f"⚠️ Invalid TP detected: TP={tp_float} ≈ Entry={entry_float}")
+                        
+                        # Auto-fix: Calculate proper TP based on SL
+                        risk_amount = abs(entry_float - sl_float)
+                        if action == "BUY":
+                            # For BUY: TP should be above entry
+                            tp_float = entry_float + risk_amount  # 1:1 risk-reward
+                            logger.info(f"🔧 Auto-fixed TP for BUY: {entry_float} + {risk_amount} = {tp_float}")
+                        elif action == "SELL":
+                            # For SELL: TP should be below entry
+                            tp_float = entry_float - risk_amount  # 1:1 risk-reward
+                            logger.info(f"🔧 Auto-fixed TP for SELL: {entry_float} - {risk_amount} = {tp_float}")
+                        
+                        take_profit = str(tp_float)
+                    
+                    # Validate TP direction
+                    if action == "BUY" and tp_float <= entry_float:
+                        logger.warning(f"⚠️ Invalid TP for BUY: TP={tp_float} <= Entry={entry_float}")
+                        risk_amount = abs(entry_float - sl_float)
+                        tp_float = entry_float + risk_amount
+                        take_profit = str(tp_float)
+                        logger.info(f"🔧 Corrected TP for BUY: {tp_float}")
+                    
+                    if action == "SELL" and tp_float >= entry_float:
+                        logger.warning(f"⚠️ Invalid TP for SELL: TP={tp_float} >= Entry={entry_float}")
+                        risk_amount = abs(sl_float - entry_float)
+                        tp_float = entry_float - risk_amount
+                        take_profit = str(tp_float)
+                        logger.info(f"🔧 Corrected TP for SELL: {tp_float}")
+                        
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"⚠️ Could not validate TP: {e}")
                 
                 if action == "CLOSE":
                     action = "SELL"
@@ -819,7 +913,9 @@ class UniversalFuturesSignalsBot(CustomBot):
                     confidence = 0.0
                     reasoning = f"Invalid LLM action: {action}"
                 
-                logger.info(f"🤖 LLM: {action} ({confidence*100:.1f}%) - {reasoning[:50]}...")
+                logger.info(f"🤖 LLM: {action} ({confidence*100:.1f}%) - {reasoning[:80]}...")
+                logger.info(f"   Entry: {entry_price} | SL: {stop_loss} | TP: {take_profit} | R:R: {risk_reward}")
+                logger.info(f"   Market Volatility: {market_volatility}")
                 
                 full_recommendation = {
                     "action": action,
@@ -829,6 +925,7 @@ class UniversalFuturesSignalsBot(CustomBot):
                     "stop_loss": stop_loss,
                     "strategy": strategy,
                     "risk_reward": risk_reward,
+                    "market_volatility": market_volatility,
                     "reasoning": reasoning
                 }
                 

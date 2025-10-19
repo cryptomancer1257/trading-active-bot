@@ -1,5 +1,5 @@
 -- Create feature_flags table for admin control
-CREATE TABLE feature_flags (
+CREATE TABLE IF NOT EXISTS feature_flags (
     id INT AUTO_INCREMENT PRIMARY KEY,
     feature_type ENUM('PLAN_PACKAGE', 'MARKETPLACE_PUBLISHING', 'BOT_CREATION') NOT NULL UNIQUE,
     is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
@@ -17,8 +17,8 @@ CREATE TABLE feature_flags (
     INDEX idx_feature_flags_dates (disabled_from, disabled_until)
 );
 
--- Insert default feature flags
-INSERT INTO feature_flags (feature_type, is_enabled, reason) VALUES 
+-- Insert default feature flags (ignore duplicates)
+INSERT IGNORE INTO feature_flags (feature_type, is_enabled, reason) VALUES 
 ('PLAN_PACKAGE', TRUE, 'Default enabled'),
 ('MARKETPLACE_PUBLISHING', TRUE, 'Default enabled'),
 ('BOT_CREATION', TRUE, 'Default enabled');

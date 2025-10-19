@@ -251,6 +251,8 @@ class LLMIntegrationService:
         # Format timeframes for display (e.g., ['5m', '30m', '1h'] -> "5M, 30M, 1H")
         formatted_timeframes = ", ".join([tf.upper() for tf in timeframes])
         
+        logger.info(f"🔍 _get_analysis_prompt called with bot_id={bot_id}, timeframes={timeframes}")
+        
         # If bot_id is provided, try to get prompt from bot's attached prompt
         if bot_id:
             try:
@@ -261,8 +263,17 @@ class LLMIntegrationService:
                 # Get database session
                 db = next(get_db())
                 
+                # Get bot to check bot_type for SIGNALS_FUTURES
+                bot = crud.get_bot_by_id(db, bot_id)
+                bot_type_str = str(bot.bot_type).upper().strip() if bot and bot.bot_type else None
+                if bot_type_str and "." in bot_type_str:
+                    bot_type_str = bot_type_str.split(".")[-1]
+                
+                is_signals_futures = (bot_type_str == "SIGNALS_FUTURES")
+                
                 # Get bot's attached prompt
                 bot_prompts = crud.get_bot_prompts(db, bot_id)
+                logger.info(f"📋 Found {len(bot_prompts) if bot_prompts else 0} bot prompts for bot {bot_id}")
                 if bot_prompts:
                     # Get the active prompt (highest priority)
                     active_prompt = max(bot_prompts, key=lambda x: x.priority)
@@ -270,6 +281,8 @@ class LLMIntegrationService:
                     prompt_template = active_prompt.llm_prompt_template
                     
                     if prompt_template and prompt_template.content:
+                        logger.info(f"✅ Using custom prompt template: {prompt_template.name} (ID: {prompt_template.id})")
+                        logger.info(f"📝 Prompt content preview: {prompt_template.content[:100]}...")
                         # Use bot's custom prompt with variable injection
                         bot_prompt = prompt_template.content
                         
@@ -289,8 +302,39 @@ class LLMIntegrationService:
                         for key, value in variables.items():
                             bot_prompt = bot_prompt.replace(f'{{{key}}}', value)
                         
-                        # Append mandatory output format to ensure consistent JSON response
-                        output_format = """
+                        # Append mandatory output format (different for SIGNALS_FUTURES)
+                        if is_signals_futures:
+                            output_format = """
+
+                                    OUTPUT FORMAT (STRICT JSON SCHEMA):
+                                    {
+                                        "recommendation": {
+                                            "action": "BUY" | "SELL" | "HOLD",
+                                            "entry_price": "<numeric price>",
+                                            "stop_loss": "<numeric price>",
+                                            "take_profit": "<numeric price>",
+                                            "risk_reward": "<string like '1:2' or null>",
+                                            "strategy": "<MA, MACD, RSI, BollingerBands, Fibonacci_Retracement or combination>",
+                                            "confidence": "<0-100>",
+                                            "reasoning": "<DETAILED 3-5 sentences: analyze the trend, entry point, technical/fundamental reasons, and risk management>",
+                                            "market_volatility": "LOW" | "MEDIUM" | "HIGH"
+                                        }
+                                    }
+                                    
+                                    SIGNALS BOT REQUIREMENTS - CRITICAL:
+                                    - **Entry Price**: Use current market price or specific level based on technical analysis
+                                    - **Stop Loss**: Set below entry for BUY (e.g., entry * 0.99), above entry for SELL (e.g., entry * 1.01)
+                                    - **Take Profit**: MUST BE DIFFERENT from entry price!
+                                      * For BUY: take_profit MUST be HIGHER than entry_price (e.g., entry + risk_amount * reward_ratio)
+                                      * For SELL: take_profit MUST be LOWER than entry_price (e.g., entry - risk_amount * reward_ratio)
+                                      * Example: If entry=3892, SL=3870 (risk=$22), then TP for 1:1 = 3892 + 22 = 3914 (NOT 3892!)
+                                    - **Risk/Reward**: Calculate as (TP - Entry) / (Entry - SL) for BUY, or (Entry - TP) / (SL - Entry) for SELL
+                                    - **Reasoning**: DETAILED explanation with trend analysis, entry rationale, and risk considerations
+                                    - **Market Volatility**: Assess current market conditions (ATR, volume, price swings)
+                                    - RETURN ONLY VALID JSON - no additional text outside the JSON object
+                                    """
+                        else:
+                            output_format = """
 
                                     OUTPUT FORMAT (STRICT JSON SCHEMA):
                                     {
@@ -299,22 +343,28 @@ class LLMIntegrationService:
                                         "entry_price": "<string or null>",
                                         "strategy": "<MA, MACD, RSI, BollingerBands, Fibonacci_Retracement hoặc kết hợp>",
                                         "confidence": "<0-100>",
-                                        "reasoning": "<ngắn gọn 1-2 câu giải thích tại sao>"
+                                        "reasoning": "<briefly explain in 1–2 sentences why>"
                                     }
                                     }
                                     
                                     NOTE: Stop Loss and Take Profit are automatically calculated from Risk Config (developer-configured parameters), not from LLM.
                                     """
+                        
                         bot_prompt = bot_prompt + output_format
                         
-                        logger.info(f"Using dynamic prompt from bot {bot_id} with output format")
+                        logger.info(f"Using dynamic prompt from bot {bot_id} (bot_type={bot_type_str}) with {'SIGNALS' if is_signals_futures else 'STANDARD'} output format")
+                        logger.info(f"📄 Final prompt length: {len(bot_prompt)} chars")
+                        logger.info(f"📄 Output format preview: {output_format[:150]}...")
                         return bot_prompt
                         
             except Exception as e:
-                logger.warning(f"Failed to get bot prompt for bot {bot_id}: {e}")
+                logger.error(f"❌ Failed to get bot prompt for bot {bot_id}: {e}")
+                import traceback
+                traceback.print_exc()
                 # Fall back to default prompt
         
         # Fallback to default prompt if no bot_id or error
+        logger.warning(f"⚠️  Using DEFAULT prompt (bot_id={bot_id})")
         return self._get_default_analysis_prompt(timeframes)
     
     def _get_default_analysis_prompt(self, timeframes: list) -> str:

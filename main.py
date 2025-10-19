@@ -42,9 +42,9 @@ discord_service = DiscordService()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Temporarily disable all background services to avoid conflicts
-    # telegram_task = await telegram_service.run()
-    # discord_task = asyncio.create_task(discord_service.run())
+    # Start background services
+    telegram_task = asyncio.create_task(telegram_service.run())
+    discord_task = asyncio.create_task(discord_service.run())
     
     try:
         yield
@@ -52,14 +52,14 @@ async def lifespan(app: FastAPI):
         logger.error("Error occurred during lifespan: %s", str(e))
     finally:
         # Cancel background tasks gracefully
-        # telegram_task.cancel()
-        # discord_task.cancel()
+        telegram_task.cancel()
+        discord_task.cancel()
         
         # Wait for tasks to complete
-        # try:
-        #     await asyncio.gather(telegram_task, return_exceptions=True)
-        # except Exception as e:
-        #     logger.error("Error during task cleanup: %s", str(e))
+        try:
+            await asyncio.gather(telegram_task, discord_task, return_exceptions=True)
+        except Exception as e:
+            logger.error("Error during task cleanup: %s", str(e))
         
         await app.stop()
         await app.shutdown()

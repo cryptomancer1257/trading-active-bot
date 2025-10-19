@@ -41,31 +41,65 @@ def format_notification_message(
     quantity=None,
     stop_loss=None,
     take_profit=None,
+    timeframe=None,
+    trading_pair=None,
+    risk_reward_ratio=None,
 ):
     """
     Format notification message for all channels (Telegram, Discord, Email)
+    Supports both ACTIVE bots (with balance) and SIGNALS bots (without balance)
     """
-
-    available_str = available if available is not None else "N/A"
-    total_wallet_str = total_wallet if total_wallet is not None else "N/A"
-    msg = (
-        f"{bot_name}\n"
-        f"TESTNET Account Balance:\n"
-        f" 💰 Available: ${available_str:,.2f} USDT\n"
-        f" 💎 Total Wallet: ${total_wallet_str:,.2f} USDT\n"
-        f"Action: {action}"
-    )
+    
+    # SIGNALS bot format (no balance info)
+    if timeframe and trading_pair and balance_info is None and available is None:
+        msg = (
+            f"📡 {bot_name}\n"
+            f"💱 Pair: {trading_pair}\n"
+            f"⏰ Timeframe: {timeframe}\n"
+            f"🎯 Action: {action}"
+        )
+    else:
+        # ACTIVE bot format (with balance info)
+        available_str = available if available is not None else "N/A"
+        total_wallet_str = total_wallet if total_wallet is not None else "N/A"
+        msg = (
+            f"🌐 {bot_name}\n"
+            f"TESTNET Account Balance:\n"
+            f" 💰 Available: ${available_str:,.2f} USDT\n"
+            f" 💎 Total Wallet: ${total_wallet_str:,.2f} USDT\n"
+        )
+        
+        # Add trading pair if provided
+        if trading_pair:
+            msg += f"💱 Pair: {trading_pair}\n"
+        
+        msg += f"🎯 Action: {action}"
 
     if action and action.upper() != "HOLD":
         if entry_price is not None:
-            msg += f"\nEntry Price: ${entry_price:,.2f}"
+            msg += f"\n💵 Entry Price: ${entry_price:,.2f}"
         if quantity is not None:
-            msg += f"\nQuantity: {quantity}"
+            msg += f"\n📊 Quantity: {quantity}"
         if stop_loss is not None:
-            msg += f"\nStop Loss: ${stop_loss:,.2f}"
+            msg += f"\n🛑 Stop Loss: ${stop_loss:,.2f}"
         if take_profit is not None:
-            msg += f"\nTake Profit: ${take_profit:,.2f}"
-    msg += f"\nReason: {reason}"
+            msg += f"\n🎯 Take Profit: ${take_profit:,.2f}"
+        
+        # Calculate and add Risk:Reward ratio
+        if risk_reward_ratio is not None:
+            msg += f"\n⚖️ R:R: {risk_reward_ratio}"
+        elif entry_price and stop_loss and take_profit:
+            # Auto-calculate if not provided
+            try:
+                risk = abs(float(entry_price) - float(stop_loss))
+                reward = abs(float(take_profit) - float(entry_price))
+                if risk > 0:
+                    rr_ratio = reward / risk
+                    msg += f"\n⚖️ R:R: 1:{rr_ratio:.2f}"
+            except (ValueError, TypeError, ZeroDivisionError):
+                pass  # Skip R:R if calculation fails
+                
+    msg += f"\n💭 Reason: {reason}"
     return msg
 
 def format_trade_log_details(trade_result, signal, trading_pair):
@@ -387,6 +421,7 @@ def initialize_bot(subscription):
             
             # Add trading pair to bot config (without slash for Binance API)
             bot_config['trading_pair'] = trading_pair
+            logger.info(f"🔧 Bot config trading_pair set to: {trading_pair} (subscription.trading_pair={subscription.trading_pair})")
             # Prepare subscription context for bot (includes principal ID)
             subscription_context = {
                 'subscription_id': subscription.id,
@@ -1116,8 +1151,8 @@ def run_bot_logic(self, subscription_id: int):
             is_futures = bool(getattr(subscription.bot, 'bot_type', None) and str(subscription.bot.bot_type).upper() == 'FUTURES')
             bot_type = str(subscription.bot.bot_type).upper() if hasattr(subscription.bot, 'bot_type') and subscription.bot.bot_type else None
             
-            # Only create exchange client for old-style bots (not FUTURES/SPOT using advanced workflow)
-            if not is_futures and bot_type not in ['FUTURES', 'SPOT']:
+            # Only create exchange client for old-style bots (not FUTURES/SPOT/SIGNALS_FUTURES using advanced workflow)
+            if not is_futures and bot_type not in ['FUTURES', 'SPOT', 'SIGNALS_FUTURES']:
                 logger.info(f"Creating exchange client for subscription {subscription_id} (testnet={use_testnet})")
                 
                 exchange = ExchangeFactory.create_exchange(
@@ -1127,12 +1162,14 @@ def run_bot_logic(self, subscription_id: int):
                     testnet=use_testnet
                 )
             else:
-                # FUTURES and SPOT bots handle their own exchange clients
+                # FUTURES, SPOT, and SIGNALS_FUTURES bots handle their own exchange clients
                 exchange = None
             
             # Get current market data
-            trading_pair = subscription.bot.trading_pair or 'BTC/USDT'
+            # Priority: subscription.trading_pair > bot.trading_pair > default
+            trading_pair = subscription.trading_pair or subscription.bot.trading_pair or 'BTC/USDT'
             exchange_symbol = trading_pair.replace('/', '')
+            logger.info(f"🔧 Trading pair for subscription {subscription_id}: {trading_pair} (subscription={subscription.trading_pair}, bot={subscription.bot.trading_pair})")
             try:
                 if is_futures:
                     # Use Futures client base_url and endpoints
@@ -1154,7 +1191,7 @@ def run_bot_logic(self, subscription_id: int):
                 current_price = 0.0  # Use fallback instead of returning
 
             # Set bot's exchange client (only for old-style bots)
-            if not is_futures and bot_type not in ['FUTURES', 'SPOT'] and exchange:
+            if not is_futures and bot_type not in ['FUTURES', 'SPOT', 'SIGNALS_FUTURES'] and exchange:
                 bot.exchange_client = exchange
             
             # Create subscription config
@@ -1167,8 +1204,8 @@ def run_bot_logic(self, subscription_id: int):
                 'user_id': subscription.user_id or 0  # 0 for marketplace users
                 }
 
-                # Execute bot prediction - Advanced workflow for Futures and Spot bots
-            if hasattr(subscription.bot, 'bot_type') and subscription.bot.bot_type and subscription.bot.bot_type.upper() in ['FUTURES', 'SPOT']:
+                # Execute bot prediction - Advanced workflow for Futures, Spot, and Signals bots
+            if hasattr(subscription.bot, 'bot_type') and subscription.bot.bot_type and subscription.bot.bot_type.upper() in ['FUTURES', 'SPOT', 'SIGNALS_FUTURES']:
                 logger.info(f"🚀 Using ADVANCED WORKFLOW for {subscription.bot.name} ({subscription.bot.bot_type.upper()})")
                 # Run async workflow in event loop
                 import asyncio
@@ -1264,9 +1301,9 @@ def run_bot_logic(self, subscription_id: int):
                             balance_info = f"\n💼 Account Balance ({mode_label}): Unable to fetch - {str(e)[:100]}\n"
             
                 # Execute actual trading (if not HOLD)
-                # Skip if advanced workflow already handled trading (FUTURES/SPOT bots)
+                # Skip if advanced workflow already handled trading (FUTURES/SPOT/SIGNALS_FUTURES bots)
                 trade_details = None
-                if not is_futures and subscription.bot.bot_type not in ['FUTURES', 'SPOT']:
+                if not is_futures and subscription.bot.bot_type not in ['FUTURES', 'SPOT', 'SIGNALS_FUTURES']:
                     trade_result = False
                     if final_action.action != "HOLD":
                         try:
@@ -1335,17 +1372,21 @@ def run_bot_logic(self, subscription_id: int):
 
                     telegram_chat_id = None
                     discord_user_id = None
-                    # Studio user: get from user.user_settings
-                    if hasattr(subscription.user, 'user_settings') and subscription.user.user_settings:
-                        telegram_chat_id = getattr(subscription.user.user_settings, 'telegram_chat_id', None)
-                        discord_user_id = getattr(subscription.user.user_settings, 'discord_user_id', None)
-                    # Marketplace user: get from UserSettings by principal_id
-                    if not telegram_chat_id or discord_user_id and subscription.user_principal_id:
+                    
+                    # Developer user (has user_id): get from users table
+                    if subscription.user_id and subscription.user:
+                        telegram_chat_id = getattr(subscription.user, 'telegram_chat_id', None)
+                        discord_user_id = getattr(subscription.user, 'discord_user_id', None)
+                        logger.info(f"📱 Developer user {subscription.user_id}: telegram_chat_id={telegram_chat_id}")
+                    
+                    # Marketplace user (has user_principal_id): get from user_settings table
+                    if (not telegram_chat_id or not discord_user_id) and subscription.user_principal_id:
                         from core import crud
                         users_settings = crud.get_user_settings_by_principal(db, subscription.user_principal_id)
                         if users_settings:
                             telegram_chat_id = getattr(users_settings, 'telegram_chat_id', None)
                             discord_user_id = getattr(users_settings, 'discord_user_id', None)
+                            logger.info(f"📱 Marketplace user (principal_id={subscription.user_principal_id}): telegram_chat_id={telegram_chat_id}")
                     if telegram_chat_id or discord_user_id:
                         logger.info(f"trade_result: {trade_result}")
                         # Build concise remaining balance line
@@ -1412,19 +1453,71 @@ def run_bot_logic(self, subscription_id: int):
                         except Exception:
                             pass
 
-                        # Format message for all channels using unified format
-                        message = format_notification_message(
-                            bot_name=subscription.bot.name,
-                            balance_info=balance_info,
-                            available=account_status.get('available_balance', 0),
-                            action=final_action.action,
-                            reason=final_action.reason,
-                            total_wallet=account_status.get('total_balance', 0),
-                            entry_price= trade_result.get('entry_price') if trade_result else None,
-                            quantity=trade_result.get('quantity') if trade_result else None,
-                            stop_loss=trade_result.get("stop_loss", {}).get("price") if trade_result else None,
-                            take_profit=trade_result.get("take_profit", {}).get("price") if trade_result else None,
-                        )
+                        # Check if this is a SIGNALS bot (no account_status needed)
+                        bot_type_str = str(subscription.bot.bot_type).upper() if subscription.bot.bot_type else None
+                        if bot_type_str and "." in bot_type_str:
+                            bot_type_str = bot_type_str.split(".")[-1]
+                        is_signals_bot = (bot_type_str == "SIGNALS_FUTURES")
+                        
+                        # Extract values: SIGNALS bot from recommendation, ACTIVE bot from trade_result
+                        if is_signals_bot and hasattr(final_action, 'recommendation') and final_action.recommendation:
+                            # SIGNALS bot: Extract from LLM recommendation
+                            rec = final_action.recommendation
+                            try:
+                                entry_price_str = str(rec.get('entry_price', '')).replace(',', '').strip()
+                                entry_price_val = float(entry_price_str) if entry_price_str and entry_price_str not in ['Market', 'N/A', ''] else None
+                            except (ValueError, TypeError):
+                                entry_price_val = None
+                            
+                            try:
+                                stop_loss_str = str(rec.get('stop_loss', '')).replace(',', '').strip()
+                                stop_loss_val = float(stop_loss_str) if stop_loss_str and stop_loss_str not in ['N/A', ''] else None
+                            except (ValueError, TypeError):
+                                stop_loss_val = None
+                            
+                            try:
+                                take_profit_str = str(rec.get('take_profit', '')).replace(',', '').strip()
+                                take_profit_val = float(take_profit_str) if take_profit_str and take_profit_str not in ['N/A', ''] else None
+                            except (ValueError, TypeError):
+                                take_profit_val = None
+                            
+                            quantity_val = None  # Signals bot doesn't have quantity
+                            logger.info(f"📊 SIGNALS bot notification: entry={entry_price_val}, sl={stop_loss_val}, tp={take_profit_val}")
+                        else:
+                            # ACTIVE bot: Extract from trade_result
+                            entry_price_val = trade_result.get('entry_price') if trade_result else None
+                            quantity_val = trade_result.get('quantity') if trade_result else None
+                            stop_loss_val = (trade_result.get("stop_loss", {}).get("price") if isinstance(trade_result.get("stop_loss"), dict) else None) if trade_result else None
+                            take_profit_val = (trade_result.get("take_profit", {}).get("price") if isinstance(trade_result.get("take_profit"), dict) else None) if trade_result else None
+                        
+                        if is_signals_bot:
+                            # SIGNALS bot: No balance info, add timeframe
+                            message = format_notification_message(
+                                bot_name=subscription.bot.name,
+                                action=final_action.action,
+                                reason=final_action.reason,
+                                entry_price=entry_price_val,
+                                quantity=quantity_val,
+                                stop_loss=stop_loss_val,
+                                take_profit=take_profit_val,
+                                timeframe=subscription.bot.timeframe,
+                                trading_pair=trading_pair,
+                            )
+                        else:
+                            # ACTIVE bot: Include balance info
+                            message = format_notification_message(
+                                bot_name=subscription.bot.name,
+                                balance_info=balance_info,
+                                available=account_status.get('available_balance', 0),
+                                action=final_action.action,
+                                reason=final_action.reason,
+                                total_wallet=account_status.get('total_balance', 0),
+                                entry_price=entry_price_val,
+                                quantity=quantity_val,
+                                stop_loss=stop_loss_val,
+                                take_profit=take_profit_val,
+                                trading_pair=trading_pair,
+                            )
                         if telegram_chat_id:
                             send_telegram_notification.delay(telegram_chat_id, message)
                         if discord_user_id:
@@ -1630,8 +1723,10 @@ def run_bot_rpa_logic(self, subscription_id: int):
                 exchange = None
             
             # Get current market data
-            trading_pair = subscription.bot.trading_pair or 'BTC/USDT'
+            # Priority: subscription.trading_pair > bot.trading_pair > default
+            trading_pair = subscription.trading_pair or subscription.bot.trading_pair or 'BTC/USDT'
             exchange_symbol = trading_pair.replace('/', '')
+            logger.info(f"🔧 Trading pair for subscription {subscription_id}: {trading_pair} (subscription={subscription.trading_pair}, bot={subscription.bot.trading_pair})")
             try:
                 if is_futures:
                     logger.info(f"Using Futures client for {trading_pair}")
@@ -1766,17 +1861,21 @@ def run_bot_rpa_logic(self, subscription_id: int):
 
                     telegram_chat_id = None
                     discord_user_id = None
-                    # Studio user: get from user.user_settings
-                    if hasattr(subscription.user, 'user_settings') and subscription.user.user_settings:
-                        telegram_chat_id = getattr(subscription.user.user_settings, 'telegram_chat_id', None)
-                        discord_user_id = getattr(subscription.user.user_settings, 'discord_user_id', None)
-                    # Marketplace user: get from UserSettings by principal_id
-                    if not telegram_chat_id or discord_user_id and subscription.user_principal_id:
+                    
+                    # Developer user (has user_id): get from users table
+                    if subscription.user_id and subscription.user:
+                        telegram_chat_id = getattr(subscription.user, 'telegram_chat_id', None)
+                        discord_user_id = getattr(subscription.user, 'discord_user_id', None)
+                        logger.info(f"📱 Developer user {subscription.user_id}: telegram_chat_id={telegram_chat_id}")
+                    
+                    # Marketplace user (has user_principal_id): get from user_settings table
+                    if (not telegram_chat_id or not discord_user_id) and subscription.user_principal_id:
                         from core import crud
                         users_settings = crud.get_user_settings_by_principal(db, subscription.user_principal_id)
                         if users_settings:
                             telegram_chat_id = getattr(users_settings, 'telegram_chat_id', None)
                             discord_user_id = getattr(users_settings, 'discord_user_id', None)
+                            logger.info(f"📱 Marketplace user (principal_id={subscription.user_principal_id}): telegram_chat_id={telegram_chat_id}")
                     if telegram_chat_id or discord_user_id:
                         logger.info(f"trade_result: {trade_result}")
 
@@ -1792,6 +1891,7 @@ def run_bot_rpa_logic(self, subscription_id: int):
                             quantity=trade_result.get('quantity') if trade_result else None,
                             stop_loss=trade_result.get("stop_loss", {}).get("price") if trade_result else None,
                             take_profit=trade_result.get("take_profit", {}).get("price") if trade_result else None,
+                            trading_pair=trading_pair,
                         )
                         if telegram_chat_id:
                             send_telegram_notification.delay(telegram_chat_id, message)
@@ -2020,17 +2120,21 @@ def run_bot_signal_logic(self, bot_id: int, subscription_id: int):
 
                     telegram_chat_id = None
                     discord_user_id = None
-                    # Studio user: get from user.user_settings
-                    if hasattr(subscription.user, 'user_settings') and subscription.user.user_settings:
-                        telegram_chat_id = getattr(subscription.user.user_settings, 'telegram_chat_id', None)
-                        discord_user_id = getattr(subscription.user.user_settings, 'discord_user_id', None)
-                    # Marketplace user: get from UserSettings by principal_id
-                    if not telegram_chat_id or discord_user_id and subscription.user_principal_id:
+                    
+                    # Developer user (has user_id): get from users table
+                    if subscription.user_id and subscription.user:
+                        telegram_chat_id = getattr(subscription.user, 'telegram_chat_id', None)
+                        discord_user_id = getattr(subscription.user, 'discord_user_id', None)
+                        logger.info(f"📱 Developer user {subscription.user_id}: telegram_chat_id={telegram_chat_id}")
+                    
+                    # Marketplace user (has user_principal_id): get from user_settings table
+                    if (not telegram_chat_id or not discord_user_id) and subscription.user_principal_id:
                         from core import crud
                         users_settings = crud.get_user_settings_by_principal(db, subscription.user_principal_id)
                         if users_settings:
                             telegram_chat_id = getattr(users_settings, 'telegram_chat_id', None)
                             discord_user_id = getattr(users_settings, 'discord_user_id', None)
+                            logger.info(f"📱 Marketplace user (principal_id={subscription.user_principal_id}): telegram_chat_id={telegram_chat_id}")
                     logger.info(f"telegram chat id and discord user id: {telegram_chat_id}, {discord_user_id}")
                     if telegram_chat_id:
                         send_telegram_beauty_notification.delay(telegram_chat_id, final_response)
@@ -2140,15 +2244,29 @@ def schedule_active_bots():
                 if should_run:
                     logger.info(f"Scheduling bot execution for subscription {subscription.id}")
                     
-                    if subscription.bot.bot_mode != "PASSIVE" and subscription.bot.bot_type in ["FUTURES", "SPOT"]:
+                    # Convert bot_type enum to string for comparison
+                    bot_type_str = str(subscription.bot.bot_type).upper().strip() if subscription.bot.bot_type else None
+                    bot_mode_str = str(subscription.bot.bot_mode).upper().strip() if subscription.bot.bot_mode else "ACTIVE"
+                    
+                    # Remove "BotType." prefix if present
+                    if bot_type_str and "." in bot_type_str:
+                        bot_type_str = bot_type_str.split(".")[-1]
+                    
+                    logger.info(f"📊 Routing bot: subscription={subscription.id}, bot_type={bot_type_str}, bot_mode={bot_mode_str}")
+                    
+                    # Handle SIGNALS_FUTURES type (signals-only futures bot using bot template)
+                    if bot_type_str == "SIGNALS_FUTURES":
+                        run_bot_logic.delay(subscription.id)
+                        logger.info(f"✅ Triggered run_bot_logic for SIGNALS_FUTURES bot (subscription {subscription.id})")
+                    elif bot_mode_str != "PASSIVE" and bot_type_str in ["FUTURES", "SPOT"]:
                         # Active FUTURES and SPOT bots use run_bot_logic
                         run_bot_logic.delay(subscription.id)
-                        logger.info(f"✅ Triggered run_bot_logic for {subscription.bot.bot_type} bot (subscription {subscription.id})")
-                    elif subscription.bot.bot_type == "FUTURES_RPA":
+                        logger.info(f"✅ Triggered run_bot_logic for {bot_type_str} bot (subscription {subscription.id})")
+                    elif bot_type_str == "FUTURES_RPA":
                         run_bot_rpa_logic.delay(subscription.id)
                         logger.info(f"✅ Triggered run_bot_rpa_logic for RPA bot (subscription {subscription.id})")
                     else:
-                        # Handle PASSIVE bots (signal-only)
+                        # Handle PASSIVE bots (legacy signal-only using Robot Framework)
                         run_bot_signal_logic.delay(subscription.bot.id, subscription.id)
                         logger.info(f"✅ Triggered run_bot_signal_logic for PASSIVE bot (subscription {subscription.id})")
 
@@ -2856,6 +2974,7 @@ async def run_advanced_futures_workflow(bot, subscription_id: int, subscription_
         
         # Build list of trading pairs in priority order: [primary, secondary1, secondary2, ...]
         primary_pair = subscription_config.get('trading_pair') or subscription.trading_pair
+        logger.info(f"📊 Trading Pair Selection: subscription_config={subscription_config.get('trading_pair')}, subscription={subscription.trading_pair}, selected={primary_pair}")
         secondary_pairs = subscription.secondary_trading_pairs or []
         
         # Ensure secondary_pairs is a list
@@ -2921,7 +3040,9 @@ async def run_advanced_futures_workflow(bot, subscription_id: int, subscription_
         
         # Update subscription_config with selected pair
         subscription_config['trading_pair'] = selected_trading_pair
-        bot.trading_pair = selected_trading_pair.replace('/', '')  # Update bot instance
+        # Don't mutate bot.trading_pair to avoid race conditions - pass as parameter instead
+        selected_trading_pair_normalized = selected_trading_pair.replace('/', '')
+        logger.info(f"🔧 Selected trading_pair: {selected_trading_pair_normalized} (from selected_trading_pair: {selected_trading_pair})")
         
         db.commit()  # Release lock before proceeding
         logger.info("\n" + "=" * 80)
@@ -2931,15 +3052,25 @@ async def run_advanced_futures_workflow(bot, subscription_id: int, subscription_
         logger.info(f"   Proceeding with LLM analysis for {selected_trading_pair}...")
         logger.info("=" * 80)
         
-        # 1. Check account status (like main_execution)
+        # 1. Check account status (like main_execution) - Skip for SIGNALS_FUTURES
         logger.info("💰 Step 1: Checking account status...")
-        account_status = bot.check_account_status()
-        if account_status:
-            logger.info(f"Account Balance: ${account_status.get('available_balance', 0):.2f}")
+        
+        # SIGNALS_FUTURES bots don't need account status (signals-only, no trading)
+        bot_type_str = str(subscription.bot.bot_type).upper() if subscription.bot.bot_type else None
+        if bot_type_str == "SIGNALS_FUTURES":
+            logger.info("📡 SIGNALS_FUTURES bot - Skip account check (signals-only, no trading)")
+            account_status = None
+        else:
+            # Active trading bots need account balance check
+            account_status = bot.check_account_status()
+            if account_status:
+                logger.info(f"Account Balance: ${account_status.get('available_balance', 0):.2f}")
         
         # 2. Crawl multi-timeframe data (instead of single timeframe)
         logger.info("📊 Step 2: Crawling multi-timeframe data...")
-        multi_timeframe_data = bot.crawl_data()
+        logger.info(f"📊 Crawling with subscription_config: trading_pair={selected_trading_pair}, timeframes={subscription_config.get('timeframes')}")
+        # Pass subscription_config to avoid race conditions with shared bot instance
+        multi_timeframe_data = bot.crawl_data(subscription_config=subscription_config)
         if not multi_timeframe_data.get("timeframes"):
             logger.error("❌ Failed to crawl multi-timeframe data")
             from bots.bot_sdk.Action import Action
@@ -2988,25 +3119,32 @@ async def run_advanced_futures_workflow(bot, subscription_id: int, subscription_
             logger.info(f"   Risk/Reward: {rec.get('risk_reward', 'N/A')}")
 
         if signal.action != "HOLD":
-            # 4.5. Apply Risk Management (NEW)
-            logger.info("🛡️ Step 4.5: Applying Risk Management rules...")
-            risk_approved, risk_reason, adjusted_signal = apply_risk_management(
-                subscription, signal, analysis, account_status, db
-            )
+            # 4.5. Apply Risk Management (NEW) - Skip for SIGNALS_FUTURES
+            bot_type_str = str(subscription.bot.bot_type).upper() if subscription.bot.bot_type else None
+            if bot_type_str and "." in bot_type_str:
+                bot_type_str = bot_type_str.split(".")[-1]
+            
+            if bot_type_str == "SIGNALS_FUTURES":
+                logger.info("📡 Step 4.5: SIGNALS_FUTURES bot - Skip risk management (signals only, no trading)")
+            else:
+                logger.info("🛡️ Step 4.5: Applying Risk Management rules...")
+                risk_approved, risk_reason, adjusted_signal = apply_risk_management(
+                    subscription, signal, analysis, account_status, db
+                )
 
-            if not risk_approved:
-                logger.warning("=" * 80)
-                logger.warning(f"🚫 TRADE REJECTED BY RISK MANAGEMENT")
-                logger.warning(f"   Reason: {risk_reason}")
-                logger.warning("=" * 80)
-                from bots.bot_sdk.Action import Action
-                return Action(action="HOLD", value=0.0, reason=f"Risk Management: {risk_reason}"), account_status, None
+                if not risk_approved:
+                    logger.warning("=" * 80)
+                    logger.warning(f"🚫 TRADE REJECTED BY RISK MANAGEMENT")
+                    logger.warning(f"   Reason: {risk_reason}")
+                    logger.warning("=" * 80)
+                    from bots.bot_sdk.Action import Action
+                    return Action(action="HOLD", value=0.0, reason=f"Risk Management: {risk_reason}"), account_status, None
 
-            logger.info("=" * 80)
-            logger.info(f"✅ TRADE APPROVED BY RISK MANAGEMENT")
-            logger.info(f"   Details: {risk_reason}")
-            logger.info("=" * 80)
-            signal = adjusted_signal  # Use adjusted signal (e.g., leverage may be capped)
+                logger.info("=" * 80)
+                logger.info(f"✅ TRADE APPROVED BY RISK MANAGEMENT")
+                logger.info(f"   Details: {risk_reason}")
+                logger.info("=" * 80)
+                signal = adjusted_signal  # Use adjusted signal (e.g., leverage may be capped)
 
             # 5. Execute advanced position setup (if not HOLD)
             logger.info(f"🚀 Step 5: Executing ADVANCED POSITION SETUP for {signal.action}...")
@@ -3119,6 +3257,7 @@ async def run_advanced_futures_rpa_workflow(bot, subscription_id: int, subscript
         
         # Build list of trading pairs in priority order: [primary, secondary1, secondary2, ...]
         primary_pair = subscription_config.get('trading_pair') or subscription.trading_pair
+        logger.info(f"📊 Trading Pair Selection: subscription_config={subscription_config.get('trading_pair')}, subscription={subscription.trading_pair}, selected={primary_pair}")
         secondary_pairs = subscription.secondary_trading_pairs or []
         
         # Ensure secondary_pairs is a list
@@ -3183,7 +3322,9 @@ async def run_advanced_futures_rpa_workflow(bot, subscription_id: int, subscript
         
         # Update subscription_config with selected pair
         subscription_config['trading_pair'] = selected_trading_pair
-        bot.trading_pair = selected_trading_pair.replace('/', '_')  # RPA uses underscore format
+        # Don't mutate bot.trading_pair to avoid race conditions - pass as parameter instead
+        selected_trading_pair_rpa = selected_trading_pair.replace('/', '_')  # RPA uses underscore format
+        logger.info(f"🔧 Selected trading_pair (RPA): {selected_trading_pair_rpa} (from selected_trading_pair: {selected_trading_pair})")
         
         db.commit()  # Release lock before proceeding
         logger.info("\n" + "=" * 80)
@@ -3193,11 +3334,19 @@ async def run_advanced_futures_rpa_workflow(bot, subscription_id: int, subscript
         logger.info(f"   Proceeding with RPA + LLM analysis for {selected_trading_pair}...")
         logger.info("=" * 80)
         
-        # 1. Check account status
+        # 1. Check account status - Skip for SIGNALS_FUTURES
         logger.info("💰 Step 1: Checking account status...")
-        account_status = bot.check_account_status()
-        if account_status:
-            logger.info(f"Account Balance: ${account_status.get('available_balance', 0):.2f}")
+        
+        # SIGNALS_FUTURES bots don't need account status (signals-only, no trading)
+        bot_type_str = str(subscription.bot.bot_type).upper() if subscription.bot.bot_type else None
+        if bot_type_str == "SIGNALS_FUTURES":
+            logger.info("📡 SIGNALS_FUTURES bot - Skip account check (signals-only, no trading)")
+            account_status = None
+        else:
+            # Active trading bots need account balance check
+            account_status = bot.check_account_status()
+            if account_status:
+                logger.info(f"Account Balance: ${account_status.get('available_balance', 0):.2f}")
         
         # 2. Capture multi-timeframe data using RPA
         logger.info("📊 Step 2: Capturing multi-timeframe data with RPA...")
@@ -3259,18 +3408,25 @@ async def run_advanced_futures_rpa_workflow(bot, subscription_id: int, subscript
             logger.info(f"   Stop Loss: {rec.get('stop_loss', 'N/A')}")
             logger.info(f"   Risk/Reward: {rec.get('risk_reward', 'N/A')}")
         
-        # 4.5. Apply Risk Management (NEW)
-        logger.info("🛡️ Step 4.5: Applying Risk Management rules...")
-        risk_approved, risk_reason, adjusted_action = apply_risk_management(
-            subscription, action, {}, account_status, db
-        )
+        # 4.5. Apply Risk Management (NEW) - Skip for SIGNALS_FUTURES
+        bot_type_str = str(subscription.bot.bot_type).upper() if subscription.bot.bot_type else None
+        if bot_type_str and "." in bot_type_str:
+            bot_type_str = bot_type_str.split(".")[-1]
         
-        if not risk_approved:
-            logger.warning(f"🚫 Trade rejected by Risk Management: {risk_reason}")
-            return Action(action="HOLD", value=0.0, reason=f"Risk Management: {risk_reason}"), account_status, None
-        
-        logger.info(f"✅ Risk Management approved: {risk_reason}")
-        action = adjusted_action  # Use adjusted action
+        if bot_type_str == "SIGNALS_FUTURES":
+            logger.info("📡 Step 4.5: SIGNALS_FUTURES bot - Skip risk management (signals only, no trading)")
+        else:
+            logger.info("🛡️ Step 4.5: Applying Risk Management rules...")
+            risk_approved, risk_reason, adjusted_action = apply_risk_management(
+                subscription, action, {}, account_status, db
+            )
+            
+            if not risk_approved:
+                logger.warning(f"🚫 Trade rejected by Risk Management: {risk_reason}")
+                return Action(action="HOLD", value=0.0, reason=f"Risk Management: {risk_reason}"), account_status, None
+            
+            logger.info(f"✅ Risk Management approved: {risk_reason}")
+            action = adjusted_action  # Use adjusted action
         
         # 5. Execute advanced position setup (if not HOLD)
         if action.action != "HOLD":

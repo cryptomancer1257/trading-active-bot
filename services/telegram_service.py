@@ -54,14 +54,55 @@ class TelegramService:
             logger.error(f"❌ Error configuring webhook: {e}")
 
     async def run_polling(self):
+        # Check if polling is enabled (useful for local dev to avoid conflicts)
+        if os.getenv('ENABLE_TELEGRAM_BOT', 'true').lower() == 'false':
+            logger.info("⚠️  Telegram bot polling is disabled (ENABLE_TELEGRAM_BOT=false)")
+            return
+        
         logger.info("Running Telegram bot in polling mode")
         try:
-            app = ApplicationBuilder().token(self.bot_token).build()
-            self.add_handlers(app)
-            logger.info("🤖 Bot running in polling mode (dev)")
-            await app.initialize() 
-            await app.start()
-            await app.updater.start_polling()
+            # Use synchronous polling in a separate thread
+            import threading
+            import time
+            
+            def start_polling_sync():
+                try:
+                    # Create new event loop for this thread
+                    import asyncio
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    
+                    app = ApplicationBuilder().token(self.bot_token).build()
+                    self.add_handlers(app)
+                    logger.info("🤖 Bot running in polling mode (dev)")
+                    
+                    # Initialize and start polling manually (without signal handlers)
+                    async def run_bot():
+                        await app.initialize()
+                        await app.start()
+                        await app.updater.start_polling(
+                            allowed_updates=["message", "callback_query"],
+                            drop_pending_updates=True
+                        )
+                        # Keep running
+                        while True:
+                            await asyncio.sleep(1)
+                    
+                    loop.run_until_complete(run_bot())
+                except Exception as e:
+                    logger.error(f"❌ Error in polling thread: {e}")
+                    import traceback
+                    traceback.print_exc()
+            
+            # Start polling in background thread
+            polling_thread = threading.Thread(target=start_polling_sync, daemon=True)
+            polling_thread.start()
+            logger.info("✅ Bot polling started in background thread")
+            
+            # Keep the async function alive
+            while True:
+                await asyncio.sleep(1)
+                
         except Exception as e:
             logger.error(f"❌ Error starting bot: {e}")
             raise
@@ -143,10 +184,55 @@ class TelegramService:
                     chat_id = int(chat_id)
                 except ValueError:
                     pass
+            
+            print(f"🔍 DEBUG: Looking for user with telegram_username='{user_name}'")
+            
+            # First, try to find developer user (users table)
+            developer_user = db.query(models.User).filter(
+                models.User.telegram_username == user_name
+            ).first()
+            
+            if developer_user:
+                print(f"📱 Found developer user {developer_user.id} with telegram_username")
+                # Update chat_id for developer user
+                if developer_user.telegram_chat_id != chat_id:
+                    developer_user.telegram_chat_id = chat_id
+                    db.commit()
+                    db.refresh(developer_user)
+                    print(f"📱 Updated chat_id for developer user {developer_user.id}: {chat_id}")
+                
+                await self.send_telegram_message(chat_id, "✅ Welcome! You have successfully started the bot.")
+                return {"ok": True}
+            
+            # If not developer, look for marketplace user (user_settings table)
             user_settings = crud.get_users_setting_by_telegram_username(db, telegram_username=user_name)
+            print(f"🔍 DEBUG: Found {len(user_settings) if user_settings else 0} user_settings")
+            
             if not user_settings or len(user_settings) == 0:
+                print(f"❌ DEBUG: No user found for username '{user_name}'")
                 await self.send_telegram_message(chat_id, "❌ Account not found. Please rent bot first.")
                 return {"ok": False}
+            
+            # If multiple user_settings found, prioritize the one with active subscriptions
+            if len(user_settings) > 1:
+                # Find user_settings with most active subscriptions
+                best_user_setting = None
+                max_active_subs = 0
+                
+                for us in user_settings:
+                    # Count active subscriptions for this user_principal_id
+                    active_subs = db.query(models.Subscription).filter(
+                        models.Subscription.user_principal_id == us.principal_id,
+                        models.Subscription.status == 'ACTIVE'
+                    ).count()
+                    
+                    if active_subs > max_active_subs:
+                        max_active_subs = active_subs
+                        best_user_setting = us
+                
+                if best_user_setting:
+                    user_settings = [best_user_setting]
+                    print(f"📱 Selected user_settings {best_user_setting.id} with {max_active_subs} active subscriptions")
 
             updated = False
             for user_setting in user_settings:

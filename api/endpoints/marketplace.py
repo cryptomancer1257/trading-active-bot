@@ -33,143 +33,6 @@ logger = logging.getLogger(__name__)
 # Create router WITHOUT any security dependencies
 router = APIRouter()
 
-@router.post("/marketplace", 
-             response_model=schemas.SubscriptionResponse, 
-             status_code=status.HTTP_201_CREATED)
-def create_marketplace_subscription(
-    marketplace_sub: schemas.MarketplaceSubscriptionCreate,
-    db: Session = Depends(get_db)
-):
-    """Create subscription from marketplace using user principal ID and bot API key authentication"""
-    try:
-        logger.info(f"Marketplace subscription request: user={marketplace_sub.user_principal_id}, bot_id={marketplace_sub.bot_id}, api_key={marketplace_sub.bot_api_key[:10]}...")
-        
-        # Authenticate using bot API key instead of marketplace API key
-        bot_registration = crud.get_bot_registration_by_api_key(db, marketplace_sub.bot_api_key)
-        logger.info(f"Bot registration found: {bot_registration is not None}")
-        if not bot_registration:
-            raise HTTPException(
-                status_code=401, 
-                detail="Invalid bot API key - authentication failed"
-            )
-        
-        # Verify bot_id matches registration
-        if bot_registration.bot_id != marketplace_sub.bot_id:
-            raise HTTPException(
-                status_code=400,
-                detail="Bot ID does not match the provided API key"
-            )
-        
-        # Check if bot exists and is approved
-        bot = crud.get_bot_by_id(db, marketplace_sub.bot_id)
-        logger.info(f"Bot found: {bot is not None}")
-        if bot:
-            logger.info(f"Bot status: {bot.status}, Expected: {models.BotStatus.APPROVED}")
-            logger.info(f"Status comparison: {bot.status == models.BotStatus.APPROVED}")
-            logger.info(f"Bot status value: {bot.status.value}")
-        if not bot:
-            logger.error(f"Bot not found with ID: {marketplace_sub.bot_id}")
-            raise HTTPException(
-                status_code=404, 
-                detail="Bot not found"
-            )
-        if bot.status != models.BotStatus.APPROVED:
-            logger.error(f"Bot not approved - status: {bot.status}")
-            raise HTTPException(
-                status_code=404, 
-                detail="Bot not approved for use"
-            )
-        
-        # Validate start_time and end_time
-        now = datetime.now(timezone.utc)
-        start_time = marketplace_sub.start_time or now
-        
-        if marketplace_sub.start_time and marketplace_sub.start_time < now:
-            raise HTTPException(
-                status_code=400,
-                detail="Start time cannot be in the past"
-            )
-        
-        if marketplace_sub.end_time and marketplace_sub.start_time:
-            if marketplace_sub.end_time <= marketplace_sub.start_time:
-                raise HTTPException(
-                    status_code=400,
-                    detail="End time must be after start time"
-                )
-        
-        # Create internal user for the renter
-        internal_user = crud.get_or_create_marketplace_user(db, marketplace_sub.user_principal_id)
-        
-        # Check for existing subscription with same instance name
-        existing_sub = crud.get_user_subscription_by_name(
-            db, user_id=internal_user.id, instance_name=marketplace_sub.instance_name
-        )
-        if existing_sub:
-            raise HTTPException(
-                status_code=400,
-                detail="You already have a subscription with this instance name"
-            )
-        
-        # Convert to standard SubscriptionCreate format
-        sub_data = schemas.SubscriptionCreate(
-            instance_name=marketplace_sub.instance_name,
-            bot_id=marketplace_sub.bot_id,
-            exchange_type=marketplace_sub.exchange_type,
-            trading_pair=marketplace_sub.trading_pair,
-            secondary_trading_pairs=marketplace_sub.secondary_trading_pairs or [],
-            timeframe=marketplace_sub.timeframe,
-            strategy_config=marketplace_sub.strategy_config,
-            execution_config=marketplace_sub.execution_config,
-            risk_config=marketplace_sub.risk_config,
-            is_testnet=marketplace_sub.is_testnet,
-            is_trial=False
-        )
-        
-        # Create subscription
-        subscription = crud.create_subscription(db, sub=sub_data, user_id=internal_user.id)
-        
-        # Set marketplace-controlled timing and user principal ID
-        subscription.user_principal_id = marketplace_sub.user_principal_id
-        subscription.started_at = start_time
-        subscription.expires_at = marketplace_sub.end_time
-        
-        # Set status based on start time
-        if start_time > now:
-            subscription.status = models.SubscriptionStatus.PENDING  # Will start later
-            subscription.next_run_at = start_time  # Schedule first run at start time
-        else:
-            subscription.status = models.SubscriptionStatus.ACTIVE  # Start immediately
-            subscription.next_run_at = None  # Will be picked up by next Celery beat
-        
-        db.commit()
-        
-        # Only trigger immediate execution if starting now
-        if start_time <= now:
-            if bot.bot_mode != models.BotMode.PASSIVE and bot.bot_type in [models.BotType.FUTURES, models.BotType.SPOT]:
-                run_bot_logic.apply_async(args=[subscription.id], countdown=10)
-                logger.info(f"✅ Triggered run_bot_logic for marketplace {bot.bot_type.value} bot (subscription {subscription.id})")
-            elif bot.bot_type == models.BotType.FUTURES_RPA:
-                run_bot_rpa_logic.apply_async(args=[subscription.id], countdown=10)
-                logger.info(f"✅ Triggered run_bot_rpa_logic for marketplace RPA bot (subscription {subscription.id})")
-            else:
-                run_bot_signal_logic.apply_async(args=[bot.id, subscription.id], countdown=10)
-                logger.info(f"✅ Triggered run_bot_signal_logic for marketplace PASSIVE bot (subscription {subscription.id})")
-        
-        return schemas.SubscriptionResponse(
-            subscription_id=subscription.id,
-            status=subscription.status.value,
-            message=f"Marketplace subscription created for user {marketplace_sub.user_principal_id}. Start: {start_time}, End: {marketplace_sub.end_time or 'No expiration'}"
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error creating marketplace subscription: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to create marketplace subscription: {str(e)}"
-        )
-
 @router.post("/subscription", response_model=schemas.MarketplaceSubscriptionResponse)
 async def create_marketplace_subscription_v2(
     request: Dict[str, Any],
@@ -271,14 +134,14 @@ async def create_marketplace_subscription_v2(
 
         # Auto-detect trade_mode from bot type (using string comparison)
         if bot.bot_type and bot.bot_type.upper() == "FUTURES":
-            trade_mode = models.TradeMode.FUTURES
+            trade_mode = models.TradeMode.FUTURES.value
             logger.info(f"Bot {bot.id} is FUTURES bot, setting trade_mode to FUTURES")
         elif bot.bot_type and bot.bot_type.upper() == "SPOT":
-            trade_mode = models.TradeMode.SPOT
+            trade_mode = models.TradeMode.SPOT.value
             logger.info(f"Bot {bot.id} is SPOT bot, setting trade_mode to SPOT")
         else:
             # Default to SPOT for unknown types
-            trade_mode = models.TradeMode.SPOT
+            trade_mode = models.TradeMode.SPOT.value
             logger.info(f"Bot {bot.id} has bot_type={bot.bot_type}, defaulting to SPOT")
         
         # Check if user_principal_id has valid mapping (optional check)
@@ -361,11 +224,11 @@ async def create_marketplace_subscription_v2(
             sell_order_value=100.0
         )
         
-        risk_config = request.risk_config or schemas.RiskConfig(
+        risk_config = bot.risk_config or schemas.RiskConfig(
             stop_loss_percent=2.0,
             take_profit_percent=4.0,
             max_position_size=100.0
-        )
+        ).dict()
         
         # Create marketplace subscription
         subscription = models.Subscription(
@@ -382,14 +245,17 @@ async def create_marketplace_subscription_v2(
             is_testnet=request.is_testnet,
             network_type=request.trading_network,
             trading_pair=request.trading_pair,
+            exchange_type=bot.exchange_type,
             secondary_trading_pairs=request.secondary_trading_pairs or [],  # Multi-pair trading
             payment_method=request.payment_method,
             paypal_payment_id=request.paypal_payment_id,
-
+            timeframe=bot.timeframe,
+            timeframes=bot.timeframes,
+            trade_mode=trade_mode,
 
             # configs
             execution_config=execution_config.dict(),
-            risk_config=risk_config.dict(),
+            risk_config=risk_config,
             
             # Timing - both are now required
             started_at=request.subscription_start,
@@ -408,12 +274,20 @@ async def create_marketplace_subscription_v2(
         now = datetime.utcnow()
         if subscription.started_at <= now <= subscription.expires_at:
             logger.info(f"Triggering immediate bot execution for marketplace subscription {subscription.id}")
-            if bot.bot_mode == models.BotMode.ACTIVE and bot.bot_type in [models.BotType.FUTURES, models.BotType.SPOT]:
+            # Safely get bot_type value (could be enum or string)
+            bot_type_val = bot.bot_type.value if hasattr(bot.bot_type, 'value') else str(bot.bot_type)
+            bot_mode_val = bot.bot_mode.value if hasattr(bot.bot_mode, 'value') else str(bot.bot_mode)
+            
+            if bot_mode_val == models.BotMode.ACTIVE.value and bot_type_val in [models.BotType.FUTURES.value, models.BotType.SPOT.value]:
                 run_bot_logic.apply_async(args=[subscription.id], countdown=10)
-                logger.info(f"✅ Triggered run_bot_logic for marketplace v2 {bot.bot_type.value} bot (subscription {subscription.id})")
-            elif bot.bot_type == models.BotType.FUTURES_RPA:
+                logger.info(f"✅ Triggered run_bot_logic for marketplace v2 {bot_type_val} bot (subscription {subscription.id})")
+            elif bot_type_val == models.BotType.FUTURES_RPA.value:
                 run_bot_rpa_logic.apply_async(args=[subscription.id], countdown=10)
                 logger.info(f"✅ Triggered run_bot_rpa_logic for marketplace v2 RPA bot (subscription {subscription.id})")
+            elif bot_type_val == models.BotType.SIGNALS_FUTURES.value:
+                run_bot_logic.apply_async(args=[subscription.id], countdown=10)
+                logger.info(
+                    f"✅ Triggered run_bot_rpa_logic for marketplace v2 Signals bot (subscription {subscription.id})")
             else:
                 run_bot_signal_logic.apply_async(args=[bot.id, subscription.id], countdown=10)
                 logger.info(f"✅ Triggered run_bot_signal_logic for marketplace v2 PASSIVE bot (subscription {subscription.id})")
@@ -444,355 +318,6 @@ async def create_marketplace_subscription_v2(
             detail="Failed to create marketplace subscription"
         )
 
-@router.post("/v3/subscription", response_model=schemas.MarketplaceSubscriptionResponse)
-async def create_marketplace_subscription_v2(
-    request: schemas.MarketplaceSubscriptionCreateV2,
-    db: Session = Depends(get_db),
-    x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
-):
-    """
-    Create subscription for marketplace user (without studio account)
-    
-    This endpoint allows marketplace to create subscriptions for users who:
-    - Only exist in marketplace, not in studio
-    - Are identified by principal_id 
-    - Have contact info stored for notifications
-    """
-    try:
-        # Validate API key: allow either marketplace API key or a valid bot API key
-        marketplace_key = os.getenv('MARKETPLACE_API_KEY', 'marketplace_dev_api_key_12345')
-        if not x_api_key:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="API key is required",
-                headers={"WWW-Authenticate": "ApiKey"},
-            )
-
-        is_marketplace_key = x_api_key == marketplace_key
-        bot_registration = None
-        if not is_marketplace_key:
-            bot_registration = crud.get_bot_registration_by_api_key(db, x_api_key)
-            if not bot_registration:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid marketplace API key",
-                    headers={"WWW-Authenticate": "ApiKey"},
-                )
-
-        # Validate bot exists and is approved
-        bot = db.query(models.Bot).filter(
-            models.Bot.id == request.bot_id,
-            models.Bot.status == models.BotStatus.APPROVED
-        ).first()
-        
-        if not bot:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Bot not found or not approved"
-            )
-        
-        # If authorized via bot API key, ensure the registration is for this bot
-        if bot_registration and bot_registration.bot_id != request.bot_id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="API key does not match the requested bot",
-            )
-        
-        # Validate trading pairs against bot's configured pairs
-        if request.trading_pair:  # Only validate if trading_pair is provided
-            if bot.trading_pairs:
-                # Primary trading pair must be in bot's trading_pairs
-                if request.trading_pair not in bot.trading_pairs:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail=f"Primary trading pair '{request.trading_pair}' is not supported by this bot. "
-                               f"Supported pairs: {', '.join(bot.trading_pairs)}"
-                    )
-                
-                # Secondary trading pairs must also be in bot's trading_pairs
-                if request.secondary_trading_pairs:
-                    invalid_pairs = [pair for pair in request.secondary_trading_pairs if pair not in bot.trading_pairs]
-                    if invalid_pairs:
-                        raise HTTPException(
-                            status_code=status.HTTP_400_BAD_REQUEST,
-                            detail=f"Secondary trading pairs {invalid_pairs} are not supported by this bot. "
-                                   f"Supported pairs: {', '.join(bot.trading_pairs)}"
-                        )
-                    
-                    # Ensure primary pair is not in secondary pairs
-                    if request.trading_pair in request.secondary_trading_pairs:
-                        raise HTTPException(
-                            status_code=status.HTTP_400_BAD_REQUEST,
-                            detail=f"Primary trading pair '{request.trading_pair}' cannot be in secondary trading pairs"
-                        )
-            else:
-                # Legacy bot without trading_pairs configured - use the bot's single trading_pair
-                if bot.trading_pair and request.trading_pair != bot.trading_pair:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail=f"This bot only supports trading pair: {bot.trading_pair}"
-                    )
-        
-        principal_mapping = db.query(models.UserPrincipal).filter(
-                models.UserPrincipal.principal_id == request.user_principal_id,
-                models.UserPrincipal.status == models.UserPrincipalStatus.ACTIVE
-            ).first()
-        user_id = principal_mapping.user_id if principal_mapping else None
-
-        # ✅ Check subscription limit ONLY for Studio TRIAL subscriptions (not marketplace ICP/PayPal)
-        if request.payment_method == 'TRIAL' and user_id:
-            user = db.query(models.User).filter(models.User.id == user_id).first()
-            if user:
-                from core.plan_checker import plan_checker
-                plan_checker.check_user_subscription_limit(user, db)
-                logger.info(f"User {user_id} has valid subscription limit for TRIAL payment method")
-
-        # ✅ Check for trading pair conflicts with existing active subscriptions
-        # Apply to both Studio users (user_id) and Marketplace users (user_principal_id)
-        if request.trading_pair and (user_id or request.user_principal_id):
-            from datetime import datetime
-            
-            # Get all active subscriptions for this user/principal and bot
-            query = db.query(models.Subscription).filter(
-                models.Subscription.bot_id == request.bot_id,
-                models.Subscription.status == models.SubscriptionStatus.ACTIVE
-            )
-            
-            if user_id:
-                # Studio user: filter by user_id
-                query = query.filter(models.Subscription.user_id == user_id)
-                logger.info(f"Checking trading pair conflicts for Studio user {user_id}")
-            else:
-                # Marketplace user: filter by user_principal_id
-                query = query.filter(models.Subscription.user_principal_id == request.user_principal_id)
-                logger.info(f"Checking trading pair conflicts for Marketplace user {request.user_principal_id}")
-            
-            existing_subscriptions = query.all()
-            
-            # Filter only non-expired subscriptions
-            now = datetime.now()
-            active_subscriptions = []
-            for sub in existing_subscriptions:
-                end_date = sub.expires_at or sub.marketplace_subscription_end
-                if end_date and end_date > now:
-                    active_subscriptions.append(sub)
-            
-            # Check for trading pair conflicts (same network type)
-            requested_pairs = [request.trading_pair] + (request.secondary_trading_pairs or [])
-            conflicting_pairs = []
-            
-            for sub in active_subscriptions:
-                # Check if same network type
-                same_network = (
-                    (sub.network_type == models.NetworkType.TESTNET and request.is_testnet) or
-                    (sub.network_type == models.NetworkType.MAINNET and not request.is_testnet)
-                )
-                
-                if same_network:
-                    existing_pairs = [sub.trading_pair] + (sub.secondary_trading_pairs or [])
-                    for pair in requested_pairs:
-                        if pair in existing_pairs:
-                            conflicting_pairs.append(f"{pair} ({sub.network_type.value})")
-            
-            if conflicting_pairs:
-                unique_conflicts = list(set(conflicting_pairs))
-                logger.warning(f"Trading pair conflict for user {user_id}, bot {request.bot_id}: {unique_conflicts}")
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=f"Trading pair conflict! The following trading pair(s) are already in active subscriptions: {', '.join(unique_conflicts)}. Please choose different trading pairs or stop the existing subscription first."
-                )
-                
-        if bot.bot_mode == "ACTIVE" and bot.bot_type == "FUTURES":
-            # Create default configs if not provided
-            execution_config = request.execution_config or schemas.ExecutionConfig(
-                buy_order_type="PERCENTAGE",
-                buy_order_value=100.0,
-                sell_order_type="ALL",
-                sell_order_value=100.0
-            )
-            
-            risk_config = request.risk_config or schemas.RiskConfig(
-                stop_loss_percent=2.0,
-                take_profit_percent=4.0,
-                max_position_size=100.0
-            )
-        
-            # Create marketplace subscription
-            subscription = models.Subscription(
-                instance_name= f"studio_{request.bot_id}_{int(time.time())}",  # SAI
-                user_id=user_id,  # Can be NULL
-                bot_id=request.bot_id,
-                user_principal_id=request.user_principal_id,
-                
-                # Marketplace-specific fields
-                is_marketplace_subscription=True,
-                marketplace_subscription_start=request.subscription_start,
-                marketplace_subscription_end=request.subscription_end,
-                
-                is_testnet=request.is_testnet,
-                exchange_type=request.exchange_type or models.ExchangeType.BINANCE,  # Use exchange from request
-                # network_type=network_type_model,
-                trading_pair=request.trading_pair,
-                secondary_trading_pairs=request.secondary_trading_pairs or [],  # Multi-pair trading
-
-                # configs
-                execution_config=execution_config.dict(),
-                risk_config=risk_config.dict(),
-                
-                # Timing - both are now required
-                started_at=request.subscription_start,
-                expires_at=request.subscription_end,
-                
-                status=models.SubscriptionStatus.ACTIVE
-            )
-        
-            db.add(subscription)
-            db.commit()
-            db.refresh(subscription)
-        
-            logger.info(f"Created marketplace subscription {subscription.id} for principal {request.user_principal_id}")
-        
-            # Trigger bot execution based on start and end time
-            now = datetime.utcnow()
-            if subscription.started_at <= now <= subscription.expires_at:
-                logger.info(f"Triggering immediate bot execution for marketplace subscription {subscription.id}")
-                if bot.bot_type in [models.BotType.FUTURES, models.BotType.SPOT]:
-                    run_bot_logic.apply_async(args=[subscription.id], countdown=10)
-                    logger.info(f"✅ Triggered run_bot_logic for marketplace v3 {bot.bot_type.value} bot (subscription {subscription.id})")
-                elif bot.bot_type == models.BotType.FUTURES_RPA:
-                    run_bot_rpa_logic.apply_async(args=[subscription.id], countdown=10)
-                    logger.info(f"✅ Triggered run_bot_rpa_logic for marketplace v3 RPA bot (subscription {subscription.id})")
-                else:
-                    run_bot_signal_logic.apply_async(args=[bot.id, subscription.id], countdown=10)
-                    logger.info(f"✅ Triggered run_bot_signal_logic for marketplace v3 PASSIVE bot (subscription {subscription.id})")
-            elif subscription.started_at > now:
-                logger.info(f"Marketplace subscription {subscription.id} will start later at {subscription.started_at}")
-            else:
-                logger.info(f"Marketplace subscription {subscription.id} has expired (ended at {subscription.expires_at})")
-        elif bot.bot_mode == "ACTIVE" and bot.bot_type == "FUTURES_RPA":
-            # Create default configs if not provided
-            execution_config = request.execution_config or schemas.ExecutionConfig(
-                buy_order_type="PERCENTAGE",
-                buy_order_value=100.0,
-                sell_order_type="ALL",
-                sell_order_value=100.0
-            )
-            
-            risk_config = request.risk_config or schemas.RiskConfig(
-                stop_loss_percent=2.0,
-                take_profit_percent=4.0,
-                max_position_size=100.0
-            )
-        
-            # Create marketplace subscription
-            subscription = models.Subscription(
-                instance_name= f"studio_{request.bot_id}_{int(time.time())}",  # SAI
-                user_id=user_id,  # Can be NULL
-                bot_id=request.bot_id,
-                user_principal_id=request.user_principal_id,
-                
-                # Marketplace-specific fields
-                is_marketplace_subscription=True,
-                marketplace_subscription_start=request.subscription_start,
-                marketplace_subscription_end=request.subscription_end,
-                
-                is_testnet=request.is_testnet,
-                exchange_type=request.exchange_type or models.ExchangeType.BINANCE,  # Use exchange from request
-                # network_type=network_type_model,
-                trading_pair=request.trading_pair,
-                secondary_trading_pairs=request.secondary_trading_pairs or [],  # Multi-pair trading
-
-                # configs
-                execution_config=execution_config.dict(),
-                risk_config=risk_config.dict(),
-                
-                # Timing - both are now required
-                started_at=request.subscription_start,
-                expires_at=request.subscription_end,
-                
-                status=models.SubscriptionStatus.ACTIVE
-            )
-        
-            db.add(subscription)
-            db.commit()
-            db.refresh(subscription)
-        
-            logger.info(f"Created marketplace subscription {subscription.id} for principal {request.user_principal_id}")
-        
-            # Trigger bot execution based on start and end time
-            now = datetime.utcnow()
-            if subscription.started_at <= now <= subscription.expires_at:
-                logger.info(f"Triggering immediate bot execution for marketplace subscription {subscription.id}")
-                if bot.bot_type in [models.BotType.FUTURES, models.BotType.SPOT]:
-                    run_bot_logic.apply_async(args=[subscription.id], countdown=10)
-                    logger.info(f"✅ Triggered run_bot_logic for marketplace v3 {bot.bot_type.value} bot (subscription {subscription.id})")
-                elif bot.bot_type == models.BotType.FUTURES_RPA:
-                    run_bot_rpa_logic.apply_async(args=[subscription.id], countdown=10)
-                    logger.info(f"✅ Triggered run_bot_rpa_logic for marketplace v3 RPA bot (subscription {subscription.id})")
-                else:
-                    run_bot_signal_logic.apply_async(args=[bot.id, subscription.id], countdown=10)
-                    logger.info(f"✅ Triggered run_bot_signal_logic for marketplace v3 PASSIVE bot (subscription {subscription.id})")
-            elif subscription.started_at > now:
-                logger.info(f"Marketplace subscription {subscription.id} will start later at {subscription.started_at}")
-            else:
-                logger.info(f"Marketplace subscription {subscription.id} has expired (ended at {subscription.expires_at})")
-        else:
-            logger.info(f"Bot {bot.id} is signaling")
-
-            subscription = models.Subscription(
-                instance_name= f"studio_{request.bot_id}_{int(time.time())}",  # SAI
-                user_id=user_id,  # Can be NULL
-                bot_id=request.bot_id,
-                user_principal_id=request.user_principal_id,
-                
-                # Marketplace-specific fields
-                is_marketplace_subscription=True,
-                marketplace_subscription_start=request.subscription_start,
-                marketplace_subscription_end=request.subscription_end,
-                
-                is_testnet=request.is_testnet,
-                # network_type=network_type_model,
-                
-                # Timing - both are now required
-                started_at=request.subscription_start,
-                expires_at=request.subscription_end,
-                
-                status=models.SubscriptionStatus.ACTIVE
-            )
-        
-            db.add(subscription)
-            db.commit()
-            db.refresh(subscription)
-
-            now = datetime.utcnow()
-            if subscription.started_at <= now <= subscription.expires_at:
-                logger.info(f"Triggering immediate bot execution signal for marketplace subscription {subscription.id}")
-                run_bot_signal_logic.apply_async(args=[bot.id, subscription.id], countdown=10)
-            elif subscription.started_at > now:
-                logger.info(f"Marketplace subscription {subscription.id} will start later at {subscription.started_at}")
-            else:
-                logger.info(f"Marketplace subscription {subscription.id} has expired (ended at {subscription.expires_at})")
-
-        return schemas.MarketplaceSubscriptionResponse(
-            subscription_id=subscription.id,
-            user_principal_id=subscription.user_principal_id,
-            bot_id=subscription.bot_id,
-            instance_name=subscription.instance_name,
-            status=subscription.status,
-            is_marketplace_subscription=subscription.is_marketplace_subscription,
-            started_at=subscription.started_at,
-            expires_at=subscription.expires_at
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        db.rollback()
-        logger.error(f"Failed to create marketplace subscription: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to create marketplace subscription"
-        )
 
 # Marketplace endpoint for storing credentials by principal ID
 @router.post("/store-by-principal", response_model=Dict[str, Any])
@@ -1378,10 +903,14 @@ async def resume_marketplace_subscription(
         
         # Trigger bot execution immediately upon resume based on bot type
         bot = subscription.bot
-        if bot.bot_mode != models.BotMode.PASSIVE and bot.bot_type in [models.BotType.FUTURES, models.BotType.SPOT]:
+        # Safely get bot_type value (could be enum or string)
+        bot_type_val = bot.bot_type.value if hasattr(bot.bot_type, 'value') else str(bot.bot_type)
+        bot_mode_val = bot.bot_mode.value if hasattr(bot.bot_mode, 'value') else str(bot.bot_mode)
+        
+        if bot_mode_val != models.BotMode.PASSIVE.value and bot_type_val in [models.BotType.FUTURES.value, models.BotType.SPOT.value]:
             run_bot_logic.apply_async(args=[updated_subscription.id], countdown=10)
-            logger.info(f"✅ Triggered run_bot_logic for resumed {bot.bot_type.value} bot (subscription {updated_subscription.id})")
-        elif bot.bot_type == models.BotType.FUTURES_RPA:
+            logger.info(f"✅ Triggered run_bot_logic for resumed {bot_type_val} bot (subscription {updated_subscription.id})")
+        elif bot_type_val == models.BotType.FUTURES_RPA.value:
             run_bot_rpa_logic.apply_async(args=[updated_subscription.id], countdown=10)
             logger.info(f"✅ Triggered run_bot_rpa_logic for resumed RPA bot (subscription {updated_subscription.id})")
         else:
@@ -1494,10 +1023,14 @@ async def create_subscription_from_paypal(
         
         # Trigger bot execution based on bot type
         try:
-            if bot.bot_mode != models.BotMode.PASSIVE and bot.bot_type in [models.BotType.FUTURES, models.BotType.SPOT]:
+            # Safely get bot_type value (could be enum or string)
+            bot_type_val = bot.bot_type.value if hasattr(bot.bot_type, 'value') else str(bot.bot_type)
+            bot_mode_val = bot.bot_mode.value if hasattr(bot.bot_mode, 'value') else str(bot.bot_mode)
+            
+            if bot_mode_val != models.BotMode.PASSIVE.value and bot_type_val in [models.BotType.FUTURES.value, models.BotType.SPOT.value]:
                 run_bot_logic.apply_async(args=[subscription.id], countdown=30)
-                logger.info(f"✅ Triggered run_bot_logic for PayPal {bot.bot_type.value} bot (subscription {subscription.id})")
-            elif bot.bot_type == models.BotType.FUTURES_RPA:
+                logger.info(f"✅ Triggered run_bot_logic for PayPal {bot_type_val} bot (subscription {subscription.id})")
+            elif bot_type_val == models.BotType.FUTURES_RPA.value:
                 run_bot_rpa_logic.apply_async(args=[subscription.id], countdown=30)
                 logger.info(f"✅ Triggered run_bot_rpa_logic for PayPal RPA bot (subscription {subscription.id})")
             else:

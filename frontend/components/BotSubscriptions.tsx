@@ -58,6 +58,7 @@ export default function BotSubscriptions({ botId }: BotSubscriptionsProps) {
   const [loading, setLoading] = useState(true)
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(10)
+  const [cancellingId, setCancellingId] = useState<number | null>(null)
   
   // Filter states
   const [filters, setFilters] = useState({
@@ -119,6 +120,42 @@ export default function BotSubscriptions({ botId }: BotSubscriptionsProps) {
   const handleApplyFilters = () => {
     setCurrentPage(1) // Reset to first page
     fetchSubscriptions()
+  }
+
+  const handleCancelSubscription = async (subscriptionId: number) => {
+    if (!confirm('Are you sure you want to cancel this subscription? This action cannot be undone.')) {
+      return
+    }
+
+    setCancellingId(subscriptionId)
+    try {
+      const token = localStorage.getItem('access_token')
+      const response = await fetch(
+        `/api/subscriptions/${subscriptionId}/cancel`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      )
+
+      if (response.ok) {
+        // Show success message
+        alert('✅ Subscription cancelled successfully!')
+        // Refresh subscriptions list
+        fetchSubscriptions()
+      } else {
+        const error = await response.json()
+        alert(`❌ Failed to cancel subscription: ${error.detail || 'Unknown error'}`)
+      }
+    } catch (error) {
+      console.error('Error cancelling subscription:', error)
+      alert('❌ Failed to cancel subscription. Please try again.')
+    } finally {
+      setCancellingId(null)
+    }
   }
 
   const handleClearFilters = () => {
@@ -354,6 +391,9 @@ export default function BotSubscriptions({ botId }: BotSubscriptionsProps) {
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
                   Expires
                 </th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-400 uppercase tracking-wider">
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-700">
@@ -420,6 +460,23 @@ export default function BotSubscriptions({ botId }: BotSubscriptionsProps) {
                   </td>
                   <td className="px-4 py-4 text-sm text-gray-400">
                     {sub.expires_at ? new Date(sub.expires_at).toLocaleDateString() : 'No expiry'}
+                  </td>
+                  <td className="px-4 py-4 text-sm text-center">
+                    {sub.status === 'ACTIVE' ? (
+                      <button
+                        onClick={() => handleCancelSubscription(sub.id)}
+                        disabled={cancellingId === sub.id}
+                        className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${
+                          cancellingId === sub.id
+                            ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
+                            : 'bg-red-600 hover:bg-red-700 text-white'
+                        }`}
+                      >
+                        {cancellingId === sub.id ? 'Cancelling...' : 'Cancel'}
+                      </button>
+                    ) : (
+                      <span className="text-gray-500 text-xs">-</span>
+                    )}
                   </td>
                 </tr>
               ))}

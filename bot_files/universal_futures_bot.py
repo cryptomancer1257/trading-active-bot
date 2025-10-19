@@ -80,11 +80,12 @@ class UniversalFuturesBot(CustomBot):
         logger.info(f"🤖 [BOT INIT] bot_id={self.bot_id}, subscription_id={subscription_id}")
         
         # Exchange configuration - support both 'exchange_type' and 'exchange' keys
-        self.exchange_name = (
-            config.get('exchange_type') or 
-            config.get('exchange') or 
-            'BINANCE'
-        ).upper()
+        exchange_raw = config.get('exchange_type') or config.get('exchange') or 'BINANCE'
+        # Handle enum or string
+        if hasattr(exchange_raw, 'value'):
+            self.exchange_name = str(exchange_raw.value).upper()
+        else:
+            self.exchange_name = str(exchange_raw).upper()
         
         if self.exchange_name not in self.SUPPORTED_EXCHANGES:
             raise ValueError(
@@ -980,10 +981,16 @@ class UniversalFuturesBot(CustomBot):
     
     # ==================== DATA CRAWLING ====================
     
-    def crawl_data(self) -> Dict[str, Any]:
+    def crawl_data(self, subscription_config: dict = None) -> Dict[str, Any]:
         """
         Crawl historical data for multiple timeframes from exchange
         Returns multi-timeframe OHLCV data
+        
+        Args:
+            subscription_config: Optional config dict containing:
+                - trading_pair: Trading pair to crawl (e.g., 'ETH/USDT' or 'ETHUSDT')
+                - timeframes: List of timeframes to crawl
+                If not provided, uses self.trading_pair and self.timeframes
         """
         import time
         from datetime import datetime
@@ -1033,7 +1040,17 @@ class UniversalFuturesBot(CustomBot):
         INITIAL_LOOKBACK_MULT = 1.5
         MAX_RETRIES = 3
         
-        self.trading_pair = self.trading_pair.replace('/', '')
+        # Extract trading_pair and timeframes from subscription_config
+        # This prevents race conditions when multiple workers use the same bot instance
+        if subscription_config:
+            config_trading_pair = subscription_config.get('trading_pair', self.trading_pair)
+            config_timeframes = subscription_config.get('timeframes', self.timeframes)
+        else:
+            config_trading_pair = self.trading_pair
+            config_timeframes = self.timeframes
+        
+        actual_trading_pair = config_trading_pair.replace('/', '') if config_trading_pair else self.trading_pair.replace('/', '')
+        actual_timeframes = config_timeframes if config_timeframes else self.timeframes
         
         # Use mainnet for data, fallback to testnet
         CLIENT = self.futures_client_mainnet if self.futures_client_mainnet else self.futures_client
@@ -1043,12 +1060,14 @@ class UniversalFuturesBot(CustomBot):
         
         client_type = "MAINNET" if self.futures_client_mainnet else "TESTNET (fallback)"
         logger.info(f"📊 Data crawling using {client_type} client on {self.exchange_name}")
+        logger.info(f"📊 Crawling pair: {actual_trading_pair} (config={subscription_config.get('trading_pair') if subscription_config else None}, self={self.trading_pair})")
+        logger.info(f"📊 Crawling timeframes: {actual_timeframes} (config={subscription_config.get('timeframes') if subscription_config else None}, self={self.timeframes})")
         
         timeframes_data = {}
         try:
-            logger.info(f"🔄 Crawling data for timeframes: {self.timeframes}")
+            logger.info(f"🔄 Crawling data for timeframes: {actual_timeframes}")
             
-            for i, timeframe in enumerate(self.timeframes, 1):
+            for i, timeframe in enumerate(actual_timeframes, 1):
                 try:
                     if timeframe not in timeframe_to_ms:
                         raise ValueError(f"Unsupported timeframe: {timeframe}")
@@ -1064,10 +1083,10 @@ class UniversalFuturesBot(CustomBot):
                     lookback = int(max(desired_limit, int(desired_limit * INITIAL_LOOKBACK_MULT)))
                     start_time = end_time - (lookback - 1) * interval_ms
                     
-                    logger.info(f"📊 [{i}/{len(self.timeframes)}] Fetching {lookback} {timeframe} candles for {self.trading_pair}")
+                    logger.info(f"📊 [{i}/{len(actual_timeframes)}] Fetching {lookback} {timeframe} candles for {actual_trading_pair}")
                     
                     df = CLIENT.get_klines(
-                        symbol=self.trading_pair,
+                        symbol=actual_trading_pair,
                         interval=timeframe,
                         start_time=start_time,
                         end_time=end_time,
@@ -1087,7 +1106,7 @@ class UniversalFuturesBot(CustomBot):
                         
                         logger.warning(f"⚠️ {timeframe} needs backfill {len(df)}/{MIN_NEEDED}, retry {retries}...")
                         df_more = CLIENT.get_klines(
-                            symbol=self.trading_pair,
+                            symbol=actual_trading_pair,
                             interval=timeframe,
                             start_time=new_start,
                             end_time=new_end,
@@ -1108,10 +1127,10 @@ class UniversalFuturesBot(CustomBot):
                     records = _df_to_records(df)
                     timeframes_data[timeframe] = records
                     
-                    logger.info(f"✅ [{i}/{len(self.timeframes)}] Got {len(records)} {timeframe} candles")
+                    logger.info(f"✅ [{i}/{len(actual_timeframes)}] Got {len(records)} {timeframe} candles")
                     
                 except Exception as tf_err:
-                    logger.error(f"❌ [{i}/{len(self.timeframes)}] Failed to fetch {timeframe}: {tf_err}")
+                    logger.error(f"❌ [{i}/{len(actual_timeframes)}] Failed to fetch {timeframe}: {tf_err}")
                     timeframes_data[timeframe] = []
             
             report = {tf: len(candles) for tf, candles in timeframes_data.items()}

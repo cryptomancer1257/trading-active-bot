@@ -25,6 +25,7 @@ class BotType(str, Enum):
     FUTURES = "FUTURES"     # Futures Trading
     FUTURES_RPA = "FUTURES_RPA"  # Futures Trading with RPA
     FUTURES_API = "FUTURES_API"  # temp
+    SIGNALS_FUTURES = "SIGNALS_FUTURES"  # Signals-only futures bot
     BACKTEST = "BACKTEST"   # Backtesting/Signals bot
 
 class BotMode(str, Enum):
@@ -87,6 +88,8 @@ class UserBase(BaseModel):
     developer_name: Optional[str] = None
     developer_bio: Optional[str] = None
     developer_website: Optional[str] = None
+    telegram_username: Optional[str] = None
+    discord_username: Optional[str] = None
 
 class UserCreate(BaseModel):
     email: EmailStr
@@ -100,6 +103,8 @@ class UserUpdate(BaseModel):
     developer_name: Optional[str] = None
     developer_bio: Optional[str] = None
     developer_website: Optional[str] = None
+    telegram_username: Optional[str] = Field(None, description="Telegram username for notifications (without @)")
+    discord_username: Optional[str] = Field(None, description="Discord username for notifications")
     api_key: Optional[str] = None
     api_secret: Optional[str] = None
 
