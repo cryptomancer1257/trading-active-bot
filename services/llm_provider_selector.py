@@ -61,8 +61,29 @@ class LLMProviderSelector:
         """
         logger.info(f"🔍 Selecting platform LLM provider for developer {developer_id}")
         
-        # Get Platform Provider
-        platform_provider = self._get_platform_provider(preferred_provider)
+        # Check if user is on Free Plan
+        user_plan = self._get_user_plan(developer_id)
+        is_free_plan = user_plan and user_plan.plan_name.value == 'free'
+        
+        if is_free_plan:
+            # Free Plan: Force use of free provider (Gemini 2.0 Flash)
+            logger.info(f"👤 Developer {developer_id} is on FREE plan - auto-selecting free provider")
+            platform_provider = self._get_free_provider()
+            if platform_provider:
+                logger.info(
+                    f"✅ Using FREE platform LLM provider: {platform_provider['provider']} "
+                    f"(model: {platform_provider['model']}) - Platform pays"
+                )
+                return ("PLATFORM", platform_provider)
+            else:
+                # Fallback to any available provider if free provider not configured
+                logger.warning(f"⚠️ No free provider available, using default")
+                platform_provider = self._get_platform_provider(None)
+        else:
+            # Pro Plan or higher: Use preferred provider
+            logger.info(f"👤 Developer {developer_id} is on PRO plan - using preferred provider")
+            platform_provider = self._get_platform_provider(preferred_provider)
+        
         if platform_provider:
             logger.info(
                 f"✅ Using platform LLM provider: {platform_provider['provider']} "
@@ -279,6 +300,60 @@ class LLMProviderSelector:
             }
         
         return stats
+
+
+    def _get_user_plan(self, developer_id: int):
+        """
+        Get user's current plan
+        
+        Returns:
+            UserPlan object or None if no plan found
+        """
+        from core import models
+        
+        user_plan = self.db.query(models.UserPlan).filter(
+            models.UserPlan.user_id == developer_id,
+            models.UserPlan.status == models.PlanStatus.ACTIVE
+        ).first()
+        
+        return user_plan
+    
+    def _get_free_provider(self) -> Optional[Dict[str, Any]]:
+        """
+        Get free LLM provider (Gemini 2.0 Flash with cost = 0)
+        
+        Returns:
+            Provider config dict or None if not available
+        """
+        from core import models
+        
+        # Try to find Gemini 2.0 Flash (free model)
+        provider = self.db.query(models.PlatformLLMProvider).filter(
+            models.PlatformLLMProvider.provider_type == models.LLMProviderType.GEMINI,
+            models.PlatformLLMProvider.is_active == True
+        ).first()
+        
+        if provider:
+            # Get free model (gemini-2.0-flash-001 has cost = 0)
+            free_model = self.db.query(models.PlatformLLMModel).filter(
+                models.PlatformLLMModel.provider_id == provider.id,
+                models.PlatformLLMModel.is_active == True,
+                models.PlatformLLMModel.model_name.like('%2.0-flash%')
+            ).first()
+            
+            if free_model:
+                return self._format_platform_provider(provider, free_model)
+            else:
+                # Fallback to any active Gemini model
+                any_model = self.db.query(models.PlatformLLMModel).filter(
+                    models.PlatformLLMModel.provider_id == provider.id,
+                    models.PlatformLLMModel.is_active == True
+                ).first()
+                
+                if any_model:
+                    return self._format_platform_provider(provider, any_model)
+        
+        return None
 
 
 # Convenience function for quick provider selection

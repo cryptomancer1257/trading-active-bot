@@ -143,8 +143,9 @@ export const useDeleteBot = () => {
       await api.delete(`/bots/${botId}`)
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['myBots'] })
-      queryClient.invalidateQueries({ queryKey: ['publicBots'] })
+      // Invalidate and refetch immediately
+      queryClient.invalidateQueries({ queryKey: ['myBots'], refetchType: 'active' })
+      queryClient.invalidateQueries({ queryKey: ['publicBots'], refetchType: 'active' })
     },
   })
 }

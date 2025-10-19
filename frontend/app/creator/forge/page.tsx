@@ -1698,69 +1698,119 @@ export default function ForgePage() {
                 <div className="space-y-4">
                   {(watchedBotType === 'LLM' || watchedBotType === 'FUTURES' || watchedBotType === 'FUTURES_RPA' || watchedBotType === 'SPOT') && (
                     <>
-                      <div>
-                        <label className="form-label">LLM Provider</label>
-                        <select {...register('llm_provider')} className="form-input">
-                          <option value="">Select AI Provider</option>
-                          <option value="openai">🤖 OpenAI (GPT-4)</option>
-                          <option value="anthropic">🧠 Anthropic (Claude)</option>
-                          <option value="gemini">💎 Google (Gemini)</option>
-                        </select>
-                      </div>
-                      
-                      <div>
-                        <label className="form-label">Specific Model (Optional)</label>
-                        <select 
-                          {...register('llm_model')} 
-                          className="form-input"
-                          disabled={!watch('llm_provider')}
-                        >
-                          <option value="">Default (Auto-select)</option>
+                      {/* Free Plan Warning */}
+                      {!isPro && (
+                        <div className="bg-orange-500/10 border border-orange-500/30 rounded-lg p-4">
+                          <div className="flex items-start space-x-3">
+                            <div className="flex-shrink-0">
+                              <svg className="h-5 w-5 text-orange-400" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                              </svg>
+                            </div>
+                            <div className="flex-1">
+                              <h4 className="text-sm font-semibold text-orange-400 mb-1">Free Plan - Limited AI Performance</h4>
+                              <p className="text-xs text-orange-300/80 leading-relaxed">
+                                Your entity will use <strong>Gemini 2.0 Flash (Free)</strong> - a basic AI model with slower response times and lower analysis accuracy. 
+                                To unlock faster speeds, advanced models (GPT-4o, Claude 3.7 Sonnet), and higher accuracy, 
+                                <button 
+                                  type="button"
+                                  onClick={() => setShowUpgradeModal(true)}
+                                  className="underline hover:text-orange-200 font-semibold"
+                                >
+                                  upgrade to Pro Plan
+                                </button>.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* LLM Provider Selection - Only for Pro Plan */}
+                      {isPro && (
+                        <>
+                          <div>
+                            <label className="form-label">LLM Provider</label>
+                            <select {...register('llm_provider')} className="form-input">
+                              <option value="">Select AI Provider</option>
+                              <option value="openai">🤖 OpenAI (GPT-4)</option>
+                              <option value="anthropic">🧠 Anthropic (Claude)</option>
+                              <option value="gemini">💎 Google (Gemini)</option>
+                            </select>
+                          </div>
                           
-                          {/* OpenAI Models */}
-                          {watch('llm_provider') === 'openai' && (
-                            <>
-                              <option value="gpt-4o">GPT-4o (Best, Multimodal) ⭐</option>
-                              <option value="gpt-4o-mini">GPT-4o Mini (Fast, Cheap) 💰</option>
-                              <option value="o1">O1 (Advanced Reasoning) 🧠</option>
-                              <option value="o1-mini">O1 Mini (Fast Reasoning) ⚡</option>
-                              <option value="o1-preview">O1 Preview (Beta)</option>
-                              <option value="gpt-4-turbo">GPT-4 Turbo</option>
-                              <option value="gpt-3.5-turbo">GPT-3.5 Turbo (Budget)</option>
-                            </>
-                          )}
-                          
-                          {/* Claude Models */}
-                          {watch('llm_provider') === 'anthropic' && (
-                            <>
-                              <option value="claude-3-7-sonnet-latest">Claude 3.7 Sonnet (Newest) ⭐</option>
-                              <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet Oct 2024</option>
-                              <option value="claude-3-5-sonnet-20240620">Claude 3.5 Sonnet Jun 2024</option>
-                              <option value="claude-3-5-haiku-20241022">Claude 3.5 Haiku (Fast) ⚡</option>
-                              <option value="claude-3-opus-20240229">Claude 3 Opus (Most Capable)</option>
-                              <option value="claude-3-haiku-20240307">Claude 3 Haiku (Cheapest) 💰</option>
-                            </>
-                          )}
-                          
-                          {/* Gemini Models */}
-                          {watch('llm_provider') === 'gemini' && (
-                            <>
-                              <option value="gemini-2.5-pro">Gemini 2.5 Pro (Best Reasoning) 🧠</option>
-                              <option value="gemini-2.5-flash">Gemini 2.5 Flash (Balanced) ⭐</option>
-                              <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite (Fastest) ⚡</option>
-                              <option value="gemini-2.0-flash-001">Gemini 2.0 Flash (Realtime/Vision) 👁️</option>
-                              <option value="gemini-1.5-flash-002">Gemini 1.5 Flash (Legacy)</option>
-                            </>
-                          )}
-                        </select>
-                        {watch('llm_provider') && (
-                          <p className="text-xs text-gray-400 mt-1">
-                            {watch('llm_provider') === 'openai' && 'OpenAI models - balance speed & quality'}
-                            {watch('llm_provider') === 'anthropic' && 'Claude models - advanced reasoning'}
-                            {watch('llm_provider') === 'gemini' && 'Gemini models - long context window'}
-                          </p>
-                        )}
-                      </div>
+                          <div>
+                            <label className="form-label">Specific Model (Optional)</label>
+                            <select 
+                              {...register('llm_model')} 
+                              className="form-input"
+                              disabled={!watch('llm_provider')}
+                            >
+                              <option value="">Default (Auto-select)</option>
+                              
+                              {/* OpenAI Models */}
+                              {watch('llm_provider') === 'openai' && (
+                                <>
+                                  <option value="gpt-4o">GPT-4o (Best, Multimodal) ⭐</option>
+                                  <option value="gpt-4o-mini">GPT-4o Mini (Fast, Cheap) 💰</option>
+                                  <option value="o1">O1 (Advanced Reasoning) 🧠</option>
+                                  <option value="o1-mini">O1 Mini (Fast Reasoning) ⚡</option>
+                                  <option value="o1-preview">O1 Preview (Beta)</option>
+                                  <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                                  <option value="gpt-3.5-turbo">GPT-3.5 Turbo (Budget)</option>
+                                </>
+                              )}
+                              
+                              {/* Claude Models */}
+                              {watch('llm_provider') === 'anthropic' && (
+                                <>
+                                  <option value="claude-3-7-sonnet-latest">Claude 3.7 Sonnet (Newest) ⭐</option>
+                                  <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet Oct 2024</option>
+                                  <option value="claude-3-5-sonnet-20240620">Claude 3.5 Sonnet Jun 2024</option>
+                                  <option value="claude-3-5-haiku-20241022">Claude 3.5 Haiku (Fast) ⚡</option>
+                                  <option value="claude-3-opus-20240229">Claude 3 Opus (Most Capable)</option>
+                                  <option value="claude-3-haiku-20240307">Claude 3 Haiku (Cheapest) 💰</option>
+                                </>
+                              )}
+                              
+                              {/* Gemini Models */}
+                              {watch('llm_provider') === 'gemini' && (
+                                <>
+                                  <option value="gemini-2.5-pro">Gemini 2.5 Pro (Best Reasoning) 🧠</option>
+                                  <option value="gemini-2.5-flash">Gemini 2.5 Flash (Balanced) ⭐</option>
+                                  <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite (Fastest) ⚡</option>
+                                  <option value="gemini-2.0-flash-001">Gemini 2.0 Flash (Realtime/Vision) 👁️</option>
+                                  <option value="gemini-1.5-flash-002">Gemini 1.5 Flash (Legacy)</option>
+                                </>
+                              )}
+                            </select>
+                            {watch('llm_provider') && (
+                              <p className="text-xs text-gray-400 mt-1">
+                                {watch('llm_provider') === 'openai' && 'OpenAI models - balance speed & quality'}
+                                {watch('llm_provider') === 'anthropic' && 'Claude models - advanced reasoning'}
+                                {watch('llm_provider') === 'gemini' && 'Gemini models - long context window'}
+                              </p>
+                            )}
+                          </div>
+                        </>
+                      )}
+
+                      {/* Free Plan - Show auto-selected provider */}
+                      {!isPro && (
+                        <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <label className="form-label mb-1">LLM Provider (Auto-selected)</label>
+                              <p className="text-sm text-gray-300">💎 Google Gemini 2.0 Flash (Free)</p>
+                              <p className="text-xs text-gray-500 mt-1">Platform automatically selects free AI model for Free Plan users</p>
+                            </div>
+                            <div className="flex-shrink-0">
+                              <span className="px-3 py-1 bg-orange-500/20 text-orange-400 text-xs font-semibold rounded-full border border-orange-500/30">
+                                FREE TIER
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </>
                   )}
                   

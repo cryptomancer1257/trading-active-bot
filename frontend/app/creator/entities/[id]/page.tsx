@@ -426,10 +426,13 @@ export default function BotDetailPage() {
                 <select
                   value={trialConfig.networkType}
                   onChange={(e) => setTrialConfig(prev => ({ ...prev, networkType: e.target.value }))}
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={currentPlan?.plan_name === 'free' && trialConfig.networkType === 'TESTNET'}
                 >
                   <option value="TESTNET">TESTNET (Safe Testing)</option>
-                  <option value="MAINNET">MAINNET (Real Trading)</option>
+                  <option value="MAINNET" disabled={currentPlan?.plan_name === 'free'}>
+                    MAINNET (Real Trading) {currentPlan?.plan_name === 'free' ? '🔒 Pro Only' : ''}
+                  </option>
                 </select>
                 <p className="text-xs text-gray-400 mt-1">
                   {trialConfig.networkType === 'TESTNET' 
@@ -437,6 +440,22 @@ export default function BotDetailPage() {
                     : '⚠️ Real trading environment with actual funds'
                   }
                 </p>
+                
+                {/* Free Plan Warning for Mainnet */}
+                {currentPlan?.plan_name === 'free' && (
+                  <div className="mt-2 bg-orange-500/10 border border-orange-500/30 rounded-md p-2">
+                    <p className="text-xs text-orange-300 leading-relaxed">
+                      <span className="font-semibold">Free Plan:</span> Testnet only. 
+                      <button 
+                        type="button"
+                        onClick={() => setShowUpgradeModal(true)}
+                        className="underline hover:text-orange-200 font-semibold ml-1"
+                      >
+                        Upgrade to Pro
+                      </button> for Mainnet trading with real funds.
+                    </p>
+                  </div>
+                )}
               </div>
               
               <div>
