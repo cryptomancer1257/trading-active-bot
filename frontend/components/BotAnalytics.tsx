@@ -65,9 +65,10 @@ interface AnalyticsData {
 
 interface BotAnalyticsProps {
   botId: number
+  isOwner?: boolean  // NEW: Check if user is bot owner
 }
 
-export default function BotAnalytics({ botId }: BotAnalyticsProps) {
+export default function BotAnalytics({ botId, isOwner = false }: BotAnalyticsProps) {
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -339,11 +340,12 @@ export default function BotAnalytics({ botId }: BotAnalyticsProps) {
         )}
       </div>
 
-      {/* Recent Transactions */}
-      <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
-        <h3 className="text-lg font-semibold text-white mb-4">Recent Transactions</h3>
-        
-        {recent_transactions.length > 0 ? (
+      {/* Recent Transactions - Only visible to bot owner */}
+      {isOwner && (
+        <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
+          <h3 className="text-lg font-semibold text-white mb-4">Recent Transactions</h3>
+          
+          {recent_transactions.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="text-xs text-gray-400 uppercase border-b border-gray-700">
@@ -539,7 +541,8 @@ export default function BotAnalytics({ botId }: BotAnalyticsProps) {
             No transactions yet
           </div>
         )}
-      </div>
+        </div>
+      )}
     </div>
   )
 }
