@@ -22,10 +22,23 @@ api.interceptors.request.use((config) => {
   return config
 })
 
-// Handle token expiry
+// Handle token expiry and quota exceeded errors
 api.interceptors.response.use(
   (response) => {
     console.log('✅ API Success:', response.config.url, response.status)
+    
+    // Check for quota_exceeded in successful responses (some endpoints return this as success)
+    if (response.data && response.data.error === 'quota_exceeded') {
+      console.warn('⚠️ LLM Quota Exceeded:', response.data.message)
+      // Trigger quota exceeded event
+      window.dispatchEvent(new CustomEvent('quota-exceeded', {
+        detail: {
+          message: response.data.message,
+          endpoint: response.config.url
+        }
+      }))
+    }
+    
     return response
   },
   (error) => {
@@ -34,6 +47,18 @@ api.interceptors.response.use(
       console.error('💡 Make sure backend is running on port 8000')
     } else {
       console.error('❌ API Error:', error.config?.url, error.response?.status, error.response?.data)
+    }
+    
+    // Check for quota_exceeded in error responses
+    if (error.response?.data?.error === 'quota_exceeded') {
+      console.warn('⚠️ LLM Quota Exceeded:', error.response.data.message)
+      // Trigger quota exceeded event
+      window.dispatchEvent(new CustomEvent('quota-exceeded', {
+        detail: {
+          message: error.response.data.message,
+          endpoint: error.config?.url
+        }
+      }))
     }
     
     if (error.response?.status === 401) {

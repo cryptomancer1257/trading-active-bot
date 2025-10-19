@@ -23,7 +23,7 @@ PAYPAL_CLIENT_SECRET = os.getenv("PAYPAL_CLIENT_SECRET")
 PAYPAL_MODE = os.getenv("PAYPAL_MODE", "sandbox")  # sandbox or live
 PAYPAL_API_BASE = "https://api-m.sandbox.paypal.com" if PAYPAL_MODE == "sandbox" else "https://api-m.paypal.com"
 
-# Plan constants
+# Plan constants (based on pricing table)
 FREE_PLAN_CONFIG = {
     "plan_name": "free",
     "price_usd": 0.00,
@@ -31,20 +31,35 @@ FREE_PLAN_CONFIG = {
     "max_subscriptions_per_bot": 5,
     "allowed_environment": "testnet",
     "publish_marketplace": False,
-    "subscription_expiry_days": 3,
-    "compute_quota_per_day": 1000,
+    "subscription_expiry_days": 3,  # 3-day trial
+    "compute_quota_per_day": 24,  # 24 API calls per bot/day (legacy)
+    "llm_quota_monthly": 720,  # 24 * 30 days (new system)
     "revenue_share_percentage": 0.00
 }
 
 PRO_PLAN_CONFIG = {
     "plan_name": "pro",
-    "price_usd": 10.00,
+    "price_usd": 60.00,  # $60/month (as per pricing table)
+    "max_bots": 20,
+    "max_subscriptions_per_bot": 20,
+    "allowed_environment": "mainnet",
+    "publish_marketplace": True,
+    "subscription_expiry_days": 30,  # 30 days
+    "compute_quota_per_day": 24,  # 24 API calls per bot/day (legacy)
+    "llm_quota_monthly": 720,  # 24 * 30 days (new system)
+    "revenue_share_percentage": 90.00
+}
+
+ULTRA_PLAN_CONFIG = {
+    "plan_name": "ultra",
+    "price_usd": 500.00,  # $500/month
     "max_bots": 999999,  # Unlimited
     "max_subscriptions_per_bot": 999999,  # Unlimited
     "allowed_environment": "mainnet",
     "publish_marketplace": True,
-    "subscription_expiry_days": 999999,  # Unlimited
-    "compute_quota_per_day": 999999,  # Unlimited
+    "subscription_expiry_days": 30,  # 30 days
+    "compute_quota_per_day": 240,  # 240 API calls per bot/day (legacy)
+    "llm_quota_monthly": 7200,  # 240 * 30 days (new system)
     "revenue_share_percentage": 90.00
 }
 
@@ -158,7 +173,8 @@ def get_plan_configs():
     """Get available plan configurations"""
     return {
         "free": FREE_PLAN_CONFIG,
-        "pro": PRO_PLAN_CONFIG
+        "pro": PRO_PLAN_CONFIG,
+        "ultra": ULTRA_PLAN_CONFIG
     }
 
 
@@ -318,9 +334,10 @@ def get_current_limits(
         db.commit()
         db.refresh(plan)
     
-    # Count current usage
+    # Count current usage (exclude archived bots)
     total_bots = db.query(models.Bot).filter(
-        models.Bot.developer_id == current_user.id
+        models.Bot.developer_id == current_user.id,
+        models.Bot.status != models.BotStatus.ARCHIVED
     ).count()
     
     total_subscriptions = db.query(models.Subscription).join(

@@ -9,6 +9,7 @@ import { usePlan } from '@/hooks/usePlan'
 import { useFeatureFlags } from '@/hooks/useFeatureFlags'
 import PlanBadge from '@/components/PlanBadge'
 import UpgradeModal from '@/components/UpgradeModal'
+import QuotaUsageCard from '@/components/QuotaUsageCard'
 
 const features = [
   {
@@ -39,6 +40,7 @@ const features = [
 
 export default function HomePage() {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
+  const [targetPlan, setTargetPlan] = useState<'pro' | 'ultra'>('pro')
   const { currentPlan, limits, isPro, isFree } = usePlan()
   // Check if plan package is enabled via feature flags
   const { isPlanPackageEnabled, planPackageStatus, isLoadingPlanPackage, planPackageError } = useFeatureFlags()
@@ -213,10 +215,13 @@ export default function HomePage() {
                   <div className="flex-shrink-0">
                     {isFree ? (
                       <button
-                        onClick={() => setShowUpgradeModal(true)}
+                        onClick={() => {
+                          setTargetPlan('pro')
+                          setShowUpgradeModal(true)
+                        }}
                         className="px-6 py-2.5 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold text-sm rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all shadow-lg hover:shadow-purple-500/50 transform hover:scale-105 whitespace-nowrap"
                       >
-                        {limits.usage.can_create_bot ? 'Upgrade to Pro - $10/mo' : '⚡ Upgrade Now - $10/mo'}
+                        {limits.usage.can_create_bot ? 'Upgrade to Pro - $60/mo' : '⚡ Upgrade Now - $60/mo'}
                       </button>
                     ) : (
                       <Link
@@ -238,6 +243,63 @@ export default function HomePage() {
                     </p>
                   </div>
                 )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Quota Usage Section - Only show for authenticated users */}
+      {currentPlan && (
+        <div className="py-8 bg-dark-800/20 backdrop-blur-sm">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Quota Usage Card */}
+              <div className="lg:col-span-1">
+                <QuotaUsageCard />
+              </div>
+              
+              {/* Additional Info Cards */}
+              <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Plan Benefits */}
+                <div className="bg-dark-800/60 rounded-xl p-6">
+                  <div className="flex items-center mb-4">
+                    <span className="text-2xl mr-3">💎</span>
+                    <h3 className="text-white font-bold text-lg">Plan Benefits</h3>
+                  </div>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex items-center text-gray-300">
+                      <span className="mr-2">✓</span>
+                      <span>Unlimited AI Entities</span>
+                    </div>
+                    <div className="flex items-center text-gray-300">
+                      <span className="mr-2">✓</span>
+                      <span>Mainnet Trading</span>
+                    </div>
+                    <div className="flex items-center text-gray-300">
+                      <span className="mr-2">✓</span>
+                      <span>Advanced Analytics</span>
+                    </div>
+                    <div className="flex items-center text-gray-300">
+                      <span className="mr-2">✓</span>
+                      <span>Priority Support</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Usage Tips */}
+                <div className="bg-dark-800/60 rounded-xl p-6">
+                  <div className="flex items-center mb-4">
+                    <span className="text-2xl mr-3">💡</span>
+                    <h3 className="text-white font-bold text-lg">Usage Tips</h3>
+                  </div>
+                  <div className="space-y-2 text-sm text-gray-300">
+                    <p>• Use signals bots for lower quota consumption</p>
+                    <p>• Optimize bot frequency to reduce API calls</p>
+                    <p>• Monitor quota usage regularly</p>
+                    <p>• Purchase top-ups when needed</p>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -277,12 +339,7 @@ export default function HomePage() {
           </div>
 
           {/* Comparison Table */}
-          <div className="overflow-hidden rounded-2xl border border-quantum-500/20 bg-dark-800/50 backdrop-blur-sm relative pt-6">
-            {/* RECOMMENDED Badge - Above Pro column */}
-            <div className="absolute top-2 left-1/2 md:left-3/4 transform -translate-x-1/2 bg-gradient-to-r from-purple-500 to-pink-500 text-white px-4 py-1.5 rounded-full text-xs font-bold shadow-lg z-10">
-              RECOMMENDED
-            </div>
-            
+          <div className="overflow-hidden rounded-2xl border border-quantum-500/20 bg-dark-800/50 backdrop-blur-sm">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-quantum-500/20">
@@ -292,16 +349,27 @@ export default function HomePage() {
                   <th className="py-6 px-6 text-center bg-dark-700/30">
                     <div className="flex flex-col items-center">
                       <span className="text-2xl mb-2">🆓</span>
-                      <span className="text-2xl font-bold text-white mb-1">Free</span>
+                      <span className="text-xl font-bold text-white mb-1">Free</span>
                       <span className="text-3xl font-extrabold cyber-text">$0</span>
                       <span className="text-xs text-gray-500 mt-1">forever</span>
                     </div>
                   </th>
                   <th className="py-6 px-6 text-center bg-gradient-to-br from-purple-900/30 to-pink-900/30 relative">
+                    <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-gradient-to-r from-purple-500 to-pink-500 text-white px-3 py-1 rounded-full text-xs font-bold shadow-lg z-10">
+                      ⚡ RECOMMENDED
+                    </div>
                     <div className="flex flex-col items-center">
                       <span className="text-2xl mb-2">⚡</span>
-                      <span className="text-2xl font-bold text-white mb-1">Pro</span>
-                      <span className="text-3xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-400">$10</span>
+                      <span className="text-xl font-bold text-white mb-1">Pro</span>
+                      <span className="text-3xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-400">$60</span>
+                      <span className="text-xs text-gray-400 mt-1">per month</span>
+                    </div>
+                  </th>
+                  <th className="py-6 px-6 text-center bg-gradient-to-br from-yellow-900/30 to-orange-900/30 relative">
+                    <div className="flex flex-col items-center">
+                      <span className="text-2xl mb-2">💎</span>
+                      <span className="text-xl font-bold text-white mb-1">Ultra</span>
+                      <span className="text-3xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-yellow-400 to-orange-400">$500</span>
                       <span className="text-xs text-gray-400 mt-1">per month</span>
                     </div>
                   </th>
@@ -315,7 +383,10 @@ export default function HomePage() {
                     <span className="text-gray-400">5 bots</span>
                   </td>
                   <td className="py-4 px-6 text-center bg-gradient-to-br from-purple-900/10 to-pink-900/10">
-                    <span className="text-green-400 font-semibold">♾️ Unlimited</span>
+                    <span className="text-purple-400 font-semibold">20 bots</span>
+                  </td>
+                  <td className="py-4 px-6 text-center bg-gradient-to-br from-yellow-900/10 to-orange-900/10">
+                    <span className="text-yellow-400 font-semibold">♾️ Unlimited</span>
                   </td>
                 </tr>
 
@@ -326,7 +397,10 @@ export default function HomePage() {
                     <span className="text-gray-400">5 max</span>
                   </td>
                   <td className="py-4 px-6 text-center bg-gradient-to-br from-purple-900/10 to-pink-900/10">
-                    <span className="text-green-400 font-semibold">♾️ Unlimited</span>
+                    <span className="text-purple-400 font-semibold">20 max</span>
+                  </td>
+                  <td className="py-4 px-6 text-center bg-gradient-to-br from-yellow-900/10 to-orange-900/10">
+                    <span className="text-yellow-400 font-semibold">♾️ Unlimited</span>
                   </td>
                 </tr>
 
@@ -337,29 +411,10 @@ export default function HomePage() {
                     <span className="text-yellow-400">Testnet Only</span>
                   </td>
                   <td className="py-4 px-6 text-center bg-gradient-to-br from-purple-900/10 to-pink-900/10">
-                    <span className="text-green-400 font-semibold">Testnet + Mainnet</span>
+                    <span className="text-purple-400 font-semibold">Testnet + Mainnet</span>
                   </td>
-                </tr>
-
-                {/* Marketplace */}
-                <tr className="hover:bg-dark-700/20 transition-colors">
-                  <td className="py-4 px-6 text-gray-300 font-medium">Publish to Marketplace</td>
-                  <td className="py-4 px-6 text-center bg-dark-700/20">
-                    <span className="text-red-400">✗ Not Allowed</span>
-                  </td>
-                  <td className="py-4 px-6 text-center bg-gradient-to-br from-purple-900/10 to-pink-900/10">
-                    <span className="text-green-400 font-semibold">✓ Full Access</span>
-                  </td>
-                </tr>
-
-                {/* Subscription Expiry */}
-                <tr className="hover:bg-dark-700/20 transition-colors">
-                  <td className="py-4 px-6 text-gray-300 font-medium">Bot Subscription Duration</td>
-                  <td className="py-4 px-6 text-center bg-dark-700/20">
-                    <span className="text-gray-400">3 days trial</span>
-                  </td>
-                  <td className="py-4 px-6 text-center bg-gradient-to-br from-purple-900/10 to-pink-900/10">
-                    <span className="text-green-400 font-semibold">Unlimited</span>
+                  <td className="py-4 px-6 text-center bg-gradient-to-br from-yellow-900/10 to-orange-900/10">
+                    <span className="text-yellow-400 font-semibold">Testnet + Mainnet</span>
                   </td>
                 </tr>
 
@@ -370,10 +425,41 @@ export default function HomePage() {
                     <div className="text-xs text-gray-500">API calls per bot per day</div>
                   </td>
                   <td className="py-4 px-6 text-center bg-dark-700/20">
-                    <span className="text-gray-400">1,000 calls</span>
+                    <span className="text-gray-400">24 calls</span>
                   </td>
                   <td className="py-4 px-6 text-center bg-gradient-to-br from-purple-900/10 to-pink-900/10">
-                    <span className="text-green-400 font-semibold">♾️ Unlimited</span>
+                    <span className="text-purple-400 font-semibold">240 calls</span>
+                  </td>
+                  <td className="py-4 px-6 text-center bg-gradient-to-br from-yellow-900/10 to-orange-900/10">
+                    <span className="text-yellow-400 font-semibold">2,400 calls</span>
+                  </td>
+                </tr>
+
+                {/* Duration */}
+                <tr className="hover:bg-dark-700/20 transition-colors">
+                  <td className="py-4 px-6 text-gray-300 font-medium">Bot Subscription Duration</td>
+                  <td className="py-4 px-6 text-center bg-dark-700/20">
+                    <span className="text-gray-400">3-day trial</span>
+                  </td>
+                  <td className="py-4 px-6 text-center bg-gradient-to-br from-purple-900/10 to-pink-900/10">
+                    <span className="text-purple-400 font-semibold">30 days</span>
+                  </td>
+                  <td className="py-4 px-6 text-center bg-gradient-to-br from-yellow-900/10 to-orange-900/10">
+                    <span className="text-yellow-400 font-semibold">30 days</span>
+                  </td>
+                </tr>
+
+                {/* Marketplace */}
+                <tr className="hover:bg-dark-700/20 transition-colors">
+                  <td className="py-4 px-6 text-gray-300 font-medium">Publish to Marketplace</td>
+                  <td className="py-4 px-6 text-center bg-dark-700/20">
+                    <span className="text-red-400">✗ Not Allowed</span>
+                  </td>
+                  <td className="py-4 px-6 text-center bg-gradient-to-br from-purple-900/10 to-pink-900/10">
+                    <span className="text-purple-400 font-semibold">✓ Full Access</span>
+                  </td>
+                  <td className="py-4 px-6 text-center bg-gradient-to-br from-yellow-900/10 to-orange-900/10">
+                    <span className="text-yellow-400 font-semibold">✓ Full Access</span>
                   </td>
                 </tr>
 
@@ -381,31 +467,48 @@ export default function HomePage() {
                 <tr className="hover:bg-dark-700/20 transition-colors">
                   <td className="py-4 px-6 text-gray-300 font-medium">Priority Support</td>
                   <td className="py-4 px-6 text-center bg-dark-700/20">
-                    <span className="text-gray-400">Community</span>
+                    <span className="text-gray-400">Community Only</span>
                   </td>
                   <td className="py-4 px-6 text-center bg-gradient-to-br from-purple-900/10 to-pink-900/10">
-                    <span className="text-green-400 font-semibold">✓ 24/7 Support</span>
+                    <span className="text-purple-400 font-semibold">✓ 24/7 Support</span>
+                  </td>
+                  <td className="py-4 px-6 text-center bg-gradient-to-br from-yellow-900/10 to-orange-900/10">
+                    <span className="text-yellow-400 font-semibold">✓ 24/7 Dedicated</span>
                   </td>
                 </tr>
               </tbody>
             </table>
 
             {/* CTA Row */}
-            <div className="grid grid-cols-2 gap-0 border-t border-quantum-500/20">
-              <div className="py-6 px-6 text-center bg-dark-700/20">
+            <div className="grid grid-cols-3 gap-0 border-t border-quantum-500/20">
+              <div className="py-6 px-4 text-center bg-dark-700/20">
                 <Link
                   href="/auth/register"
-                  className="inline-block px-6 py-3 border border-quantum-500/30 text-quantum-300 font-semibold rounded-lg hover:bg-quantum-500/10 transition-all"
+                  className="inline-block px-6 py-3 border border-quantum-500/30 text-quantum-300 font-semibold rounded-lg hover:bg-quantum-500/10 transition-all text-sm"
                 >
                   Start Free
                 </Link>
               </div>
-              <div className="py-6 px-6 text-center bg-gradient-to-br from-purple-900/10 to-pink-900/10">
+              <div className="py-6 px-4 text-center bg-gradient-to-br from-purple-900/10 to-pink-900/10">
                 <button
-                  onClick={() => setShowUpgradeModal(true)}
-                  className="inline-block px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all shadow-lg hover:shadow-purple-500/50 transform hover:scale-105"
+                  onClick={() => {
+                    setTargetPlan('pro')
+                    setShowUpgradeModal(true)
+                  }}
+                  className="inline-block px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all shadow-lg hover:shadow-purple-500/50 transform hover:scale-105 text-sm"
                 >
                   Upgrade to Pro
+                </button>
+              </div>
+              <div className="py-6 px-4 text-center bg-gradient-to-br from-yellow-900/10 to-orange-900/10">
+                <button
+                  onClick={() => {
+                    setTargetPlan('ultra')
+                    setShowUpgradeModal(true)
+                  }}
+                  className="inline-block px-6 py-3 bg-gradient-to-r from-yellow-500 to-orange-500 text-white font-bold rounded-lg hover:from-yellow-600 hover:to-orange-600 transition-all shadow-lg hover:shadow-yellow-500/50 transform hover:scale-105 text-sm"
+                >
+                  Upgrade to Ultra
                 </button>
               </div>
             </div>
@@ -498,6 +601,7 @@ export default function HomePage() {
       <UpgradeModal 
         isOpen={showUpgradeModal}
         onClose={() => setShowUpgradeModal(false)}
+        targetPlan={targetPlan}
       />
     </div>
   )

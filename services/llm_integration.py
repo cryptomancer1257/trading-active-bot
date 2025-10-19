@@ -38,6 +38,10 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+class QuotaExceededException(Exception):
+    """Raised when user exceeds LLM quota"""
+    pass
+
 class LLMIntegrationService:
     """
     LLM Integration Service for Crypto Trading Analysis
@@ -782,10 +786,294 @@ Please respond in JSON format:
             logger.error(f"Error preparing market data: {e}")
             return {}
     
+    def _check_quota(self, developer_id: int) -> bool:
+        """
+        Check if user has remaining LLM quota
+        
+        Args:
+            developer_id: Developer ID to check quota for
+            
+        Returns:
+            bool: True if quota available, False if exceeded
+            
+        Raises:
+            QuotaExceededException: If quota is exceeded
+        """
+        if not self.db or not developer_id:
+            logger.warning("⚠️ No database or developer_id provided for quota check")
+            return True  # Allow if no quota system available
+        
+        try:
+            from core import models
+            
+            # Get user's plan
+            user_plan = self.db.query(models.UserPlan).filter(
+                models.UserPlan.user_id == developer_id,
+                models.UserPlan.status == models.PlanStatus.ACTIVE
+            ).first()
+            
+            if not user_plan:
+                logger.warning(f"⚠️ No active plan found for developer {developer_id}")
+                return True  # Allow if no plan found
+            
+            # Check if quota has expired (reset period)
+            if user_plan.llm_quota_reset_at and user_plan.llm_quota_reset_at < datetime.now():
+                logger.info(f"🔄 Quota expired for developer {developer_id}, resetting...")
+                # Reset quota
+                user_plan.llm_quota_used = 0
+                user_plan.llm_quota_reset_at = datetime.now() + timedelta(days=30)
+                self.db.commit()
+                logger.info(f"✅ Quota reset for developer {developer_id}")
+            
+            # Check remaining quota
+            remaining = user_plan.llm_quota_total - user_plan.llm_quota_used
+            if remaining <= 0:
+                logger.warning(f"❌ Quota exceeded for developer {developer_id}: {user_plan.llm_quota_used}/{user_plan.llm_quota_total}")
+                
+                # Send notification to developer
+                self._send_quota_exhausted_notification(developer_id, user_plan)
+                
+                raise QuotaExceededException(
+                    f"LLM quota exceeded. Used: {user_plan.llm_quota_used}/{user_plan.llm_quota_total}. "
+                    f"Please upgrade your plan or purchase additional quota."
+                )
+            
+            logger.info(f"✅ Quota check passed for developer {developer_id}: {remaining} calls remaining")
+            return True
+            
+        except QuotaExceededException:
+            # Re-raise QuotaExceededException to block LLM calls
+            raise
+        except Exception as e:
+            logger.error(f"❌ Error checking quota for developer {developer_id}: {e}")
+            # Allow execution if quota check fails for other reasons (fail open)
+            return True
+    
+    def _send_quota_exhausted_notification(self, developer_id: int, user_plan):
+        """
+        Send notification to developer when quota is exhausted
+        Rate-limited to avoid spam (max 1 notification per hour per user)
+        
+        Args:
+            developer_id: Developer ID
+            user_plan: UserPlan object with quota info
+        """
+        try:
+            from core import models
+            
+            # Get user info
+            user = self.db.query(models.User).filter(
+                models.User.id == developer_id
+            ).first()
+            
+            if not user:
+                logger.warning(f"⚠️ User {developer_id} not found for notification")
+                return
+            
+            # Rate limiting: Check if notification was sent recently (within last hour)
+            cache_key = f"quota_notification_sent:{developer_id}"
+            # Use a simple in-memory check with datetime
+            if not hasattr(self, '_notification_cache'):
+                self._notification_cache = {}
+            
+            last_sent = self._notification_cache.get(cache_key)
+            if last_sent and (datetime.now() - last_sent).total_seconds() < 3600:
+                logger.info(f"⏭️ Skipping quota notification for user {developer_id} (sent recently)")
+                return
+            
+            # Mark notification as sent
+            self._notification_cache[cache_key] = datetime.now()
+            
+            # Generate top-up link
+            frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:3000')
+            topup_link = f"{frontend_url}/dashboard#quota"
+            
+            # Prepare notification message
+            message = f"""
+🚨 **LLM Quota Exhausted**
+
+Your LLM quota has been exhausted:
+- Used: {user_plan.llm_quota_used}/{user_plan.llm_quota_total} calls
+- Plan: {user_plan.plan_name.value.upper()}
+- Reset Date: {user_plan.llm_quota_reset_at.strftime('%Y-%m-%d') if user_plan.llm_quota_reset_at else 'N/A'}
+
+Your bots using LLM features will be paused until you purchase more quota.
+
+**Top-up Options:**
+• $20 → 300 calls
+• $50 → 700 calls  
+• $100 → 1500 calls
+
+👉 **Purchase More Quota:** {topup_link}
+
+Need help? Contact support or upgrade your plan.
+            """.strip()
+            
+            # Send Telegram notification
+            if user.telegram_chat_id:
+                try:
+                    # Try to use Telegram bot if available
+                    telegram_enabled = os.getenv('ENABLE_TELEGRAM_BOT', 'false').lower() == 'true'
+                    if telegram_enabled:
+                        from services.telegram_service import TelegramService
+                        telegram_service = TelegramService()
+                        
+                        telegram_message = (
+                            f"🚨 *LLM Quota Exhausted*\n\n"
+                            f"Used: {user_plan.llm_quota_used}/{user_plan.llm_quota_total} calls\n"
+                            f"Plan: {user_plan.plan_name.value.upper()}\n\n"
+                            f"Your bots are paused\\. Purchase more quota to continue\\.\n\n"
+                            f"💎 *Top\\-up Options:*\n"
+                            f"• $20 → 300 calls\n"
+                            f"• $50 → 700 calls\n"
+                            f"• $100 → 1500 calls\n\n"
+                            f"👉 [Buy Quota]({topup_link})"
+                        )
+                        
+                        telegram_service.send_message(user.telegram_chat_id, telegram_message)
+                        logger.info(f"✅ Telegram notification sent to user {developer_id}")
+                    else:
+                        logger.info(f"📱 Telegram notification (would be sent to chat_id: {user.telegram_chat_id})")
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to send Telegram notification: {e}")
+            
+            # Send Discord notification
+            if user.discord_user_id:
+                try:
+                    # Discord notifications not yet implemented
+                    logger.info(f"💬 Discord notification (would be sent to user_id: {user.discord_user_id})")
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to send Discord notification: {e}")
+            
+            # Send Email notification
+            if user.email:
+                try:
+                    email_subject = "🚨 LLM Quota Exhausted - Action Required"
+                    display_name = user.developer_name or user.email.split('@')[0] if user.email else f"User {developer_id}"
+                    email_body = f"""
+<html>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+    <div style="max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9; border-radius: 10px;">
+        <h2 style="color: #ef4444;">🚨 LLM Quota Exhausted</h2>
+        
+        <p>Hello {display_name},</p>
+        
+        <p>Your LLM quota has been exhausted:</p>
+        
+        <div style="background-color: #fff; padding: 15px; border-radius: 5px; margin: 20px 0;">
+            <ul style="list-style: none; padding: 0;">
+                <li>📊 <strong>Used:</strong> {user_plan.llm_quota_used}/{user_plan.llm_quota_total} calls</li>
+                <li>💎 <strong>Plan:</strong> {user_plan.plan_name.value.upper()}</li>
+                <li>🔄 <strong>Reset Date:</strong> {user_plan.llm_quota_reset_at.strftime('%Y-%m-%d') if user_plan.llm_quota_reset_at else 'N/A'}</li>
+            </ul>
+        </div>
+        
+        <p style="color: #dc2626; font-weight: bold;">⚠️ Your bots using LLM features are currently paused.</p>
+        
+        <h3 style="color: #7c3aed;">💎 Top-up Options:</h3>
+        <div style="background-color: #fff; padding: 15px; border-radius: 5px; margin: 20px 0;">
+            <ul>
+                <li><strong>$20</strong> → 300 calls</li>
+                <li><strong>$50</strong> → 700 calls</li>
+                <li><strong>$100</strong> → 1500 calls</li>
+            </ul>
+        </div>
+        
+        <div style="text-align: center; margin: 30px 0;">
+            <a href="{topup_link}" 
+               style="display: inline-block; padding: 15px 30px; background: linear-gradient(135deg, #7c3aed 0%, #ec4899 100%); 
+                      color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
+                💳 Purchase More Quota
+            </a>
+        </div>
+        
+        <p style="color: #666; font-size: 14px;">
+            Need help? Contact our support team or upgrade your plan for higher quota limits.
+        </p>
+        
+        <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
+        
+        <p style="color: #999; font-size: 12px; text-align: center;">
+            This is an automated notification from QuantumForge AI Trading Platform.
+        </p>
+    </div>
+</body>
+</html>
+                    """.strip()
+                    
+                    # Try to send email using existing email service
+                    try:
+                        from services.email_service import EmailService
+                        email_service = EmailService()
+                        email_service.send_email(
+                            to_email=user.email,
+                            subject=email_subject,
+                            html_content=email_body
+                        )
+                        logger.info(f"✅ Email notification sent to user {developer_id}")
+                    except ImportError:
+                        logger.info(f"📧 Email notification (would be sent to {user.email}):")
+                        logger.info(f"   Subject: {email_subject}")
+                        logger.info(f"   To: {user.email}")
+                except Exception as e:
+                    logger.error(f"❌ Failed to send email notification: {e}")
+            
+            # Log notification
+            display_name = user.developer_name or user.email or f"User {developer_id}"
+            logger.info(f"📧 Quota exhausted notification sent to developer {developer_id} ({display_name})")
+            
+        except Exception as e:
+            logger.error(f"❌ Error sending quota exhausted notification: {e}")
+    
+    def _decrement_quota(self, developer_id: int):
+        """
+        Decrement user's LLM quota by 1 after successful API call
+        
+        Args:
+            developer_id: Developer ID to decrement quota for
+        """
+        if not self.db or not developer_id:
+            logger.warning("⚠️ No database or developer_id provided for quota decrement")
+            return
+        
+        try:
+            from core import models
+            
+            # Get user's plan
+            user_plan = self.db.query(models.UserPlan).filter(
+                models.UserPlan.user_id == developer_id,
+                models.UserPlan.status == models.PlanStatus.ACTIVE
+            ).first()
+            
+            if user_plan:
+                user_plan.llm_quota_used += 1
+                self.db.commit()
+                remaining = user_plan.llm_quota_total - user_plan.llm_quota_used
+                logger.info(f"📉 Quota decremented for developer {developer_id}: {user_plan.llm_quota_used}/{user_plan.llm_quota_total} ({remaining} remaining)")
+                
+                # Send warning notifications at certain thresholds
+                if remaining <= 50 and remaining > 0:
+                    logger.warning(f"⚠️ Low quota warning for developer {developer_id}: {remaining} calls remaining")
+                elif remaining == 0:
+                    logger.warning(f"🚨 Quota exhausted for developer {developer_id}")
+            else:
+                logger.warning(f"⚠️ No active plan found for developer {developer_id} to decrement quota")
+                
+        except Exception as e:
+            logger.error(f"❌ Error decrementing quota for developer {developer_id}: {e}")
+    
     async def analyze_with_openai(self, market_data: Dict[str, Any], bot_id: int = None) -> Dict[str, Any]:
         """Analyze market data using OpenAI"""
         if not self.openai_client:
             return {"error": "OpenAI client not available"}
+        
+        # Check quota before making API call
+        if self.developer_id:
+            try:
+                self._check_quota(self.developer_id)
+            except QuotaExceededException as e:
+                logger.warning(f"❌ Quota exceeded for developer {self.developer_id}: {e}")
+                return {"error": "quota_exceeded", "message": str(e)}
         
         start_time = time.time()
         try:
@@ -823,6 +1111,10 @@ Please respond in JSON format:
                 request_duration_ms=duration_ms
             )
             
+            # Decrement quota after successful API call
+            if self.developer_id:
+                self._decrement_quota(self.developer_id)
+            
             content = response.choices[0].message.content
             return self._parse_llm_response(content)
             
@@ -847,6 +1139,14 @@ Please respond in JSON format:
         """Analyze market data using Claude"""
         if not self.claude_client:
             return {"error": "Claude client not available"}
+        
+        # Check quota before making API call
+        if self.developer_id:
+            try:
+                self._check_quota(self.developer_id)
+            except QuotaExceededException as e:
+                logger.warning(f"❌ Quota exceeded for developer {self.developer_id}: {e}")
+                return {"error": "quota_exceeded", "message": str(e)}
         
         start_time = time.time()
         try:
@@ -882,6 +1182,10 @@ Please respond in JSON format:
                 request_duration_ms=duration_ms
             )
             
+            # Decrement quota after successful API call
+            if self.developer_id:
+                self._decrement_quota(self.developer_id)
+            
             content = response.content[0].text
             return self._parse_llm_response(content)
             
@@ -906,6 +1210,14 @@ Please respond in JSON format:
         """Analyze market data using Gemini"""
         if not self.gemini_client:
             return {"error": "Gemini client not available"}
+        
+        # Check quota before making API call
+        if self.developer_id:
+            try:
+                self._check_quota(self.developer_id)
+            except QuotaExceededException as e:
+                logger.warning(f"❌ Quota exceeded for developer {self.developer_id}: {e}")
+                return {"error": "quota_exceeded", "message": str(e)}
         
         start_time = time.time()
         try:
@@ -937,6 +1249,10 @@ Please respond in JSON format:
                 success=True,
                 request_duration_ms=duration_ms
             )
+            
+            # Decrement quota after successful API call
+            if self.developer_id:
+                self._decrement_quota(self.developer_id)
             
             content = response.text
             return self._parse_llm_response(content)

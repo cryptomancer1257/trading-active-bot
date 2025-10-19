@@ -52,6 +52,7 @@ class TradeMode(enum.Enum):
 class PlanName(enum.Enum):
     FREE = "free"
     PRO = "pro"
+    ULTRA = "ultra"
 
 class PlanStatus(enum.Enum):
     ACTIVE = "active"
@@ -162,6 +163,7 @@ class User(Base):
     llm_usage_logs = relationship("LLMUsageLog", back_populates="developer")
     plan = relationship("UserPlan", back_populates="user", uselist=False)
     plan_history = relationship("PlanHistory", back_populates="user")
+    quota_topups = relationship("QuotaTopUp", back_populates="user")
 
 class UserPrincipal(Base):
     """Mapping between users and their principal IDs"""
@@ -1288,7 +1290,12 @@ class UserPlan(Base):
     allowed_environment = Column(Enum(NetworkType), nullable=False, default=NetworkType.TESTNET)
     publish_marketplace = Column(Boolean, nullable=False, default=False)
     subscription_expiry_days = Column(Integer, nullable=False, default=3)
-    compute_quota_per_day = Column(Integer, nullable=False, default=1000)
+    compute_quota_per_day = Column(Integer, nullable=False, default=1000)  # Legacy, deprecated
+    
+    # LLM Quota (new system - monthly total)
+    llm_quota_total = Column(Integer, nullable=False, default=720)  # Total for subscription period (e.g., 240*30 days for PRO)
+    llm_quota_used = Column(Integer, nullable=False, default=0)  # Used quota
+    llm_quota_reset_at = Column(DateTime, nullable=True)  # When quota resets (subscription renewal)
     
     # Revenue share (percentage for developer)
     revenue_share_percentage = Column(DECIMAL(5, 2), nullable=False, default=0.00)
@@ -1341,6 +1348,37 @@ class PlanHistory(Base):
         Index('idx_plan_history_user_id', 'user_id'),
         Index('idx_plan_history_created_at', 'created_at'),
     )
+
+class QuotaTopUp(Base):
+    """LLM Quota top-up purchases"""
+    __tablename__ = "quota_topups"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    
+    # Top-up details
+    quota_amount = Column(Integer, nullable=False)  # Number of API calls added
+    price_usd = Column(DECIMAL(10, 2), nullable=False)  # Price paid
+    
+    # Payment details
+    payment_method = Column(Enum(PaymentMethod), nullable=False)
+    payment_id = Column(String(255), nullable=True)  # PayPal order ID
+    payment_status = Column(String(50), nullable=False, default='pending')  # pending, completed, failed
+    
+    # Timestamps
+    created_at = Column(DateTime, server_default=func.now())
+    applied_at = Column(DateTime, nullable=True)  # When quota was added to user's plan
+    
+    # Relationships
+    user = relationship("User", back_populates="quota_topups")
+    
+    # Indexes
+    __table_args__ = (
+        Index('idx_quota_topups_user_id', 'user_id'),
+        Index('idx_quota_topups_created_at', 'created_at'),
+        Index('idx_quota_topups_payment_id', 'payment_id'),
+    )
+
 
 class FeatureFlag(Base):
     __tablename__ = "feature_flags"
