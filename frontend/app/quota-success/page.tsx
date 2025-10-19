@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
+import { api } from '@/lib/api'
 
 /**
  * PayPal success page
@@ -21,24 +22,40 @@ export default function QuotaSuccessPage() {
     console.log('PayerID:', payerId)
     
     if (token && payerId) {
-      setStatus('success')
-      setMessage('Payment completed successfully! Your quota has been added.')
-      
-      // In a real implementation, you would:
-      // 1. Call the backend to complete the purchase
-      // 2. Update the user's quota
-      // 3. Show success message
-      
-      // For demo purposes, just show success
-      setTimeout(() => {
-        // Redirect to dashboard
-        window.location.href = '/dashboard'
-      }, 3000)
+      // Call backend to complete the purchase
+      completePurchase(token, payerId)
     } else {
       setStatus('error')
       setMessage('Invalid payment parameters. Please try again.')
     }
   }, [searchParams])
+
+  const completePurchase = async (token: string, payerId: string) => {
+    try {
+      console.log('🔄 Completing purchase...')
+      
+      // Call backend API to complete purchase
+      // The backend will verify PayPal payment and add quota
+      const response = await api.post('/quota-topups/complete-paypal-purchase', {
+        token,
+        payer_id: payerId
+      })
+      
+      console.log('✅ Purchase completed:', response.data)
+      
+      setStatus('success')
+      setMessage('Payment completed successfully! Your quota has been added.')
+      
+      // Redirect to dashboard after 3 seconds
+      setTimeout(() => {
+        window.location.href = '/dashboard'
+      }, 3000)
+    } catch (error: any) {
+      console.error('❌ Purchase completion failed:', error)
+      setStatus('error')
+      setMessage(error.response?.data?.detail || 'Failed to complete purchase. Please contact support.')
+    }
+  }
 
   return (
     <div className="min-h-screen bg-dark-900 flex items-center justify-center">

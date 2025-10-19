@@ -319,6 +319,8 @@ def get_approved_bots(db: Session, skip: int = 0, limit: int = 100):
     ).offset(skip).limit(limit).all()
 
 def get_public_bots(db: Session, skip: int = 0, limit: int = 50, category_id: Optional[int] = None, search: Optional[str] = None, sort_by: str = "created_at", order: str = "desc"):
+    from sqlalchemy import func, case
+    
     query = db.query(models.Bot).filter(models.Bot.status == schemas.BotStatus.APPROVED)
     
     if category_id:
@@ -333,18 +335,110 @@ def get_public_bots(db: Session, skip: int = 0, limit: int = 50, category_id: Op
             )
         )
     
-    # Apply sorting
+    # Apply sorting for database-backed fields only
     if sort_by == "created_at":
         query = query.order_by(desc(models.Bot.created_at) if order == "desc" else asc(models.Bot.created_at))
     elif sort_by == "rating":
         query = query.order_by(desc(models.Bot.average_rating) if order == "desc" else asc(models.Bot.average_rating))
     elif sort_by == "price":
         query = query.order_by(desc(models.Bot.price_per_month) if order == "desc" else asc(models.Bot.price_per_month))
+    # For performance/total_pnl, we'll sort AFTER calculating metrics (below)
     
     total = query.count()
-    bots = query.offset(skip).limit(limit).all()
     
-    return bots, total
+    # For performance sorting, get ALL bots first (no pagination yet)
+    if sort_by == "performance" or sort_by == "total_pnl":
+        bots = query.all()  # Get all bots without pagination
+    else:
+        bots = query.offset(skip).limit(limit).all()  # Apply pagination for other sorts
+    
+    # Calculate performance metrics for each bot
+    for bot in bots:
+        # Get all subscriptions for this bot
+        subscriptions = db.query(models.Subscription).filter(
+            models.Subscription.bot_id == bot.id
+        ).all()
+        
+        if not subscriptions:
+            bot.total_pnl = 0.0
+            bot.win_rate = 0.0
+            bot.total_trades = 0
+            bot.winning_trades = 0
+            continue
+        
+        # Get all transactions for all subscriptions of this bot
+        subscription_ids = [sub.id for sub in subscriptions]
+        transactions = db.query(models.Transaction).filter(
+            models.Transaction.subscription_id.in_(subscription_ids)
+        ).all()
+        
+        if not transactions:
+            bot.total_pnl = 0.0
+            bot.win_rate = 0.0
+            bot.total_trades = 0
+            bot.winning_trades = 0
+            continue
+        
+        # Calculate metrics
+        total_pnl = 0.0
+        closed_positions = 0
+        winning_trades = 0
+        
+        for tx in transactions:
+            if tx.status == 'CLOSED' and tx.realized_pnl:
+                realized = float(tx.realized_pnl)
+                total_pnl += realized
+                closed_positions += 1
+                if realized > 0:
+                    winning_trades += 1
+            elif tx.status == 'OPEN' and tx.unrealized_pnl:
+                unrealized = float(tx.unrealized_pnl)
+                total_pnl += unrealized
+        
+        win_rate = (winning_trades / closed_positions * 100) if closed_positions > 0 else 0
+        
+        # Update bot with calculated metrics
+        bot.total_pnl = round(total_pnl, 2)
+        bot.win_rate = round(win_rate, 2)
+        bot.total_trades = len(transactions)
+        bot.winning_trades = winning_trades
+    
+    # Sort by performance if requested (after calculating metrics)
+    if sort_by == "performance" or sort_by == "total_pnl":
+        bots.sort(key=lambda b: float(b.total_pnl), reverse=(order == "desc"))
+        # Apply pagination AFTER sorting
+        bots = bots[skip:skip + limit]
+    
+    # Convert ORM objects to dicts to include computed fields
+    bot_dicts = []
+    for bot in bots:
+        bot_dict = {
+            'id': bot.id,
+            'name': bot.name,
+            'description': bot.description,
+            'developer_id': bot.developer_id,
+            'category_id': bot.category_id,
+            'version': bot.version,
+            'bot_type': bot.bot_type,
+            'bot_mode': bot.bot_mode,
+            'code_path': bot.code_path,
+            'price_per_month': bot.price_per_month,
+            'is_free': bot.is_free,
+            'total_subscribers': bot.total_subscribers,
+            'average_rating': bot.average_rating,
+            'total_reviews': bot.total_reviews,
+            'default_config': bot.default_config,
+            'created_at': bot.created_at,
+            'status': bot.status,
+            # Performance metrics (computed)
+            'total_pnl': float(bot.total_pnl) if hasattr(bot, 'total_pnl') else 0.0,
+            'win_rate': float(bot.win_rate) if hasattr(bot, 'win_rate') else 0.0,
+            'total_trades': int(bot.total_trades) if hasattr(bot, 'total_trades') else 0,
+            'winning_trades': int(bot.winning_trades) if hasattr(bot, 'winning_trades') else 0,
+        }
+        bot_dicts.append(bot_dict)
+    
+    return bot_dicts, total
 
 def get_bots_by_developer(db: Session, developer_id: int):
     """Get all bots by developer with real-time counts (excluding archived)"""

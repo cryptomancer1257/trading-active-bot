@@ -3,7 +3,7 @@ Quota Top-up API Endpoints
 Handles LLM quota top-up purchases for PRO and ULTRA plan users
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Body
 from sqlalchemy.orm import Session
 from core import models, schemas
 from core.database import get_db
@@ -165,6 +165,7 @@ def get_quota_usage(
     except Exception as e:
         logger.error(f"❌ Error getting quota usage: {e}")
         raise HTTPException(status_code=500, detail="Failed to get quota usage")
+
 
 @router.post("/purchase")
 def purchase_quota_topup(
@@ -400,3 +401,186 @@ def create_paypal_order(
     except Exception as e:
         logger.error(f"❌ Error creating PayPal order: {e}")
         raise HTTPException(status_code=500, detail="Failed to create PayPal order")
+
+@router.post("/complete-paypal-purchase")
+def complete_paypal_purchase(
+    token: str = Body(...),
+    payer_id: str = Body(...),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(security.get_current_user)
+):
+    """Complete PayPal purchase and add quota to user"""
+    try:
+        logger.info(f"🔄 Completing PayPal purchase for user {current_user.id}, token: {token}, payer_id: {payer_id}")
+        
+        # Check if this is a demo/test token
+        is_demo = token.startswith("demo_") or "DEVELOPMENT" in token
+        
+        if is_demo:
+            logger.info(f"🎭 Demo mode detected, using default small package")
+            # For demo mode, assume small package ($20)
+            package_key = "small"
+            package_info = QUOTA_PACKAGES["small"]
+        else:
+            # Real PayPal flow
+            # Check if this order was already processed
+            existing_topup = db.query(models.QuotaTopUp).filter(
+                models.QuotaTopUp.payment_id == token
+            ).first()
+            
+            if existing_topup:
+                logger.info(f"⚠️ Order {token} already processed, returning existing purchase info")
+                # Get user plan for current quota
+                user_plan = db.query(models.UserPlan).filter(
+                    models.UserPlan.user_id == current_user.id,
+                    models.UserPlan.status == models.PlanStatus.ACTIVE
+                ).first()
+                
+                return {
+                    "success": True,
+                    "message": f"Payment already processed. {existing_topup.quota_amount} calls were added to your account.",
+                    "quota_added": existing_topup.quota_amount,
+                    "new_total": user_plan.llm_quota_total if user_plan else 0,
+                    "remaining": (user_plan.llm_quota_total - user_plan.llm_quota_used) if user_plan else 0
+                }
+            
+            # Get PayPal access token
+            access_token = get_paypal_access_token()
+            
+            # Capture the PayPal order
+            capture_url = f"{PAYPAL_API_BASE}/v2/checkout/orders/{token}/capture"
+            capture_response = requests.post(
+                capture_url,
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json"
+                }
+            )
+            
+            if capture_response.status_code != 201:
+                # Check if order was already captured
+                response_data = capture_response.json()
+                if "ORDER_ALREADY_CAPTURED" in str(response_data):
+                    logger.warning(f"⚠️ Order {token} already captured by PayPal")
+                    # Try to get order details instead
+                    order_url = f"{PAYPAL_API_BASE}/v2/checkout/orders/{token}"
+                    order_response = requests.get(
+                        order_url,
+                        headers={"Authorization": f"Bearer {access_token}"}
+                    )
+                    if order_response.status_code == 200:
+                        capture_result = order_response.json()
+                        logger.info(f"✅ Retrieved order details for already captured order")
+                    else:
+                        logger.error(f"❌ PayPal capture failed: {capture_response.text}")
+                        raise HTTPException(
+                            status_code=400,
+                            detail="Payment was already processed. Please check your quota or contact support."
+                        )
+                else:
+                    logger.error(f"❌ PayPal capture failed: {capture_response.text}")
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Payment capture failed. Please contact support."
+                    )
+            else:
+                capture_result = capture_response.json()
+                logger.info(f"✅ PayPal capture successful: {capture_result.get('id')}")
+            
+            # Extract purchase details
+            purchase_units = capture_result.get("purchase_units", [])
+            if not purchase_units:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid PayPal response"
+                )
+            
+            # Try to get amount from different possible locations in PayPal response
+            amount = None
+            try:
+                # Try from purchase_units[0].amount.value
+                if "amount" in purchase_units[0] and "value" in purchase_units[0]["amount"]:
+                    amount = float(purchase_units[0]["amount"]["value"])
+                # Try from purchase_units[0].payments.captures[0].amount.value
+                elif "payments" in purchase_units[0] and "captures" in purchase_units[0]["payments"]:
+                    captures = purchase_units[0]["payments"]["captures"]
+                    if captures and "amount" in captures[0] and "value" in captures[0]["amount"]:
+                        amount = float(captures[0]["amount"]["value"])
+            except (KeyError, IndexError, ValueError) as e:
+                logger.error(f"❌ Error parsing amount from PayPal response: {e}")
+                logger.error(f"PayPal response: {capture_result}")
+                raise HTTPException(
+                    status_code=400,
+                    detail="Failed to parse payment amount from PayPal"
+                )
+            
+            if amount is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Could not find payment amount in PayPal response"
+                )
+            
+            # Determine which package was purchased based on amount
+            package_key = None
+            package_info = None
+            for key, pkg in QUOTA_PACKAGES.items():
+                if abs(pkg["price"] - amount) < 0.01:
+                    package_key = key
+                    package_info = pkg
+                    break
+            
+            if not package_info:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid purchase amount: ${amount}"
+                )
+        
+        # Get user plan
+        user_plan = db.query(models.UserPlan).filter(
+            models.UserPlan.user_id == current_user.id,
+            models.UserPlan.status == models.PlanStatus.ACTIVE
+        ).first()
+        
+        if not user_plan:
+            raise HTTPException(
+                status_code=404,
+                detail="No active plan found"
+            )
+        
+        # Create quota top-up record
+        quota_topup = models.QuotaTopUp(
+            user_id=current_user.id,
+            quota_amount=package_info["quota"],
+            price_usd=package_info["price"],
+            payment_method=models.PaymentMethod.PAYPAL,
+            payment_id=token,
+            payment_status="completed",
+            applied_at=datetime.now()
+        )
+        
+        db.add(quota_topup)
+        
+        # Add quota to user's plan
+        old_total = user_plan.llm_quota_total
+        user_plan.llm_quota_total += package_info["quota"]
+        
+        # Commit changes
+        db.commit()
+        
+        logger.info(f"✅ Quota top-up completed: User {current_user.id}, Package: {package_key}, Quota: +{package_info['quota']}")
+        
+        return {
+            "success": True,
+            "message": f"Successfully purchased {package_info['quota']} additional LLM calls",
+            "quota_added": package_info["quota"],
+            "old_total": old_total,
+            "new_total": user_plan.llm_quota_total,
+            "remaining": user_plan.llm_quota_total - user_plan.llm_quota_used
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error completing PayPal purchase: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to complete purchase")

@@ -67,11 +67,14 @@ export function useQuotaUsage() {
   return useQuery<QuotaUsage>({
     queryKey: ['quota-usage'],
     queryFn: async () => {
+      console.log('🔐 Fetching quota usage from API')
       const response = await api.get('/quota-topups/usage')
+      console.log('📊 Quota usage response:', response.data)
       return response.data
     },
-    staleTime: 30000, // 30 seconds
-    refetchInterval: 60000, // Refetch every minute
+    staleTime: 0, // Always fetch fresh data
+    refetchInterval: 30000, // Refetch every 30 seconds
+    retry: 3, // Retry 3 times on failure
   })
 }
 
