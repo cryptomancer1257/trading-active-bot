@@ -67,40 +67,15 @@ export default function QuotaTopUpModal({ isOpen, onClose }: QuotaTopUpModalProp
 
       console.log('✅ PayPal order created:', orderResult)
       
-      // Open PayPal approval URL
+      // Redirect to PayPal (works on all browsers including Safari)
       if (orderResult.approve_url) {
-        window.open(orderResult.approve_url, '_blank')
+        console.log('🔄 Redirecting to PayPal...')
+        // Store selected package for when user returns
+        localStorage.setItem('pending_quota_package', selectedPackage)
+        localStorage.setItem('pending_quota_order_id', orderResult.order_id)
         
-        // Show instruction to user
-        setError('Please complete payment in the PayPal window, then return here')
-        
-        // In a real implementation, you would:
-        // 1. Open PayPal in a popup or redirect
-        // 2. Handle the PayPal callback
-        // 3. Complete the purchase with the payment ID
-        
-        // For demo purposes, we'll simulate a successful purchase
-        setTimeout(async () => {
-          try {
-            console.log('🔄 Completing purchase...')
-            await purchaseQuota.mutateAsync({
-              package: selectedPackage,
-              payment_id: orderResult.order_id
-            })
-            
-            setSuccess(true)
-            setTimeout(() => {
-              onClose()
-              setSuccess(false)
-              setSelectedPackage('')
-            }, 2000)
-          } catch (err: any) {
-            console.error('❌ Purchase completion failed:', err)
-            setError(err.message || 'Purchase failed')
-          } finally {
-            setIsProcessing(false)
-          }
-        }, 3000) // Simulate PayPal processing time
+        // Redirect to PayPal (instead of popup - works better on Safari)
+        window.location.href = orderResult.approve_url
       } else {
         throw new Error('No PayPal approval URL received')
       }
