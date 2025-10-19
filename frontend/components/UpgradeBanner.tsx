@@ -38,7 +38,7 @@ export default function UpgradeBanner() {
             onClick={() => setShowUpgradeModal(true)}
             className="px-6 py-2.5 bg-white text-purple-600 font-bold rounded-lg hover:bg-purple-50 transition-all shadow-lg hover:scale-105"
           >
-            Upgrade to Pro - $10/month
+            Upgrade to Pro - $60/month
           </button>
         </div>
       </div>
