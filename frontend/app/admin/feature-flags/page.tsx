@@ -1,467 +1,412 @@
-'use client';
+'use client'
 
-import React, { useState, useEffect } from 'react';
-import { useAuth } from '@/hooks/useAuth';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react'
+import { useAuthGuard } from '@/hooks/useAuthGuard'
+import { UserRole } from '@/lib/types'
+import api from '@/lib/api'
+import toast from 'react-hot-toast'
+import {
+  FlagIcon,
+  PlusIcon,
+  PencilIcon,
+  TrashIcon,
+  CheckCircleIcon,
+  XCircleIcon,
+  ArrowPathIcon
+} from '@heroicons/react/24/outline'
 
 interface FeatureFlag {
-  id: number;
-  feature_type: 'PLAN_PACKAGE' | 'MARKETPLACE_PUBLISHING' | 'BOT_CREATION';
-  is_enabled: boolean;
-  disabled_from: string | null;
-  disabled_until: string | null;
-  reason: string | null;
-  created_at: string;
-  updated_at: string;
+  id: number
+  flag_key: string
+  flag_name: string
+  description?: string
+  is_enabled: boolean
+  created_at: string
+  updated_at: string
 }
 
-interface PlanPackageStatus {
-  is_enabled: boolean;
-  reason: string;
-  disabled_until?: string;
-}
+export default function FeatureFlagsPage() {
+  const { user, loading: authLoading } = useAuthGuard({ 
+    requireAuth: true, 
+    requiredRole: UserRole.ADMIN 
+  })
 
-export default function FeatureFlagsAdmin() {
-  const { user, token } = useAuth();
-  const router = useRouter();
-  const [flags, setFlags] = useState<FeatureFlag[]>([]);
-  const [planStatus, setPlanStatus] = useState<PlanPackageStatus | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  
-  // Form states for disabling plan package
-  const [disableForm, setDisableForm] = useState({
-    disabled_from: '',
-    disabled_until: '',
-    reason: ''
-  });
-  const [showDisableForm, setShowDisableForm] = useState(false);
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [flags, setFlags] = useState<FeatureFlag[]>([])
+  const [loading, setLoading] = useState(true)
+  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [selectedFlag, setSelectedFlag] = useState<FeatureFlag | null>(null)
+  const [formData, setFormData] = useState({
+    flag_key: '',
+    flag_name: '',
+    description: '',
+    is_enabled: false
+  })
 
-  // Check if user is admin
   useEffect(() => {
-    if (user && user.role !== 'ADMIN') {
-      router.push('/');
-      return;
+    if (user && user.role === UserRole.ADMIN) {
+      fetchFlags()
     }
-  }, [user, router]);
+  }, [user])
 
-  // Fetch feature flags
   const fetchFlags = async () => {
     try {
-      // Debug logging
-      console.log('fetchFlags debug:', {
-        token,
-        tokenType: typeof token,
-        tokenLength: token?.length,
-        user,
-        isAuthenticated: !!user && !!token
-      });
-      
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json'
-      };
-      
-      // Only add auth header if token exists
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-        console.log('Added Authorization header:', `Bearer ${token.substring(0, 20)}...`);
-      } else {
-        console.log('No token found, skipping Authorization header');
-      }
-      
-      console.log('Request headers:', headers);
-      const response = await fetch('/api/admin/feature-flags/', { headers });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch feature flags');
-      }
-
-      const data = await response.json();
-      setFlags(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
-    }
-  };
-
-  // Fetch plan package status
-  const fetchPlanStatus = async () => {
-    try {
-      const response = await fetch('/api/admin/feature-flags/public/plan-package-status');
-      if (response.ok) {
-        const data = await response.json();
-        setPlanStatus(data);
-      }
-    } catch (err) {
-      console.error('Failed to fetch plan status:', err);
-    }
-  };
-
-  useEffect(() => {
-    if (!user || !token) {
-      setLoading(false);
-      return;
-    }
-    
-    if (user.role === 'ADMIN') {
-      Promise.all([fetchFlags(), fetchPlanStatus()]).finally(() => {
-        setLoading(false);
-      });
-    } else {
-      setLoading(false);
-    }
-  }, [token, user]);
-
-  const handleDisablePlanPackage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    try {
-      const response = await fetch('/api/admin/feature-flags/disable-plan-package', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          disabled_from: new Date(disableForm.disabled_from).toISOString(),
-          disabled_until: new Date(disableForm.disabled_until).toISOString(),
-          reason: disableForm.reason
-        })
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Failed to disable plan package');
-      }
-
-      // Refresh data
-      await Promise.all([fetchFlags(), fetchPlanStatus()]);
-      setShowDisableForm(false);
-      setDisableForm({ disabled_from: '', disabled_until: '', reason: '' });
-      
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
-    }
-  };
-
-  const handleAdminLogin = async () => {
-    setIsLoggingIn(true);
-    try {
-      // Login request
-      const response = await fetch('/api/auth/token', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: 'username=chaulaode1257@gmail.com&password=admin123'
-      });
-
-      if (!response.ok) {
-        throw new Error(`Login failed: ${response.status}`);
-      }
-
-      const data = await response.json();
-      console.log('Login successful:', data);
-
-      // Save token to localStorage
-      localStorage.setItem('access_token', data.access_token);
-      
-      // Get user info
-      const userResponse = await fetch('/api/auth/me', {
-        headers: {
-          'Authorization': `Bearer ${data.access_token}`
-        }
-      });
-
-      if (userResponse.ok) {
-        const userData = await userResponse.json();
-        localStorage.setItem('user', JSON.stringify(userData));
-        console.log('User data saved:', userData);
-      }
-
-      // Reload page to apply changes
-      window.location.reload();
-      
-    } catch (error) {
-      console.error('Login failed:', error);
-      setError('Login failed: ' + error.message);
+      setLoading(true)
+      const response = await api.get('/feature-flags/')
+      setFlags(response.data.flags)
+    } catch (error: any) {
+      console.error('Failed to fetch feature flags:', error)
+      toast.error('Failed to load feature flags')
     } finally {
-      setIsLoggingIn(false);
+      setLoading(false)
     }
-  };
-
-  const handleEnablePlanPackage = async () => {
-    try {
-      // Debug logging
-      console.log('Token debug:', {
-        token,
-        tokenType: typeof token,
-        tokenLength: token?.length,
-        user,
-        isAuthenticated: !!user && !!token
-      });
-      
-      if (!token) {
-        throw new Error('No authentication token found. Please login again.');
-      }
-      
-      const response = await fetch('/api/admin/feature-flags/enable-plan-package', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Failed to enable plan package');
-      }
-
-      // Refresh data
-      await Promise.all([fetchFlags(), fetchPlanStatus()]);
-      
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading admin panel...</p>
-        </div>
-      </div>
-    );
   }
 
-  // Temporarily bypass auth check for testing
-  // if (user?.role !== 'ADMIN') {
-  //   return (
-  //     <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-  //       <div className="text-center">
-  //         <h1 className="text-2xl font-bold text-red-600">Access Denied</h1>
-  //         <p className="mt-2 text-gray-600">Admin access required</p>
-  //       </div>
-  //     </div>
-  //   );
-  // }
+  const handleCreate = async () => {
+    try {
+      await api.post('/feature-flags/', formData)
+      toast.success('Feature flag created successfully')
+      setShowCreateModal(false)
+      setFormData({ flag_key: '', flag_name: '', description: '', is_enabled: false })
+      fetchFlags()
+    } catch (error: any) {
+      console.error('Failed to create feature flag:', error)
+      toast.error(error.response?.data?.detail || 'Failed to create feature flag')
+    }
+  }
+
+  const handleUpdate = async () => {
+    if (!selectedFlag) return
+
+    try {
+      await api.put(`/feature-flags/${selectedFlag.id}`, {
+        flag_name: formData.flag_name,
+        description: formData.description,
+        is_enabled: formData.is_enabled
+      })
+      toast.success('Feature flag updated successfully')
+      setShowEditModal(false)
+      setSelectedFlag(null)
+      setFormData({ flag_key: '', flag_name: '', description: '', is_enabled: false })
+      fetchFlags()
+    } catch (error: any) {
+      console.error('Failed to update feature flag:', error)
+      toast.error('Failed to update feature flag')
+    }
+  }
+
+  const handleToggle = async (flag: FeatureFlag) => {
+    try {
+      await api.patch(`/feature-flags/${flag.id}/toggle`)
+      toast.success(`Feature flag ${flag.is_enabled ? 'disabled' : 'enabled'}`)
+      fetchFlags()
+    } catch (error: any) {
+      console.error('Failed to toggle feature flag:', error)
+      toast.error('Failed to toggle feature flag')
+    }
+  }
+
+  const handleDelete = async (flag: FeatureFlag) => {
+    if (!confirm(`Are you sure you want to delete "${flag.flag_name}"?`)) return
+
+    try {
+      await api.delete(`/feature-flags/${flag.id}`)
+      toast.success('Feature flag deleted successfully')
+      fetchFlags()
+    } catch (error: any) {
+      console.error('Failed to delete feature flag:', error)
+      toast.error('Failed to delete feature flag')
+    }
+  }
+
+  const openEditModal = (flag: FeatureFlag) => {
+    setSelectedFlag(flag)
+    setFormData({
+      flag_key: flag.flag_key,
+      flag_name: flag.flag_name,
+      description: flag.description || '',
+      is_enabled: flag.is_enabled
+    })
+    setShowEditModal(true)
+  }
+
+  if (authLoading || loading) {
+    return (
+      <div className="flex items-center justify-center p-12">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyber-400"></div>
+      </div>
+    )
+  }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div className="p-8">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Feature Flags Admin Panel</h1>
-          <p className="mt-2 text-gray-600">Manage system feature flags and plan package availability</p>
-        </div>
-
-        {error && (
-          <div className="mb-6 bg-red-50 border border-red-200 rounded-md p-4">
-            <div className="flex">
-              <div className="flex-shrink-0">
-                <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                </svg>
-              </div>
-              <div className="ml-3">
-                <h3 className="text-sm font-medium text-red-800">Error</h3>
-                <div className="mt-2 text-sm text-red-700">{error}</div>
-              </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold cyber-text flex items-center">
+                <FlagIcon className="h-8 w-8 mr-3 text-cyber-400" />
+                Feature Flags Management
+              </h1>
+              <p className="text-gray-400 mt-2">
+                Control feature visibility across the platform
+              </p>
             </div>
-          </div>
-        )}
-
-        {/* Admin Login Button - Show if not authenticated */}
-        {(!user || !token) && (
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-yellow-800 font-semibold">Authentication Required</h3>
-                <p className="text-yellow-700 text-sm mt-1">Please login as admin to manage feature flags</p>
-              </div>
+            <div className="flex gap-3">
               <button
-                onClick={handleAdminLogin}
-                disabled={isLoggingIn}
-                className="bg-yellow-600 hover:bg-yellow-700 disabled:bg-yellow-600/50 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                onClick={fetchFlags}
+                className="btn btn-secondary flex items-center gap-2"
               >
-                {isLoggingIn ? 'Logging in...' : 'Login as Admin'}
+                <ArrowPathIcon className="h-5 w-5" />
+                Refresh
+              </button>
+              <button
+                onClick={() => setShowCreateModal(true)}
+                className="btn btn-primary flex items-center gap-2"
+              >
+                <PlusIcon className="h-5 w-5" />
+                Create Flag
               </button>
             </div>
           </div>
-        )}
-
-        {/* Plan Package Status Card */}
-        <div className="bg-white shadow rounded-lg p-6 mb-8">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-xl font-semibold text-gray-900">Plan Package Status</h2>
-              <div className="mt-2 flex items-center">
-                <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                  planStatus?.is_enabled 
-                    ? 'bg-green-100 text-green-800' 
-                    : 'bg-red-100 text-red-800'
-                }`}>
-                  {planStatus?.is_enabled ? '✅ Enabled' : '❌ Disabled'}
-                </div>
-                <span className="ml-3 text-sm text-gray-600">
-                  {planStatus?.reason}
-                </span>
-                {planStatus?.disabled_until && (
-                  <span className="ml-3 text-sm text-gray-500">
-                    Until: {new Date(planStatus.disabled_until).toLocaleString()}
-                  </span>
-                )}
-              </div>
-            </div>
-            <div className="flex space-x-3">
-              {planStatus?.is_enabled ? (
-                <button
-                  onClick={() => setShowDisableForm(true)}
-                  className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md text-sm font-medium"
-                >
-                  Disable Plan Package
-                </button>
-              ) : (
-                <button
-                  onClick={handleEnablePlanPackage}
-                  className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md text-sm font-medium"
-                >
-                  Enable Plan Package
-                </button>
-              )}
-            </div>
-          </div>
         </div>
 
-        {/* Disable Plan Package Form */}
-        {showDisableForm && (
-          <div className="bg-white shadow rounded-lg p-6 mb-8">
-            <h3 className="text-lg font-medium text-gray-900 mb-4">Disable Plan Package</h3>
-            <form onSubmit={handleDisablePlanPackage} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">
-                    Disable From
-                  </label>
-                  <input
-                    type="datetime-local"
-                    value={disableForm.disabled_from}
-                    onChange={(e) => setDisableForm(prev => ({ ...prev, disabled_from: e.target.value }))}
-                    className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">
-                    Disable Until
-                  </label>
-                  <input
-                    type="datetime-local"
-                    value={disableForm.disabled_until}
-                    onChange={(e) => setDisableForm(prev => ({ ...prev, disabled_until: e.target.value }))}
-                    className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                    required
-                  />
+        {/* Flags List */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {flags.map((flag) => (
+            <div key={flag.id} className="card-cyber p-6">
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-2">
+                    {flag.is_enabled ? (
+                      <CheckCircleIcon className="h-6 w-6 text-green-400" />
+                    ) : (
+                      <XCircleIcon className="h-6 w-6 text-red-400" />
+                    )}
+                    <h3 className="text-lg font-bold text-white">
+                      {flag.flag_name}
+                    </h3>
+                  </div>
+                  <code className="text-xs text-gray-400 bg-gray-800 px-2 py-1 rounded">
+                    {flag.flag_key}
+                  </code>
                 </div>
               </div>
+
+              {flag.description && (
+                <p className="text-sm text-gray-400 mb-4 line-clamp-3">
+                  {flag.description}
+                </p>
+              )}
+
+              <div className="flex items-center justify-between pt-4 border-t border-gray-700">
+                <span className={`text-sm font-medium ${flag.is_enabled ? 'text-green-400' : 'text-red-400'}`}>
+                  {flag.is_enabled ? 'Enabled' : 'Disabled'}
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleToggle(flag)}
+                    className={`p-2 rounded-lg transition-colors ${
+                      flag.is_enabled
+                        ? 'bg-red-900/20 hover:bg-red-900/30 text-red-400'
+                        : 'bg-green-900/20 hover:bg-green-900/30 text-green-400'
+                    }`}
+                    title={flag.is_enabled ? 'Disable' : 'Enable'}
+                  >
+                    {flag.is_enabled ? (
+                      <XCircleIcon className="h-5 w-5" />
+                    ) : (
+                      <CheckCircleIcon className="h-5 w-5" />
+                    )}
+                  </button>
+                  <button
+                    onClick={() => openEditModal(flag)}
+                    className="p-2 bg-blue-900/20 hover:bg-blue-900/30 text-blue-400 rounded-lg transition-colors"
+                    title="Edit"
+                  >
+                    <PencilIcon className="h-5 w-5" />
+                  </button>
+                  <button
+                    onClick={() => handleDelete(flag)}
+                    className="p-2 bg-red-900/20 hover:bg-red-900/30 text-red-400 rounded-lg transition-colors"
+                    title="Delete"
+                  >
+                    <TrashIcon className="h-5 w-5" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-3 text-xs text-gray-500">
+                Updated: {new Date(flag.updated_at).toLocaleString()}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {flags.length === 0 && !loading && (
+          <div className="text-center py-12 text-gray-400">
+            <FlagIcon className="h-16 w-16 mx-auto mb-4 text-gray-600" />
+            <p>No feature flags found. Create your first flag to get started.</p>
+          </div>
+        )}
+      </div>
+
+      {/* Create Modal */}
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+          <div className="card-cyber p-8 max-w-lg w-full">
+            <h2 className="text-2xl font-bold mb-6 cyber-text">Create Feature Flag</h2>
+            
+            <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  Reason
-                </label>
-                <textarea
-                  value={disableForm.reason}
-                  onChange={(e) => setDisableForm(prev => ({ ...prev, reason: e.target.value }))}
-                  className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                  rows={3}
-                  placeholder="Reason for disabling plan package..."
-                  required
+                <label className="form-label">Flag Key</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="e.g. marketplace_publish_bot"
+                  value={formData.flag_key}
+                  onChange={(e) => setFormData({ ...formData, flag_key: e.target.value })}
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  Use lowercase with underscores. Cannot be changed after creation.
+                </p>
+              </div>
+
+              <div>
+                <label className="form-label">Display Name</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="e.g. Marketplace Bot Publishing"
+                  value={formData.flag_name}
+                  onChange={(e) => setFormData({ ...formData, flag_name: e.target.value })}
                 />
               </div>
-              <div className="flex justify-end space-x-3">
-                <button
-                  type="button"
-                  onClick={() => setShowDisableForm(false)}
-                  className="bg-gray-300 hover:bg-gray-400 text-gray-700 px-4 py-2 rounded-md text-sm font-medium"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md text-sm font-medium"
-                >
-                  Disable Plan Package
-                </button>
-              </div>
-            </form>
-          </div>
-        )}
 
-        {/* All Feature Flags Table */}
-        <div className="bg-white shadow rounded-lg">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <h2 className="text-xl font-semibold text-gray-900">All Feature Flags</h2>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Feature Type
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Status
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Disabled Period
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Reason
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Last Updated
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {flags.map((flag) => (
-                  <tr key={flag.id}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {flag.feature_type.replace('_', ' ')}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        flag.is_enabled 
-                          ? 'bg-green-100 text-green-800' 
-                          : 'bg-red-100 text-red-800'
-                      }`}>
-                        {flag.is_enabled ? 'Enabled' : 'Disabled'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {flag.disabled_from && flag.disabled_until ? (
-                        <div>
-                          <div>From: {new Date(flag.disabled_from).toLocaleString()}</div>
-                          <div>Until: {new Date(flag.disabled_until).toLocaleString()}</div>
-                        </div>
-                      ) : (
-                        'N/A'
-                      )}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">
-                      {flag.reason || 'N/A'}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {new Date(flag.updated_at).toLocaleString()}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+              <div>
+                <label className="form-label">Description</label>
+                <textarea
+                  className="form-input"
+                  rows={3}
+                  placeholder="Describe what this feature flag controls..."
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                />
+              </div>
+
+              <div className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  id="is_enabled"
+                  className="w-4 h-4 rounded border-gray-600 bg-dark-800 text-cyber-400 focus:ring-cyber-400"
+                  checked={formData.is_enabled}
+                  onChange={(e) => setFormData({ ...formData, is_enabled: e.target.checked })}
+                />
+                <label htmlFor="is_enabled" className="text-white font-medium">
+                  Enable this flag immediately
+                </label>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-8">
+              <button
+                onClick={() => {
+                  setShowCreateModal(false)
+                  setFormData({ flag_key: '', flag_name: '', description: '', is_enabled: false })
+                }}
+                className="btn btn-secondary flex-1"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreate}
+                className="btn btn-primary flex-1"
+                disabled={!formData.flag_key || !formData.flag_name}
+              >
+                Create Flag
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
+
+      {/* Edit Modal */}
+      {showEditModal && selectedFlag && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+          <div className="card-cyber p-8 max-w-lg w-full">
+            <h2 className="text-2xl font-bold mb-6 cyber-text">Edit Feature Flag</h2>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="form-label">Flag Key</label>
+                <input
+                  type="text"
+                  className="form-input bg-gray-800 text-gray-500 cursor-not-allowed"
+                  value={formData.flag_key}
+                  disabled
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  Flag key cannot be changed
+                </p>
+              </div>
+
+              <div>
+                <label className="form-label">Display Name</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={formData.flag_name}
+                  onChange={(e) => setFormData({ ...formData, flag_name: e.target.value })}
+                />
+              </div>
+
+              <div>
+                <label className="form-label">Description</label>
+                <textarea
+                  className="form-input"
+                  rows={3}
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                />
+              </div>
+
+              <div className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  id="is_enabled_edit"
+                  className="w-4 h-4 rounded border-gray-600 bg-dark-800 text-cyber-400 focus:ring-cyber-400"
+                  checked={formData.is_enabled}
+                  onChange={(e) => setFormData({ ...formData, is_enabled: e.target.checked })}
+                />
+                <label htmlFor="is_enabled_edit" className="text-white font-medium">
+                  Enable this flag
+                </label>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-8">
+              <button
+                onClick={() => {
+                  setShowEditModal(false)
+                  setSelectedFlag(null)
+                  setFormData({ flag_key: '', flag_name: '', description: '', is_enabled: false })
+                }}
+                className="btn btn-secondary flex-1"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleUpdate}
+                className="btn btn-primary flex-1"
+                disabled={!formData.flag_name}
+              >
+                Update Flag
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
-  );
+  )
 }
