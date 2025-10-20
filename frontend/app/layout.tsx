@@ -4,6 +4,7 @@ import { Inter } from 'next/font/google'
 import { AuthProvider } from '@/contexts/AuthContext'
 import { Toaster } from 'react-hot-toast'
 import Navbar from '@/components/layout/Navbar'
+import Footer from '@/components/layout/Footer'
 import QueryProvider from '@/components/providers/QueryProvider'
 import GoogleOAuthProvider from '@/components/providers/GoogleOAuthProvider'
 import BackendStatus from '@/components/debug/BackendStatus'
@@ -36,12 +37,13 @@ export default function RootLayout({
         <GoogleOAuthProvider>
           <QueryProvider>
             <AuthProvider>
-              <div className="min-h-screen bg-dark-900 neural-grid">
+              <div className="min-h-screen bg-dark-900 neural-grid flex flex-col">
                 <Navbar />
                 <QuotaWarningBanner />
                 <main className="flex-1 relative z-10">
                   {children}
                 </main>
+                <Footer />
               </div>
               <GlobalQuotaHandler />
               <Toaster
