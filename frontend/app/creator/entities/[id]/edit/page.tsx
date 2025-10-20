@@ -316,10 +316,10 @@ export default function EditBotPage() {
         }
       }
 
-      // Include image URL in update data
+      // Include image URL in update data; coerce null to undefined for typing compatibility
       const finalData = {
         ...cleanedData,
-        image_url: imageUrl
+        image_url: imageUrl ?? undefined
       }
       
       console.log('🔄 FINAL DATA - price_per_month:', finalData.price_per_month, typeof finalData.price_per_month)

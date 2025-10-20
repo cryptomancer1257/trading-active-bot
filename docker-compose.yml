@@ -101,6 +101,9 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=http://api:8000
+        - NEXT_PUBLIC_GOOGLE_CLIENT_ID=${NEXT_PUBLIC_GOOGLE_CLIENT_ID:-}
     container_name: app_frontend
     ports:
       - "3001:3000"
@@ -109,6 +112,8 @@ services:
       - NEXT_PUBLIC_API_URL=http://api:8000
       # For browser requests from host machine, use localhost
       - NEXT_PUBLIC_BROWSER_API_URL=http://localhost:8000
+      # Google OAuth Client ID (public)
+      - NEXT_PUBLIC_GOOGLE_CLIENT_ID=${NEXT_PUBLIC_GOOGLE_CLIENT_ID:-}
       - NODE_ENV=production
     depends_on:
       - api

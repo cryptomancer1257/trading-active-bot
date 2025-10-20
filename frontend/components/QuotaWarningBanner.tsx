@@ -109,9 +109,11 @@ export default function QuotaWarningBanner() {
                   <p className="text-white font-semibold text-sm">
                     Low LLM Quota: {quotaUsage.remaining} calls remaining
                   </p>
-                  <p className="text-yellow-200 text-xs">
-                    Resets on {new Date(quotaUsage.reset_at).toLocaleDateString()}
-                  </p>
+                  {quotaUsage.reset_at && (
+                    <p className="text-yellow-200 text-xs">
+                      Resets on {new Date(quotaUsage.reset_at as string).toLocaleDateString()}
+                    </p>
+                  )}
                 </div>
               </div>
               <div className="flex items-center space-x-2">

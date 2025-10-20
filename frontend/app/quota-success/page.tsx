@@ -1,28 +1,24 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { api } from '@/lib/api'
 
 /**
- * PayPal success page
- * Access at: /quota-success?token=...&PayerID=...
+ * PayPal success page content component
  */
-export default function QuotaSuccessPage() {
+function QuotaSuccessContent() {
   const searchParams = useSearchParams()
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading')
   const [message, setMessage] = useState('')
 
+  // Wrap useSearchParams usage in effect guarded by Suspense detection
   useEffect(() => {
-    const token = searchParams.get('token')
-    const payerId = searchParams.get('PayerID')
-    
-    console.log('🎉 PayPal Success Page')
-    console.log('Token:', token)
-    console.log('PayerID:', payerId)
-    
+    // In case this page is statically generated, guard against undefined
+    const token = searchParams?.get('token')
+    const payerId = searchParams?.get('PayerID')
+
     if (token && payerId) {
-      // Call backend to complete the purchase
       completePurchase(token, payerId)
     } else {
       setStatus('error')
@@ -109,5 +105,21 @@ export default function QuotaSuccessPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+/**
+ * PayPal success page
+ * Access at: /quota-success?token=...&PayerID=...
+ */
+export default function QuotaSuccessPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-dark-900 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-purple-600"></div>
+      </div>
+    }>
+      <QuotaSuccessContent />
+    </Suspense>
   )
 }

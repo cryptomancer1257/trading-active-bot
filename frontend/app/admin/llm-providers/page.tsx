@@ -81,11 +81,11 @@ export default function AdminLLMProvidersPage() {
       return
     }
 
-    // Backend returns role as string, so compare with string value
-    const userRole = typeof user.role === 'string' ? user.role : user.role
-    if (userRole !== UserRole.ADMIN && userRole !== 'ADMIN') {
+    // Normalize role to string to avoid enum narrowing/type mismatch at build time
+    const userRoleStr = (user as any)?.role ? String((user as any).role) : ''
+    if (userRoleStr !== 'ADMIN') {
       console.log('❌ User is not ADMIN, redirecting to home')
-      console.log('User role:', userRole)
+      console.log('User role:', userRoleStr)
       router.push('/')
       return
     }

@@ -108,7 +108,7 @@ export default function QuotaUsageCard({ className = '', autoTriggerOnExhausted 
         quotaUsed={quotaUsage.used}
         quotaTotal={quotaUsage.total}
         planName={quotaUsage.plan_name}
-        resetDate={quotaUsage.reset_at}
+        resetDate={quotaUsage.reset_at ?? undefined}
       />
     )
   }

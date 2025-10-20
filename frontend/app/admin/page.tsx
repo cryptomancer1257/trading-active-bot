@@ -115,7 +115,7 @@ export default function AdminDashboardPage() {
             Admin Dashboard
           </h1>
           <p className="text-gray-400">
-            Welcome back, {user?.username || 'Admin'}
+            Welcome back, {user?.developer_name || user?.email || 'Admin'}
           </p>
         </div>
 

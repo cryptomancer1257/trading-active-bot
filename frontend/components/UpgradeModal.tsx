@@ -141,12 +141,13 @@ export default function UpgradeModal({ isOpen, onClose, targetPlan = 'pro' }: Up
                     <PayPalButtons
                       createOrder={(data, actions) => {
                         return actions.order.create({
+                          intent: 'CAPTURE',
                           purchase_units: [{
                             amount: {
-                              value: '10.00',
+                              value: planPrice.toFixed(2),
                               currency_code: 'USD'
                             },
-                            description: 'QuantumForge Pro Plan - Monthly Subscription'
+                            description: `QuantumForge ${planName} Plan - Monthly Subscription`
                           }]
                         })
                       }}
