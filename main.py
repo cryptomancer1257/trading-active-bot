@@ -103,7 +103,7 @@ app.include_router(risk_management.router, prefix="/v1/risk-management", tags=["
 app.include_router(dashboard.router, prefix="/v1/dashboard", tags=["Dashboard"])
 app.include_router(plans.router, prefix="/api", tags=["Plans"])
 app.include_router(quota_topups.router, prefix="/quota-topups", tags=["Quota Top-ups"])
-app.include_router(feature_flags.router, tags=["Feature Flags"])
+app.include_router(feature_flags.router, prefix="/feature-flags", tags=["Feature Flags"])
 
 
 @app.post("/webhook")

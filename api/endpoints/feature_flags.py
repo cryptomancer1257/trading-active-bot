@@ -1,267 +1,173 @@
+"""
+Feature Flags API Endpoints
+Manage feature flags for controlling feature visibility
+"""
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from typing import List, Optional
-from datetime import datetime
-import logging
-
+from typing import List
 from core.database import get_db
 from core import models, schemas
 from core.security import get_current_user
-from core.models import FeatureFlagType
+from core.models import UserRole
 
-logger = logging.getLogger(__name__)
+router = APIRouter()
 
-router = APIRouter(prefix="/admin/feature-flags", tags=["Admin - Feature Flags"])
-
-# Pydantic schemas for Feature Flags
-from pydantic import BaseModel
-
-class FeatureFlagBase(BaseModel):
-    feature_type: FeatureFlagType
-    is_enabled: bool
-    disabled_from: Optional[datetime] = None
-    disabled_until: Optional[datetime] = None
-    reason: Optional[str] = None
-
-class FeatureFlagCreate(FeatureFlagBase):
-    pass
-
-class FeatureFlagUpdate(BaseModel):
-    is_enabled: Optional[bool] = None
-    disabled_from: Optional[datetime] = None
-    disabled_until: Optional[datetime] = None
-    reason: Optional[str] = None
-
-class FeatureFlagResponse(FeatureFlagBase):
-    id: int
-    created_by: Optional[int]
-    created_at: datetime
-    updated_at: datetime
-    
-    class Config:
-        from_attributes = True
 
 def require_admin(current_user: models.User = Depends(get_current_user)):
-    """Require admin role for feature flag management"""
-    if current_user.role != models.UserRole.ADMIN:
+    """Dependency to require admin role"""
+    if current_user.role != UserRole.ADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required"
         )
     return current_user
 
-@router.get("/", response_model=List[FeatureFlagResponse])
-async def get_all_feature_flags(
-    db: Session = Depends(get_db),
-    admin_user: models.User = Depends(require_admin)
-):
-    """Get all feature flags (Admin only)"""
-    try:
-        flags = db.query(models.FeatureFlag).all()
-        return flags
-    except Exception as e:
-        logger.error(f"Error fetching feature flags: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to fetch feature flags"
-        )
 
-@router.get("/{feature_type}", response_model=FeatureFlagResponse)
-async def get_feature_flag(
-    feature_type: FeatureFlagType,
+@router.get("/", response_model=schemas.FeatureFlagsListResponse)
+def get_all_feature_flags(
     db: Session = Depends(get_db),
-    admin_user: models.User = Depends(require_admin)
+    current_user: models.User = Depends(require_admin)
 ):
-    """Get specific feature flag (Admin only)"""
-    try:
-        flag = db.query(models.FeatureFlag).filter(
-            models.FeatureFlag.feature_type == feature_type
-        ).first()
-        
-        if not flag:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Feature flag {feature_type} not found"
-            )
-        
-        return flag
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error fetching feature flag {feature_type}: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to fetch feature flag"
-        )
+    """
+    Get all feature flags (Admin only)
+    """
+    flags = db.query(models.FeatureFlag).order_by(models.FeatureFlag.flag_key).all()
+    return {
+        "flags": flags,
+        "total": len(flags)
+    }
 
-@router.put("/{feature_type}", response_model=FeatureFlagResponse)
-async def update_feature_flag(
-    feature_type: FeatureFlagType,
-    update_data: FeatureFlagUpdate,
+
+@router.get("/public", response_model=List[schemas.FeatureFlagResponse])
+def get_public_feature_flags(db: Session = Depends(get_db)):
+    """
+    Get all enabled feature flags (Public endpoint)
+    No authentication required - used by frontend to check feature availability
+    """
+    flags = db.query(models.FeatureFlag).filter(
+        models.FeatureFlag.is_enabled == True
+    ).all()
+    return flags
+
+
+@router.get("/check/{flag_key}", response_model=dict)
+def check_feature_flag(
+    flag_key: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Check if a specific feature flag is enabled (Public endpoint)
+    Returns: {"flag_key": "...", "is_enabled": true/false}
+    """
+    flag = db.query(models.FeatureFlag).filter(
+        models.FeatureFlag.flag_key == flag_key
+    ).first()
+    
+    if not flag:
+        # If flag doesn't exist, assume disabled
+        return {"flag_key": flag_key, "is_enabled": False}
+    
+    return {"flag_key": flag.flag_key, "is_enabled": flag.is_enabled}
+
+
+@router.get("/{flag_id}", response_model=schemas.FeatureFlagResponse)
+def get_feature_flag(
+    flag_id: int,
     db: Session = Depends(get_db),
-    admin_user: models.User = Depends(require_admin)
+    current_user: models.User = Depends(require_admin)
 ):
-    """Update feature flag (Admin only)"""
-    try:
-        flag = db.query(models.FeatureFlag).filter(
-            models.FeatureFlag.feature_type == feature_type
-        ).first()
-        
-        if not flag:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Feature flag {feature_type} not found"
-            )
-        
-        # Update fields
-        update_dict = update_data.dict(exclude_unset=True)
-        for field, value in update_dict.items():
-            setattr(flag, field, value)
-        
-        flag.updated_at = datetime.utcnow()
-        db.commit()
-        db.refresh(flag)
-        
-        logger.info(f"Feature flag {feature_type} updated by admin {admin_user.id}: {update_dict}")
-        return flag
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error updating feature flag {feature_type}: {e}")
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to update feature flag"
-        )
+    """
+    Get a specific feature flag by ID (Admin only)
+    """
+    flag = db.query(models.FeatureFlag).filter(models.FeatureFlag.id == flag_id).first()
+    if not flag:
+        raise HTTPException(status_code=404, detail="Feature flag not found")
+    return flag
 
-@router.post("/disable-plan-package", response_model=FeatureFlagResponse)
-async def disable_plan_package(
-    request_data: dict,
+
+@router.post("/", response_model=schemas.FeatureFlagResponse, status_code=status.HTTP_201_CREATED)
+def create_feature_flag(
+    flag: schemas.FeatureFlagCreate,
     db: Session = Depends(get_db),
-    admin_user: models.User = Depends(require_admin)
+    current_user: models.User = Depends(require_admin)
 ):
-    """Disable plan package for specific date range (Admin only)"""
-    try:
-        # Extract parameters from request data
-        disabled_from = datetime.fromisoformat(request_data.get('disabled_from').replace('Z', '+00:00'))
-        disabled_until = datetime.fromisoformat(request_data.get('disabled_until').replace('Z', '+00:00'))
-        reason = request_data.get('reason')
-        
-        if disabled_from >= disabled_until:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="disabled_from must be before disabled_until"
-            )
-        
-        flag = db.query(models.FeatureFlag).filter(
-            models.FeatureFlag.feature_type == FeatureFlagType.PLAN_PACKAGE
-        ).first()
-        
-        if not flag:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Plan package feature flag not found"
-            )
-        
-        # Update flag to disable for date range
-        flag.is_enabled = False
-        flag.disabled_from = disabled_from
-        flag.disabled_until = disabled_until
-        flag.reason = reason
-        flag.updated_at = datetime.utcnow()
-        
-        db.commit()
-        db.refresh(flag)
-        
-        logger.info(f"Plan package disabled from {disabled_from} to {disabled_until} by admin {admin_user.id}: {reason}")
-        return flag
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error disabling plan package: {e}")
-        db.rollback()
+    """
+    Create a new feature flag (Admin only)
+    """
+    # Check if flag_key already exists
+    existing = db.query(models.FeatureFlag).filter(
+        models.FeatureFlag.flag_key == flag.flag_key
+    ).first()
+    if existing:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to disable plan package"
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Feature flag with key '{flag.flag_key}' already exists"
         )
+    
+    db_flag = models.FeatureFlag(**flag.dict())
+    db.add(db_flag)
+    db.commit()
+    db.refresh(db_flag)
+    return db_flag
 
-@router.post("/enable-plan-package", response_model=FeatureFlagResponse)
-async def enable_plan_package(
+
+@router.put("/{flag_id}", response_model=schemas.FeatureFlagResponse)
+def update_feature_flag(
+    flag_id: int,
+    flag_update: schemas.FeatureFlagUpdate,
     db: Session = Depends(get_db),
-    admin_user: models.User = Depends(require_admin)
+    current_user: models.User = Depends(require_admin)
 ):
-    """Re-enable plan package (Admin only)"""
-    try:
-        flag = db.query(models.FeatureFlag).filter(
-            models.FeatureFlag.feature_type == FeatureFlagType.PLAN_PACKAGE
-        ).first()
-        
-        if not flag:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Plan package feature flag not found"
-            )
-        
-        # Re-enable flag
-        flag.is_enabled = True
-        flag.disabled_from = None
-        flag.disabled_until = None
-        flag.reason = "Re-enabled by admin"
-        flag.updated_at = datetime.utcnow()
-        
-        db.commit()
-        db.refresh(flag)
-        
-        logger.info(f"Plan package re-enabled by admin {admin_user.id}")
-        return flag
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error enabling plan package: {e}")
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to enable plan package"
-        )
+    """
+    Update a feature flag (Admin only)
+    """
+    db_flag = db.query(models.FeatureFlag).filter(models.FeatureFlag.id == flag_id).first()
+    if not db_flag:
+        raise HTTPException(status_code=404, detail="Feature flag not found")
+    
+    # Update fields if provided
+    update_data = flag_update.dict(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(db_flag, field, value)
+    
+    db.commit()
+    db.refresh(db_flag)
+    return db_flag
 
-# Public endpoint to check if plan package is enabled
-@router.get("/public/plan-package-status")
-async def get_plan_package_status(db: Session = Depends(get_db)):
-    """Check if plan package is currently enabled (Public endpoint)"""
-    try:
-        flag = db.query(models.FeatureFlag).filter(
-            models.FeatureFlag.feature_type == FeatureFlagType.PLAN_PACKAGE
-        ).first()
-        
-        if not flag:
-            # Default to enabled if flag doesn't exist
-            return {"is_enabled": True, "reason": "Default enabled"}
-        
-        current_time = datetime.utcnow()
-        
-        # Check if currently in disabled period
-        is_temporarily_disabled = (
-            not flag.is_enabled and
-            flag.disabled_from and flag.disabled_until and
-            flag.disabled_from <= current_time <= flag.disabled_until
-        )
-        
-        if is_temporarily_disabled:
-            return {
-                "is_enabled": False,
-                "reason": flag.reason,
-                "disabled_until": flag.disabled_until
-            }
-        
-        return {
-            "is_enabled": flag.is_enabled,
-            "reason": flag.reason if not flag.is_enabled else "Enabled"
-        }
-        
-    except Exception as e:
-        logger.error(f"Error checking plan package status: {e}")
-        # Default to enabled on error
-        return {"is_enabled": True, "reason": "Default enabled (error occurred)"}
+
+@router.patch("/{flag_id}/toggle", response_model=schemas.FeatureFlagResponse)
+def toggle_feature_flag(
+    flag_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_admin)
+):
+    """
+    Toggle a feature flag on/off (Admin only)
+    """
+    db_flag = db.query(models.FeatureFlag).filter(models.FeatureFlag.id == flag_id).first()
+    if not db_flag:
+        raise HTTPException(status_code=404, detail="Feature flag not found")
+    
+    db_flag.is_enabled = not db_flag.is_enabled
+    db.commit()
+    db.refresh(db_flag)
+    return db_flag
+
+
+@router.delete("/{flag_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_feature_flag(
+    flag_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_admin)
+):
+    """
+    Delete a feature flag (Admin only)
+    """
+    db_flag = db.query(models.FeatureFlag).filter(models.FeatureFlag.id == flag_id).first()
+    if not db_flag:
+        raise HTTPException(status_code=404, detail="Feature flag not found")
+    
+    db.delete(db_flag)
+    db.commit()
+    return None

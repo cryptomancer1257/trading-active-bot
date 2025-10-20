@@ -10,6 +10,7 @@ import { z } from 'zod'
 import toast from 'react-hot-toast'
 import { useGetBot, useUpdateBot } from '@/hooks/useBots'
 import { usePlan } from '@/hooks/usePlan'
+import { useFeatureFlag, FEATURE_FLAGS } from '@/hooks/useFeatureFlag'
 import { 
   CpuChipIcon, 
   ArrowLeftIcon,
@@ -68,6 +69,9 @@ export default function EditBotPage() {
   
   const router = useRouter()
   const params = useParams()
+  
+  // Feature flags
+  const canRePublishToMarketplace = useFeatureFlag(FEATURE_FLAGS.MARKETPLACE_REPUBLISH_BOT)
   const botId = params?.id as string
   
   const { data: bot, isLoading: botLoading, error } = useGetBot(botId)
@@ -519,75 +523,77 @@ export default function EditBotPage() {
                 </div>
               </div>
 
-              {/* Marketplace Pricing */}
-              <div>
-                <label className="form-label">Marketplace Pricing</label>
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <input
-                        {...register('is_free')}
-                        type="checkbox"
-                        className="w-4 h-4 text-quantum-500 bg-dark-700 border-quantum-500/30 rounded focus:ring-quantum-500 focus:ring-2"
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setValue('price_per_month', 0)
-                          }
-                        }}
-                      />
-                      <label className="form-label !mb-0">Free to use</label>
-                    </div>
-                    {watch('is_free') ? (
-                      <span className="text-xs text-gray-500">
-                        💡 Uncheck to set price
-                      </span>
-                    ) : (
-                      <span className="text-xs text-gray-400">
-                        💰 Check to make free
-                      </span>
-                    )}
-                  </div>
-                  
-                  {!watch('is_free') && (
-                    <div className="animate-fade-in">
-                      <label className="form-label">Price per Month (ICP)</label>
-                      <div className="relative">
+              {/* Marketplace Pricing - Feature Flag Controlled */}
+              {canRePublishToMarketplace && (
+                <div>
+                  <label className="form-label">Marketplace Pricing</label>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-3">
                         <input
-                          {...register('price_per_month', { 
-                            valueAsNumber: true,
-                            onChange: (e) => {
-                              console.log('💰 Price input changed:', e.target.value, typeof e.target.value)
-                              console.log('💰 Current watch value:', watch('price_per_month'))
+                          {...register('is_free')}
+                          type="checkbox"
+                          className="w-4 h-4 text-quantum-500 bg-dark-700 border-quantum-500/30 rounded focus:ring-quantum-500 focus:ring-2"
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setValue('price_per_month', 0)
                             }
-                          })}
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          className="form-input pl-12"
-                          placeholder="0.00"
+                          }}
                         />
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                          <span className="text-quantum-400 text-sm font-medium">ICP</span>
-                        </div>
+                        <label className="form-label !mb-0">Free to use</label>
                       </div>
-                      {errors.price_per_month && <p className="form-error">{errors.price_per_month.message}</p>}
-                      <p className="text-xs text-gray-500 mt-1">
-                        💡 Users will pay in Internet Computer Protocol (ICP) tokens
-                      </p>
+                      {watch('is_free') ? (
+                        <span className="text-xs text-gray-500">
+                          💡 Uncheck to set price
+                        </span>
+                      ) : (
+                        <span className="text-xs text-gray-400">
+                          💰 Check to make free
+                        </span>
+                      )}
                     </div>
-                  )}
+                    
+                    {!watch('is_free') && (
+                      <div className="animate-fade-in">
+                        <label className="form-label">Price per Month (ICP)</label>
+                        <div className="relative">
+                          <input
+                            {...register('price_per_month', { 
+                              valueAsNumber: true,
+                              onChange: (e) => {
+                                console.log('💰 Price input changed:', e.target.value, typeof e.target.value)
+                                console.log('💰 Current watch value:', watch('price_per_month'))
+                              }
+                            })}
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            className="form-input pl-12"
+                            placeholder="0.00"
+                          />
+                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <span className="text-quantum-400 text-sm font-medium">ICP</span>
+                          </div>
+                        </div>
+                        {errors.price_per_month && <p className="form-error">{errors.price_per_month.message}</p>}
+                        <p className="text-xs text-gray-500 mt-1">
+                          💡 Users will pay in Internet Computer Protocol (ICP) tokens
+                        </p>
+                      </div>
+                    )}
 
-                  {/* Pricing Preview */}
-                  <div className="bg-dark-800/50 rounded-lg p-3 border border-quantum-500/20">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-gray-400">Marketplace Price:</span>
-                      <span className="text-quantum-400 font-medium">
-                        {watch('is_free') ? 'FREE' : `${watch('price_per_month') || 0} ICP/month`}
-                      </span>
+                    {/* Pricing Preview */}
+                    <div className="bg-dark-800/50 rounded-lg p-3 border border-quantum-500/20">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-400">Marketplace Price:</span>
+                        <span className="text-quantum-400 font-medium">
+                          {watch('is_free') ? 'FREE' : `${watch('price_per_month') || 0} ICP/month`}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
+              )}
             </div>
           </div>
 
@@ -615,28 +621,131 @@ export default function EditBotPage() {
               </div>
               
               <div>
-                <label className="form-label">Timeframe</label>
+                <label className="form-label">Primary Timeframe</label>
                 <select 
                   {...register('timeframe')} 
                   className={`form-input ${errors.timeframe || errors.timeframes ? 'border-red-500 ring-red-500' : ''}`}
                   value={watch('timeframe') || '1h'}
                   onChange={(e) => {
-                    const newTimeframe = e.target.value
-                    setValue('timeframe', newTimeframe)
-                    setValue('timeframes', [newTimeframe]) // Sync timeframes array
-                    console.log('🔄 Updated timeframe to:', newTimeframe)
+                    const newPrimary = e.target.value
+                    setValue('timeframe', newPrimary)
+                    
+                    // Auto-remove new primary from extra timeframes if it exists
+                    const currentExtras = watch('timeframes') || []
+                    const cleanedExtras = currentExtras.filter(tf => tf !== newPrimary)
+                    if (cleanedExtras.length !== currentExtras.length) {
+                      setValue('timeframes', cleanedExtras)
+                    }
+                    
+                    console.log('🔄 Updated timeframe to:', newPrimary, 'Cleaned extras:', cleanedExtras)
                   }}
                 >
                   {timeframeOptions.map(tf => (
                     <option key={tf} value={tf}>{tf}</option>
                   ))}
                 </select>
+                <p className="mt-2 text-sm text-orange-400 flex items-start">
+                  <svg className="w-4 h-4 mr-1.5 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                  </svg>
+                  <span>
+                    <strong>Trading Interval:</strong> Your bot will execute trades based on this timeframe. For example, if Primary Timeframe = 1h, the bot will analyze and trade once per hour. More frequent trades will consume more LLM Quota.
+                  </span>
+                </p>
                 {(errors.timeframe || errors.timeframes) && (
                   <p className="form-error">
                     ❌ {errors.timeframe?.message || errors.timeframes?.message || 'Timeframe is required'}
                   </p>
                 )}
               </div>
+            </div>
+            
+            {/* Extra Timeframes */}
+            <div className="mt-6">
+              <label className="form-label">Extra Timeframes</label>
+              <p className="mt-1 text-sm text-gray-400 mb-3">
+                Reference timeframes for better decision making
+              </p>
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+                {timeframeOptions.map((tf) => {
+                  const currentTimeframes = watch('timeframes') || []
+                  const primaryTimeframe = watch('timeframe') || '1h'
+                  const isPrimary = tf === primaryTimeframe
+                  const isSelected = currentTimeframes.includes(tf) && !isPrimary
+                  // Count only extra timeframes (exclude primary)
+                  const extraCount = currentTimeframes.filter(t => t !== primaryTimeframe).length
+                  const maxReached = extraCount >= 2 && !isSelected && !isPrimary
+                  const isDisabled = isPrimary || maxReached
+                  
+                  return (
+                    <button
+                      key={tf}
+                      type="button"
+                      onClick={() => {
+                        if (isDisabled) return
+                        const newTimeframes = isSelected
+                          ? currentTimeframes.filter(t => t !== tf)
+                          : [...currentTimeframes, tf]
+                        setValue('timeframes', newTimeframes)
+                      }}
+                      disabled={isDisabled}
+                      className={`px-3 py-2 text-sm rounded-md border transition-colors ${
+                        isPrimary
+                          ? 'bg-purple-900/30 border-purple-700 text-purple-400 cursor-not-allowed opacity-50'
+                          : isSelected
+                          ? 'bg-quantum-500/20 border-quantum-500 text-quantum-400'
+                          : maxReached
+                          ? 'bg-dark-700/30 border-gray-700 text-gray-500 cursor-not-allowed opacity-50'
+                          : 'bg-dark-700/50 border-gray-600 text-gray-300 hover:bg-dark-600/50'
+                      }`}
+                    >
+                      {tf} {isPrimary && '(Primary)'}
+                    </button>
+                  )
+                })}
+              </div>
+              {(() => {
+                const timeframes = watch('timeframes') || []
+                const primary = watch('timeframe') || '1h'
+                const extras = timeframes.filter(tf => tf !== primary)
+                return extras.length > 0 && (
+                  <div className="mt-2 text-sm text-gray-500">
+                    <span className="font-medium">Selected:</span> {extras.join(', ')}
+                  </div>
+                )
+              })()}
+              
+              {/* Combined Timeframes Preview */}
+              <div className="mt-3 p-3 bg-blue-900/20 border border-blue-700/50 rounded-lg">
+                <p className="text-sm text-blue-300">
+                  <svg className="w-4 h-4 inline-block mr-1.5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                  </svg>
+                  <strong>Your bot will trade based on timeframes:</strong>{' '}
+                  {(() => {
+                    const primary = watch('timeframe') || '1h'
+                    const extras = watch('timeframes') || []
+                    const combined = [...extras, primary]
+                    const allTimeframes = Array.from(new Set(combined)).sort((a, b) => {
+                      const order = ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '6h', '8h', '12h', '1d', '3d', '1w', '1M']
+                      return order.indexOf(a) - order.indexOf(b)
+                    })
+                    return allTimeframes.join(', ')
+                  })()}
+                </p>
+                <p className="text-xs text-blue-400 mt-1">
+                  Example: If Extra Timeframes = 15m, 4h and Primary = 1h, your bot analyzes 15m, 1h, and 4h for better market insight.
+                </p>
+              </div>
+              
+              <p className="mt-3 text-sm text-orange-400 flex items-start">
+                <svg className="w-4 h-4 mr-1.5 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                </svg>
+                <span>
+                  <strong>Limit:</strong> You can select up to 2 additional timeframes for reference analysis. Cannot select the same as Primary Timeframe.
+                </span>
+              </p>
             </div>
           </div>
 
