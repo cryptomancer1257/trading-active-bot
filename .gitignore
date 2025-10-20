@@ -218,6 +218,9 @@ chart_screenshot.png
 trading_bot.log
 *.log
 
+#gcp key json
+cryptomancer.json
+
 # Configuration backups
 *.env.backup
 *.env.example.backup
