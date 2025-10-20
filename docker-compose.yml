@@ -97,5 +97,22 @@ services:
       - "6379:6379"
     restart: unless-stopped
 
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: app_frontend
+    ports:
+      - "3001:3000"
+    environment:
+      # For Docker internal network, use service name 'api'
+      - NEXT_PUBLIC_API_URL=http://api:8000
+      # For browser requests from host machine, use localhost
+      - NEXT_PUBLIC_BROWSER_API_URL=http://localhost:8000
+      - NODE_ENV=production
+    depends_on:
+      - api
+    restart: unless-stopped
+
 volumes:
   mysql_data:
