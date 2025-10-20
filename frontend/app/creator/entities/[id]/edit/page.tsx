@@ -100,9 +100,12 @@ export default function EditBotPage() {
     resolver: zodResolver(botEditSchema),
   })
   
-  // Debug form errors
+  // Debug form errors and values
+  const formValues = watch()
   console.log('🔍 Form errors:', errors)
   console.log('🔍 Form is valid:', isValid)
+  console.log('🔍 Current form values:', formValues)
+  console.log('🔍 price_per_month value:', formValues.price_per_month, 'type:', typeof formValues.price_per_month)
 
   // Populate form when bot data loads
   useEffect(() => {
@@ -130,7 +133,7 @@ export default function EditBotPage() {
       console.log('🔄 Setting is_free from bot:', (bot as any).is_free)
       setValue('price_per_month', priceNumber)
       setValue('is_free', (bot as any).is_free || false)
-      setValue('image_url', (bot as any).image_url || '')
+      setValue('image_url', (bot as any).image_url || null)
       
       // Set image preview if exists
       if ((bot as any).image_url) {
