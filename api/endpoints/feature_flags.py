@@ -71,6 +71,36 @@ def check_feature_flag(
     return {"flag_key": flag.flag_key, "is_enabled": flag.is_enabled}
 
 
+@router.get("/public/plan-package-status", response_model=dict)
+def get_plan_package_status(db: Session = Depends(get_db)):
+    """
+    Get plan package feature status (Public endpoint)
+    Returns plan package availability status for frontend
+    """
+    # Check if plan package feature is enabled
+    plan_package_flag = db.query(models.FeatureFlag).filter(
+        models.FeatureFlag.flag_key == "plan_package_status"
+    ).first()
+    
+    if not plan_package_flag:
+        # If flag doesn't exist, create it as enabled by default
+        plan_package_flag = models.FeatureFlag(
+            flag_key="plan_package_status",
+            flag_name="Plan Package Status",
+            description="Controls whether plan package features are available",
+            is_enabled=True
+        )
+        db.add(plan_package_flag)
+        db.commit()
+        db.refresh(plan_package_flag)
+    
+    return {
+        "is_enabled": plan_package_flag.is_enabled,
+        "reason": "Plan package features are available" if plan_package_flag.is_enabled else "Plan package features are temporarily disabled",
+        "disabled_until": None
+    }
+
+
 @router.get("/{flag_id}", response_model=schemas.FeatureFlagResponse)
 def get_feature_flag(
     flag_id: int,
