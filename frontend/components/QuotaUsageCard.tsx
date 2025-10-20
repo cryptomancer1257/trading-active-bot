@@ -38,6 +38,68 @@ export default function QuotaUsageCard({ className = '', autoTriggerOnExhausted 
     return <QuotaUnavailableCard className={className} />
   }
 
+  // Free Plan - Show special message
+  if (quotaUsage.plan_name.toUpperCase() === 'FREE' || !quotaUsage.can_purchase) {
+    return (
+      <div className={`bg-gradient-to-br from-gray-800/80 to-gray-900/80 rounded-xl p-6 border border-gray-700 ${className}`}>
+        {/* Header */}
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center">
+            <span className="text-2xl mr-3">🆓</span>
+            <div>
+              <h3 className="text-white font-bold text-lg">Trades Quota</h3>
+              <p className="text-gray-400 text-sm">FREE Plan</p>
+            </div>
+          </div>
+          <div className="text-right">
+            <div className="text-2xl">∞</div>
+            <div className="text-xs font-semibold text-yellow-400">
+              Unlimited
+            </div>
+          </div>
+        </div>
+
+        {/* Free Plan Info */}
+        <div className="mb-4 p-4 bg-yellow-900/20 border border-yellow-500/30 rounded-lg">
+          <div className="flex items-start">
+            <span className="mr-3 text-yellow-400 text-xl">⚠️</span>
+            <div className="flex-1">
+              <p className="text-yellow-300 font-semibold text-sm mb-2">
+                Free Plan Limitations
+              </p>
+              <ul className="text-yellow-200/80 text-xs space-y-1">
+                <li>• Unlimited trades with <strong>low quality AI models</strong></li>
+                <li>• Slower response times and lower analysis accuracy</li>
+                <li>• Testnet trading only</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        {/* Upgrade CTA */}
+        <div className="space-y-3">
+          <p className="text-gray-300 text-sm text-center mb-3">
+            Unlock faster trading speeds, advanced models (GPT-4o, Claude 3.7 Sonnet), and higher accuracy
+          </p>
+          
+          <a
+            href="/plans"
+            className="block w-full px-4 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold text-sm rounded-lg transition-all shadow-lg hover:shadow-purple-500/50 transform hover:scale-105 text-center"
+          >
+            ⚡ Upgrade to Pro Plan - $60/mo
+          </a>
+          
+          <a
+            href="/plans"
+            className="block w-full px-4 py-2 bg-gradient-to-r from-yellow-500/20 to-orange-500/20 hover:from-yellow-500/30 hover:to-orange-500/30 text-yellow-300 font-semibold text-sm rounded-lg transition-all border border-yellow-500/30 text-center"
+          >
+            💎 View Ultra Plan - $500/mo
+          </a>
+        </div>
+      </div>
+    )
+  }
+
   // Show exhausted state if quota is completely used up
   if (quotaUsage.remaining === 0) {
     return (
@@ -77,7 +139,7 @@ export default function QuotaUsageCard({ className = '', autoTriggerOnExhausted 
           <div className="flex items-center">
             <span className="text-2xl mr-3">🤖</span>
             <div>
-              <h3 className="text-white font-bold text-lg">LLM Quota</h3>
+              <h3 className="text-white font-bold text-lg">Trades Quota</h3>
               <p className="text-gray-400 text-sm">
                 {quotaUsage.plan_name.toUpperCase()} Plan
               </p>
@@ -155,7 +217,7 @@ export default function QuotaUsageCard({ className = '', autoTriggerOnExhausted 
           <div className="mt-4 p-3 bg-yellow-900/20 border border-yellow-500/30 rounded-lg">
             <div className="flex items-center text-yellow-300 text-sm">
               <span className="mr-2">⚠️</span>
-              <span>Low quota warning: {quotaUsage.remaining} calls remaining</span>
+              <span>Low quota warning: {quotaUsage.remaining} trades remaining</span>
             </div>
           </div>
         )}
@@ -165,7 +227,7 @@ export default function QuotaUsageCard({ className = '', autoTriggerOnExhausted 
           <div className="mt-4 p-3 bg-red-900/20 border border-red-500/30 rounded-lg">
             <div className="flex items-center text-red-300 text-sm">
               <span className="mr-2">🚨</span>
-              <span>Quota exhausted! Purchase more to continue using LLM features.</span>
+              <span>Quota exhausted! Purchase more to continue trading.</span>
             </div>
           </div>
         )}

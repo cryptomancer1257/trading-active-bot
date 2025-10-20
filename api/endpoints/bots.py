@@ -16,6 +16,10 @@ from typing import List, Optional, Any
 from datetime import datetime
 from decimal import Decimal
 import json
+import uuid
+from PIL import Image
+from io import BytesIO
+from google.cloud import storage
 
 from core import crud, models, schemas, security
 from core.database import get_db
@@ -1137,4 +1141,90 @@ async def test_retrieve_credentials(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to test credentials: {str(e)}"
+        )
+
+
+@router.post("/upload-image", response_model=dict)
+async def upload_bot_image(
+    file: UploadFile = File(...),
+    current_user: models.User = Depends(security.get_current_active_user)
+):
+    """
+    Upload bot image to GCS
+    Returns the public URL of the uploaded image
+    """
+    try:
+        # Validate file type
+        allowed_types = ["image/jpeg", "image/png", "image/webp"]
+        if file.content_type not in allowed_types:
+            raise HTTPException(
+                status_code=400, 
+                detail="Only JPEG, PNG, WebP formats are supported"
+            )
+        
+        # Validate file size (max 5MB)
+        max_size = 5 * 1024 * 1024  # 5MB
+        file_content = await file.read()
+        if len(file_content) > max_size:
+            raise HTTPException(
+                status_code=400,
+                detail="File size cannot exceed 5MB"
+            )
+        
+        # Initialize GCS client
+        GCS_BUCKET_NAME = os.getenv('GCS_BUCKET_NAME', 'cryptomancer_ai')
+        credentials_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
+        
+        if not credentials_path:
+            raise HTTPException(
+                status_code=500,
+                detail="GCS credentials not configured"
+            )
+        
+        client = storage.Client.from_service_account_json(credentials_path)
+        storage_client = client.bucket(GCS_BUCKET_NAME)
+        
+        # Process image
+        image = Image.open(BytesIO(file_content))
+        
+        # Resize if too large (max width 1024px)
+        max_width = 1024
+        if image.width > max_width:
+            ratio = max_width / float(image.width)
+            new_height = int(image.height * ratio)
+            image = image.resize((max_width, new_height), Image.LANCZOS)
+        
+        # Convert to JPEG and optimize
+        output_buffer = BytesIO()
+        image = image.convert("RGB")
+        image.save(output_buffer, format="JPEG", quality=95, optimize=True)
+        output_buffer.seek(0)
+        
+        # Generate unique filename
+        file_extension = "jpg"
+        file_name = f"uploads/bot-images/{uuid.uuid4()}.{file_extension}"
+        
+        # Upload to GCS
+        blob = storage_client.blob(file_name)
+        blob.upload_from_file(output_buffer, content_type="image/jpeg")
+        
+        # Generate public URL
+        GCS_PUBLIC_URL = f"https://storage.googleapis.com/{GCS_BUCKET_NAME}"
+        public_url = f"{GCS_PUBLIC_URL}/{file_name}"
+        
+        logger.info(f"Bot image uploaded successfully: {public_url}")
+        
+        return {
+            "success": True,
+            "url": public_url,
+            "filename": file_name
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to upload bot image: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to upload image: {str(e)}"
         )

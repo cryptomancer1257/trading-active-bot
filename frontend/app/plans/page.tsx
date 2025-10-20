@@ -82,7 +82,7 @@ export default function PlansPage() {
                   {limits.plan.revenue_share_percentage}%
                 </div>
                 {!isPro && (
-                  <p className="text-sm text-orange-600 mt-1">Earn 90% with Pro plan</p>
+                  <p className="text-sm text-orange-600 mt-1">Earn 100% with Pro plan</p>
                 )}
               </div>
             </div>
@@ -117,7 +117,11 @@ export default function PlansPage() {
               </li>
               <li className="flex items-start">
                 <span className="text-green-500 mr-2 mt-0.5">✓</span>
-                <span className="text-gray-700"><strong>{planConfigs?.free.compute_quota_per_day || 24}</strong> API calls/day</span>
+                <span className="text-gray-700"><strong>∞ Unlimited/month</strong> (low quality)</span>
+              </li>
+              <li className="flex items-start">
+                <span className="text-green-500 mr-2 mt-0.5">✓</span>
+                <span className="text-gray-700"><strong>5 Strategies</strong> template</span>
               </li>
               <li className="flex items-start">
                 <span className="text-gray-400 mr-2 mt-0.5">✗</span>
@@ -164,7 +168,11 @@ export default function PlansPage() {
               </li>
               <li className="flex items-start">
                 <span className="text-purple-600 mr-2 mt-0.5">✓</span>
-                <span className="text-gray-900"><strong>{planConfigs?.pro.compute_quota_per_day || 240}</strong> API calls/day</span>
+                <span className="text-gray-900"><strong>720 trades/month</strong></span>
+              </li>
+              <li className="flex items-start">
+                <span className="text-purple-600 mr-2 mt-0.5">✓</span>
+                <span className="text-gray-900"><strong>Full Access</strong> strategies template</span>
               </li>
               <li className="flex items-start">
                 <span className="text-purple-600 mr-2 mt-0.5">✓</span>
@@ -231,7 +239,11 @@ export default function PlansPage() {
               </li>
               <li className="flex items-start">
                 <span className="text-yellow-600 mr-2 mt-0.5">✓</span>
-                <span className="text-gray-900"><strong>{planConfigs?.ultra?.compute_quota_per_day || 2400}</strong> API calls/day</span>
+                <span className="text-gray-900"><strong>7,200 trades/month</strong></span>
+              </li>
+              <li className="flex items-start">
+                <span className="text-yellow-600 mr-2 mt-0.5">✓</span>
+                <span className="text-gray-900"><strong>Full Access</strong> strategies template</span>
               </li>
               <li className="flex items-start">
                 <span className="text-yellow-600 mr-2 mt-0.5">✓</span>
@@ -278,11 +290,11 @@ export default function PlansPage() {
 
             <details className="group">
               <summary className="flex items-center justify-between cursor-pointer font-medium text-gray-900 p-4 bg-gray-50 rounded-lg">
-                How does the 90% revenue share work?
+                How does the revenue share work?
                 <span className="ml-2 text-gray-500 group-open:rotate-180 transition-transform">▼</span>
               </summary>
               <p className="mt-2 text-gray-600 p-4">
-                As a Pro user, you keep 90% of all subscription revenue from your marketplace bots. We only take 10% as a platform fee.
+                As a Pro user, you keep 100% of all subscription revenue from your marketplace bots. No platform fees - you earn everything your bots generate!
               </p>
             </details>
           </div>

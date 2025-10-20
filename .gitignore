@@ -235,4 +235,5 @@ dist/
 log.html
 output.xml
 report.html
-
+config/credentials/
+configs/

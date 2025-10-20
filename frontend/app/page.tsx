@@ -53,8 +53,8 @@ export default function HomePage() {
     planPackageError
   })
   
-  // Use feature flag to control plan UI visibility
-  const shouldShowPlanUI = isPlanPackageEnabled
+  // Always show plan UI for now (remove feature flag dependency)
+  const shouldShowPlanUI = true
   
   // Fetch real-time stats from API
   const { data: statsData, isLoading } = useQuery({
@@ -63,7 +63,7 @@ export default function HomePage() {
       const response = await api.get('/bots/stats')
       return response.data
     },
-    refetchInterval: 30000, // Refresh every 30 seconds
+    refetchInterval: 120000, // Refresh every 120 seconds
   })
 
   // Format stats for display
@@ -376,6 +376,16 @@ export default function HomePage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-quantum-500/10">
+                {/* 1️⃣ Core Limits Section */}
+                <tr className="bg-dark-700/30">
+                  <td colSpan={4} className="py-3 px-6">
+                    <h3 className="text-lg font-bold text-cyber-400 flex items-center">
+                      <span className="mr-2">1️⃣</span>
+                      Core Limits
+                    </h3>
+                  </td>
+                </tr>
+
                 {/* Bot Limit */}
                 <tr className="hover:bg-dark-700/20 transition-colors">
                   <td className="py-4 px-6 text-gray-300 font-medium">Maximum Entities</td>
@@ -422,16 +432,30 @@ export default function HomePage() {
                 <tr className="hover:bg-dark-700/20 transition-colors">
                   <td className="py-4 px-6 text-gray-300 font-medium">
                     <div>Compute Quota</div>
-                    <div className="text-xs text-gray-500">API calls per bot per day</div>
+                    <div className="text-xs text-gray-500">Bot trades per month</div>
                   </td>
                   <td className="py-4 px-6 text-center bg-dark-700/20">
-                    <span className="text-gray-400">24 calls</span>
+                    <span className="text-yellow-400">∞ Unlimited (Low Quality)</span>
                   </td>
                   <td className="py-4 px-6 text-center bg-gradient-to-br from-purple-900/10 to-pink-900/10">
-                    <span className="text-purple-400 font-semibold">240 calls</span>
+                    <span className="text-purple-400 font-semibold">720 trades</span>
                   </td>
                   <td className="py-4 px-6 text-center bg-gradient-to-br from-yellow-900/10 to-orange-900/10">
-                    <span className="text-yellow-400 font-semibold">2,400 calls</span>
+                    <span className="text-yellow-400 font-semibold">7,200 trades</span>
+                  </td>
+                </tr>
+
+                {/* LLM Provider Quality */}
+                <tr className="hover:bg-dark-700/20 transition-colors">
+                  <td className="py-4 px-6 text-gray-300 font-medium">LLM Provider Quality</td>
+                  <td className="py-4 px-6 text-center bg-dark-700/20">
+                    <span className="text-yellow-400">Low Quality</span>
+                  </td>
+                  <td className="py-4 px-6 text-center bg-gradient-to-br from-purple-900/10 to-pink-900/10">
+                    <span className="text-purple-400 font-semibold">High Quality</span>
+                  </td>
+                  <td className="py-4 px-6 text-center bg-gradient-to-br from-yellow-900/10 to-orange-900/10">
+                    <span className="text-yellow-400 font-semibold">High Quality</span>
                   </td>
                 </tr>
 
@@ -449,17 +473,177 @@ export default function HomePage() {
                   </td>
                 </tr>
 
-                {/* Marketplace */}
+                {/* Strategies Template */}
                 <tr className="hover:bg-dark-700/20 transition-colors">
-                  <td className="py-4 px-6 text-gray-300 font-medium">Publish to Marketplace</td>
+                  <td className="py-4 px-6 text-gray-300 font-medium">Strategies Template Access</td>
                   <td className="py-4 px-6 text-center bg-dark-700/20">
-                    <span className="text-red-400">✗ Not Allowed</span>
+                    <span className="text-yellow-400">5 templates</span>
                   </td>
                   <td className="py-4 px-6 text-center bg-gradient-to-br from-purple-900/10 to-pink-900/10">
                     <span className="text-purple-400 font-semibold">✓ Full Access</span>
                   </td>
                   <td className="py-4 px-6 text-center bg-gradient-to-br from-yellow-900/10 to-orange-900/10">
                     <span className="text-yellow-400 font-semibold">✓ Full Access</span>
+                  </td>
+                </tr>
+
+                {/* 2️⃣ Trading & Performance Section */}
+                <tr className="bg-dark-700/30">
+                  <td colSpan={4} className="py-3 px-6">
+                    <h3 className="text-lg font-bold text-cyber-400 flex items-center">
+                      <span className="mr-2">2️⃣</span>
+                      Trading & Performance
+                    </h3>
+                  </td>
+                </tr>
+
+                {/* Trading Type */}
+                <tr className="hover:bg-dark-700/20 transition-colors">
+                  <td className="py-4 px-6 text-gray-300 font-medium">Trading Type</td>
+                  <td className="py-4 px-6 text-center bg-dark-700/20">
+                    <span className="text-green-400">✓ SPOT, FUTURES</span>
+                  </td>
+                  <td className="py-4 px-6 text-center bg-gradient-to-br from-purple-900/10 to-pink-900/10">
+                    <span className="text-purple-400 font-semibold">✓ SPOT, FUTURES</span>
+                  </td>
+                  <td className="py-4 px-6 text-center bg-gradient-to-br from-yellow-900/10 to-orange-900/10">
+                    <span className="text-yellow-400 font-semibold">✓ SPOT, FUTURES</span>
+                  </td>
+                </tr>
+
+                {/* Exchange Support */}
+                <tr className="hover:bg-dark-700/20 transition-colors">
+                  <td className="py-4 px-6 text-gray-300 font-medium">Exchange Support</td>
+                  <td className="py-4 px-6 text-center bg-dark-700/20">
+                    <span className="text-green-400">✓ Multiple</span>
+                  </td>
+                  <td className="py-4 px-6 text-center bg-gradient-to-br from-purple-900/10 to-pink-900/10">
+                    <span className="text-purple-400 font-semibold">✓ Multiple</span>
+                  </td>
+                  <td className="py-4 px-6 text-center bg-gradient-to-br from-yellow-900/10 to-orange-900/10">
+                    <span className="text-yellow-400 font-semibold">✓ Multiple</span>
+                  </td>
+                </tr>
+
+                {/* Risk Management */}
+                <tr className="hover:bg-dark-700/20 transition-colors">
+                  <td className="py-4 px-6 text-gray-300 font-medium">Risk Management</td>
+                  <td className="py-4 px-6 text-center bg-dark-700/20">
+                    <span className="text-green-400">✓</span>
+                  </td>
+                  <td className="py-4 px-6 text-center bg-gradient-to-br from-purple-900/10 to-pink-900/10">
+                    <span className="text-purple-400 font-semibold">✓</span>
+                  </td>
+                  <td className="py-4 px-6 text-center bg-gradient-to-br from-yellow-900/10 to-orange-900/10">
+                    <span className="text-yellow-400 font-semibold">✓</span>
+                  </td>
+                </tr>
+
+                {/* Capital Management */}
+                <tr className="hover:bg-dark-700/20 transition-colors">
+                  <td className="py-4 px-6 text-gray-300 font-medium">Capital Management</td>
+                  <td className="py-4 px-6 text-center bg-dark-700/20">
+                    <span className="text-green-400">✓</span>
+                  </td>
+                  <td className="py-4 px-6 text-center bg-gradient-to-br from-purple-900/10 to-pink-900/10">
+                    <span className="text-purple-400 font-semibold">✓</span>
+                  </td>
+                  <td className="py-4 px-6 text-center bg-gradient-to-br from-yellow-900/10 to-orange-900/10">
+                    <span className="text-yellow-400 font-semibold">✓</span>
+                  </td>
+                </tr>
+
+                {/* Strategies Library */}
+                <tr className="hover:bg-dark-700/20 transition-colors">
+                  <td className="py-4 px-6 text-gray-300 font-medium">Strategies Library</td>
+                  <td className="py-4 px-6 text-center bg-dark-700/20">
+                    <span className="text-green-400">✓</span>
+                  </td>
+                  <td className="py-4 px-6 text-center bg-gradient-to-br from-purple-900/10 to-pink-900/10">
+                    <span className="text-purple-400 font-semibold">✓</span>
+                  </td>
+                  <td className="py-4 px-6 text-center bg-gradient-to-br from-yellow-900/10 to-orange-900/10">
+                    <span className="text-yellow-400 font-semibold">✓</span>
+                  </td>
+                </tr>
+
+                {/* Bot Template */}
+                <tr className="hover:bg-dark-700/20 transition-colors">
+                  <td className="py-4 px-6 text-gray-300 font-medium">Bot Template</td>
+                  <td className="py-4 px-6 text-center bg-dark-700/20">
+                    <span className="text-green-400">✓</span>
+                  </td>
+                  <td className="py-4 px-6 text-center bg-gradient-to-br from-purple-900/10 to-pink-900/10">
+                    <span className="text-purple-400 font-semibold">✓</span>
+                  </td>
+                  <td className="py-4 px-6 text-center bg-gradient-to-br from-yellow-900/10 to-orange-900/10">
+                    <span className="text-yellow-400 font-semibold">✓</span>
+                  </td>
+                </tr>
+
+                {/* Execution Log Monitoring */}
+                <tr className="hover:bg-dark-700/20 transition-colors">
+                  <td className="py-4 px-6 text-gray-300 font-medium">Execution Log Monitoring</td>
+                  <td className="py-4 px-6 text-center bg-dark-700/20">
+                    <span className="text-green-400">✓</span>
+                  </td>
+                  <td className="py-4 px-6 text-center bg-gradient-to-br from-purple-900/10 to-pink-900/10">
+                    <span className="text-purple-400 font-semibold">✓</span>
+                  </td>
+                  <td className="py-4 px-6 text-center bg-gradient-to-br from-yellow-900/10 to-orange-900/10">
+                    <span className="text-yellow-400 font-semibold">✓</span>
+                  </td>
+                </tr>
+
+                {/* 3️⃣ Communication & Support Section */}
+                <tr className="bg-dark-700/30">
+                  <td colSpan={4} className="py-3 px-6">
+                    <h3 className="text-lg font-bold text-cyber-400 flex items-center">
+                      <span className="mr-2">3️⃣</span>
+                      Communication & Support
+                    </h3>
+                  </td>
+                </tr>
+
+                {/* Telegram/Discord Notification */}
+                <tr className="hover:bg-dark-700/20 transition-colors">
+                  <td className="py-4 px-6 text-gray-300 font-medium">Telegram/Discord Notification</td>
+                  <td className="py-4 px-6 text-center bg-dark-700/20">
+                    <span className="text-green-400">✓</span>
+                  </td>
+                  <td className="py-4 px-6 text-center bg-gradient-to-br from-purple-900/10 to-pink-900/10">
+                    <span className="text-purple-400 font-semibold">✓</span>
+                  </td>
+                  <td className="py-4 px-6 text-center bg-gradient-to-br from-yellow-900/10 to-orange-900/10">
+                    <span className="text-yellow-400 font-semibold">✓</span>
+                  </td>
+                </tr>
+
+                {/* Analytic Dashboard */}
+                <tr className="hover:bg-dark-700/20 transition-colors">
+                  <td className="py-4 px-6 text-gray-300 font-medium">Analytic Dashboard</td>
+                  <td className="py-4 px-6 text-center bg-dark-700/20">
+                    <span className="text-green-400">✓</span>
+                  </td>
+                  <td className="py-4 px-6 text-center bg-gradient-to-br from-purple-900/10 to-pink-900/10">
+                    <span className="text-purple-400 font-semibold">✓</span>
+                  </td>
+                  <td className="py-4 px-6 text-center bg-gradient-to-br from-yellow-900/10 to-orange-900/10">
+                    <span className="text-yellow-400 font-semibold">✓</span>
+                  </td>
+                </tr>
+
+                {/* Subscription Management */}
+                <tr className="hover:bg-dark-700/20 transition-colors">
+                  <td className="py-4 px-6 text-gray-300 font-medium">Subscription Management</td>
+                  <td className="py-4 px-6 text-center bg-dark-700/20">
+                    <span className="text-green-400">✓</span>
+                  </td>
+                  <td className="py-4 px-6 text-center bg-gradient-to-br from-purple-900/10 to-pink-900/10">
+                    <span className="text-purple-400 font-semibold">✓</span>
+                  </td>
+                  <td className="py-4 px-6 text-center bg-gradient-to-br from-yellow-900/10 to-orange-900/10">
+                    <span className="text-yellow-400 font-semibold">✓</span>
                   </td>
                 </tr>
 
@@ -474,6 +658,30 @@ export default function HomePage() {
                   </td>
                   <td className="py-4 px-6 text-center bg-gradient-to-br from-yellow-900/10 to-orange-900/10">
                     <span className="text-yellow-400 font-semibold">✓ 24/7 Dedicated</span>
+                  </td>
+                </tr>
+
+                {/* 4️⃣ Marketplace Access Section */}
+                <tr className="bg-dark-700/30">
+                  <td colSpan={4} className="py-3 px-6">
+                    <h3 className="text-lg font-bold text-cyber-400 flex items-center">
+                      <span className="mr-2">4️⃣</span>
+                      Marketplace Access
+                    </h3>
+                  </td>
+                </tr>
+
+                {/* Marketplace */}
+                <tr className="hover:bg-dark-700/20 transition-colors">
+                  <td className="py-4 px-6 text-gray-300 font-medium">Publish to Marketplace</td>
+                  <td className="py-4 px-6 text-center bg-dark-700/20">
+                    <span className="text-red-400">✗ Not Allowed</span>
+                  </td>
+                  <td className="py-4 px-6 text-center bg-gradient-to-br from-purple-900/10 to-pink-900/10">
+                    <span className="text-purple-400 font-semibold">✓ Full Access</span>
+                  </td>
+                  <td className="py-4 px-6 text-center bg-gradient-to-br from-yellow-900/10 to-orange-900/10">
+                    <span className="text-yellow-400 font-semibold">✓ Full Access</span>
                   </td>
                 </tr>
               </tbody>

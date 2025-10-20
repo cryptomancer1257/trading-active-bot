@@ -57,3 +57,4 @@ rpaframework==28.4.1
 robotframework-jsonlibrary==0.5
 
 google-cloud-storage==3.3.0
+Pillow==10.0.0

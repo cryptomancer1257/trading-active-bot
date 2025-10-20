@@ -25,7 +25,7 @@ PAYPAL_API_BASE = "https://api-m.sandbox.paypal.com" if PAYPAL_MODE == "sandbox"
 
 # Plan constants (based on pricing table)
 FREE_PLAN_CONFIG = {
-    "plan_name": "free",
+    "plan_name": models.PlanName.FREE,  # Use enum instead of string
     "price_usd": 0.00,
     "max_bots": 5,
     "max_subscriptions_per_bot": 5,
@@ -38,7 +38,7 @@ FREE_PLAN_CONFIG = {
 }
 
 PRO_PLAN_CONFIG = {
-    "plan_name": "pro",
+    "plan_name": models.PlanName.PRO,  # Use enum instead of string
     "price_usd": 60.00,  # $60/month (as per pricing table)
     "max_bots": 20,
     "max_subscriptions_per_bot": 20,
@@ -47,11 +47,11 @@ PRO_PLAN_CONFIG = {
     "subscription_expiry_days": 30,  # 30 days
     "compute_quota_per_day": 24,  # 24 API calls per bot/day (legacy)
     "llm_quota_monthly": 720,  # 24 * 30 days (new system)
-    "revenue_share_percentage": 90.00
+    "revenue_share_percentage": 100.00
 }
 
 ULTRA_PLAN_CONFIG = {
-    "plan_name": "ultra",
+    "plan_name": models.PlanName.ULTRA,  # Use enum instead of string
     "price_usd": 500.00,  # $500/month
     "max_bots": 999999,  # Unlimited
     "max_subscriptions_per_bot": 999999,  # Unlimited
@@ -60,7 +60,7 @@ ULTRA_PLAN_CONFIG = {
     "subscription_expiry_days": 30,  # 30 days
     "compute_quota_per_day": 240,  # 240 API calls per bot/day (legacy)
     "llm_quota_monthly": 7200,  # 240 * 30 days (new system)
-    "revenue_share_percentage": 90.00
+    "revenue_share_percentage": 100.00
 }
 
 

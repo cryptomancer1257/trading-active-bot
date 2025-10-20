@@ -64,7 +64,7 @@ export default function IntelligencePage() {
         quoteVolume: parseFloat(ticker.quoteVolume)
       }))
     },
-    refetchInterval: 10000, // Refresh every 10 seconds
+    refetchInterval: 120000, // Refresh every 120 seconds
   })
 
   if (authLoading) {

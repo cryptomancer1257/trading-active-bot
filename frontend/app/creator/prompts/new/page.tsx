@@ -7,7 +7,9 @@ import { useAuthGuard } from '@/hooks/useAuthGuard'
 import { UserRole } from '@/lib/types'
 import toast from 'react-hot-toast'
 import MarkdownEditor from '@/components/MarkdownEditor'
-import { DocumentTextIcon, SparklesIcon } from '@heroicons/react/24/outline'
+import { DocumentTextIcon, SparklesIcon, LockClosedIcon } from '@heroicons/react/24/outline'
+import { usePlan } from '@/hooks/usePlan'
+import UpgradeModal from '@/components/UpgradeModal'
 
 interface PromptFormData {
   name: string
@@ -37,8 +39,13 @@ export default function NewPromptPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showTemplates, setShowTemplates] = useState(false)
   const [activeCategory, setActiveCategory] = useState<string>('Trading')
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false)
 
   const createMutation = useCreatePrompt()
+  const { isFree, isPro } = usePlan()
+  
+  // Free plan can only access first 5 templates
+  const FREE_TEMPLATE_LIMIT = 5
   
   // Get trading strategy templates from library (17+ pre-seeded strategies)
   const { data: templatePrompts, isLoading: templatesLoading } = useTradingStrategyTemplates({
@@ -206,32 +213,76 @@ export default function NewPromptPage() {
                 </div>
               ) : filteredTemplates.length > 0 ? (
                 <>
-                  <div className="mb-2 text-sm text-gray-400">
-                    Showing {filteredTemplates.length} template{filteredTemplates.length !== 1 ? 's' : ''}
+                  <div className="mb-4 flex items-center justify-between">
+                    <div className="text-sm text-gray-400">
+                      Showing {filteredTemplates.length} template{filteredTemplates.length !== 1 ? 's' : ''}
+                      {isFree && filteredTemplates.length > FREE_TEMPLATE_LIMIT && (
+                        <span className="ml-2 text-yellow-400">
+                          (Free plan: {FREE_TEMPLATE_LIMIT} unlocked, {filteredTemplates.length - FREE_TEMPLATE_LIMIT} locked)
+                        </span>
+                      )}
+                    </div>
+                    {isFree && filteredTemplates.length > FREE_TEMPLATE_LIMIT && (
+                      <button
+                        type="button"
+                        onClick={() => setShowUpgradeModal(true)}
+                        className="text-xs px-3 py-1.5 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-semibold rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all"
+                      >
+                        Unlock All Templates
+                      </button>
+                    )}
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {filteredTemplates.map((template) => (
-                    <div key={template.id} className="bg-gray-700 p-4 rounded-lg border border-gray-600 hover:border-purple-500 transition-colors">
-                      <h4 className="text-white font-medium mb-2">{template.title}</h4>
-                      <p className="text-gray-300 text-sm mb-3 line-clamp-2">
-                        {template.best_for || template.category}
-                        {template.timeframe && ` | ${template.timeframe}`}
-                        {template.win_rate_estimate && ` | Win: ${template.win_rate_estimate}`}
-                      </p>
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs text-purple-400 bg-purple-500/20 px-2 py-1 rounded">
-                          {template.category}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => handleUseTemplate(template)}
-                          className="text-purple-400 hover:text-purple-300 text-sm font-medium"
+                    {filteredTemplates.map((template, index) => {
+                      const isLocked = isFree && index >= FREE_TEMPLATE_LIMIT
+                      
+                      return (
+                        <div 
+                          key={template.id} 
+                          className={`relative bg-gray-700 p-4 rounded-lg border transition-colors ${
+                            isLocked 
+                              ? 'border-gray-600 opacity-50' 
+                              : 'border-gray-600 hover:border-purple-500'
+                          }`}
                         >
-                          Use Template →
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                          {/* Locked Overlay */}
+                          {isLocked && (
+                            <div className="absolute inset-0 bg-dark-900/70 backdrop-blur-[2px] rounded-lg flex flex-col items-center justify-center z-10">
+                              <LockClosedIcon className="h-8 w-8 text-yellow-400 mb-2" />
+                              <p className="text-white font-semibold mb-2">Premium Template</p>
+                              <button
+                                type="button"
+                                onClick={() => setShowUpgradeModal(true)}
+                                className="px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white text-sm font-semibold rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all shadow-lg"
+                              >
+                                Unlock Now
+                              </button>
+                            </div>
+                          )}
+                          
+                          <h4 className="text-white font-medium mb-2">{template.title}</h4>
+                          <p className="text-gray-300 text-sm mb-3 line-clamp-2">
+                            {template.best_for || template.category}
+                            {template.timeframe && ` | ${template.timeframe}`}
+                            {template.win_rate_estimate && ` | Win: ${template.win_rate_estimate}`}
+                          </p>
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-purple-400 bg-purple-500/20 px-2 py-1 rounded">
+                              {template.category}
+                            </span>
+                            {!isLocked && (
+                              <button
+                                type="button"
+                                onClick={() => handleUseTemplate(template)}
+                                className="text-purple-400 hover:text-purple-300 text-sm font-medium"
+                              >
+                                Use Template →
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
                   </div>
                 </>
               ) : templatePrompts && templatePrompts.length > 0 ? (
@@ -373,6 +424,13 @@ export default function NewPromptPage() {
           </div>
         </form>
       </div>
+
+      {/* Upgrade Modal */}
+      <UpgradeModal 
+        isOpen={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+        targetPlan="pro"
+      />
     </div>
   )
 }
