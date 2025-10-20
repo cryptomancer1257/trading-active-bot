@@ -47,7 +47,7 @@ export default function QuotaUsageCard({ className = '', autoTriggerOnExhausted 
           <div className="flex items-center">
             <span className="text-2xl mr-3">🆓</span>
             <div>
-              <h3 className="text-white font-bold text-lg">LLM Quota</h3>
+              <h3 className="text-white font-bold text-lg">Trades Quota</h3>
               <p className="text-gray-400 text-sm">FREE Plan</p>
             </div>
           </div>
@@ -68,7 +68,7 @@ export default function QuotaUsageCard({ className = '', autoTriggerOnExhausted 
                 Free Plan Limitations
               </p>
               <ul className="text-yellow-200/80 text-xs space-y-1">
-                <li>• Unlimited LLM calls with <strong>low quality AI models</strong></li>
+                <li>• Unlimited trades with <strong>low quality AI models</strong></li>
                 <li>• Slower response times and lower analysis accuracy</li>
                 <li>• Testnet trading only</li>
               </ul>
@@ -79,7 +79,7 @@ export default function QuotaUsageCard({ className = '', autoTriggerOnExhausted 
         {/* Upgrade CTA */}
         <div className="space-y-3">
           <p className="text-gray-300 text-sm text-center mb-3">
-            Unlock faster speeds, advanced models (GPT-4o, Claude 3.7 Sonnet), and higher accuracy
+            Unlock faster trading speeds, advanced models (GPT-4o, Claude 3.7 Sonnet), and higher accuracy
           </p>
           
           <a
@@ -139,7 +139,7 @@ export default function QuotaUsageCard({ className = '', autoTriggerOnExhausted 
           <div className="flex items-center">
             <span className="text-2xl mr-3">🤖</span>
             <div>
-              <h3 className="text-white font-bold text-lg">LLM Quota</h3>
+              <h3 className="text-white font-bold text-lg">Trades Quota</h3>
               <p className="text-gray-400 text-sm">
                 {quotaUsage.plan_name.toUpperCase()} Plan
               </p>
@@ -217,7 +217,7 @@ export default function QuotaUsageCard({ className = '', autoTriggerOnExhausted 
           <div className="mt-4 p-3 bg-yellow-900/20 border border-yellow-500/30 rounded-lg">
             <div className="flex items-center text-yellow-300 text-sm">
               <span className="mr-2">⚠️</span>
-              <span>Low quota warning: {quotaUsage.remaining} calls remaining</span>
+              <span>Low quota warning: {quotaUsage.remaining} trades remaining</span>
             </div>
           </div>
         )}
@@ -227,7 +227,7 @@ export default function QuotaUsageCard({ className = '', autoTriggerOnExhausted 
           <div className="mt-4 p-3 bg-red-900/20 border border-red-500/30 rounded-lg">
             <div className="flex items-center text-red-300 text-sm">
               <span className="mr-2">🚨</span>
-              <span>Quota exhausted! Purchase more to continue using LLM features.</span>
+              <span>Quota exhausted! Purchase more to continue trading.</span>
             </div>
           </div>
         )}
