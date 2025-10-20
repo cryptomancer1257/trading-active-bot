@@ -1,18 +1,17 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 
 /**
- * PayPal cancel page
- * Access at: /quota-cancel?token=...
+ * PayPal cancel page content component
  */
-export default function QuotaCancelPage() {
+function QuotaCancelContent() {
   const searchParams = useSearchParams()
   const [token, setToken] = useState<string | null>(null)
 
   useEffect(() => {
-    const paymentToken = searchParams.get('token')
+    const paymentToken = searchParams?.get('token')
     setToken(paymentToken)
     
     console.log('❌ PayPal Cancel Page')
@@ -59,5 +58,21 @@ export default function QuotaCancelPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+/**
+ * PayPal cancel page
+ * Access at: /quota-cancel?token=...
+ */
+export default function QuotaCancelPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-dark-900 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-purple-600"></div>
+      </div>
+    }>
+      <QuotaCancelContent />
+    </Suspense>
   )
 }

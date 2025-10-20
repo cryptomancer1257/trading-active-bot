@@ -1,11 +1,14 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { Suspense, useEffect, useState, useRef } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { toast } from 'react-hot-toast'
 import Link from 'next/link'
 
-export default function VerifyEmailPage() {
+/**
+ * Email verification page content component
+ */
+function VerifyEmailContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading')
@@ -15,7 +18,7 @@ export default function VerifyEmailPage() {
   const hasVerifiedRef = useRef(false)
 
   useEffect(() => {
-    const token = searchParams.get('token')
+    const token = searchParams?.get('token')
     
     if (!token) {
       setStatus('error')
@@ -251,3 +254,18 @@ export default function VerifyEmailPage() {
   )
 }
 
+/**
+ * Email verification page
+ * Access at: /verify-email?token=...
+ */
+export default function VerifyEmailPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600"></div>
+      </div>
+    }>
+      <VerifyEmailContent />
+    </Suspense>
+  )
+}
