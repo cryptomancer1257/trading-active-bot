@@ -150,6 +150,7 @@ export default function ForgePage() {
   
   // Feature flags
   const canPublishToMarketplace = useFeatureFlag(FEATURE_FLAGS.MARKETPLACE_PUBLISH_BOT)
+  const isPlanPackageEnabled = true // Always enable plan package checks
   const [selectedTemplate, setSelectedTemplate] = useState('')
   const createBotMutation = useCreateBot()
   const [isSubmitting, setIsSubmitting] = useState(false)

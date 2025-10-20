@@ -67,14 +67,31 @@ export function useQuotaUsage() {
   return useQuery<QuotaUsage>({
     queryKey: ['quota-usage'],
     queryFn: async () => {
-      console.log('🔐 Fetching quota usage from API')
-      const response = await api.get('/quota-topups/usage')
-      console.log('📊 Quota usage response:', response.data)
-      return response.data
+      try {
+        console.log('🔐 Fetching quota usage from API')
+        const response = await api.get('/quota-topups/usage')
+        console.log('📊 Quota usage response:', response.data)
+        return response.data
+      } catch (error: any) {
+        console.error('❌ Failed to fetch quota usage:', error)
+        // Return default values if not authenticated or error
+        if (error.response?.status === 401 || error.response?.status === 404) {
+          return {
+            total: 0,
+            used: 0,
+            remaining: 0,
+            percentage: 0,
+            reset_at: null,
+            plan_name: 'FREE',
+            can_purchase: false
+          }
+        }
+        throw error
+      }
     },
     staleTime: 0, // Always fetch fresh data
     refetchInterval: 30000, // Refetch every 30 seconds
-    retry: 3, // Retry 3 times on failure
+    retry: false, // Don't retry on auth errors
   })
 }
 

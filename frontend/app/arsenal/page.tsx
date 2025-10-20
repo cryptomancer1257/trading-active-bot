@@ -294,7 +294,13 @@ export default function ArsenalPage() {
         </div>
         <div className="card-cyber p-6 text-center animate-fade-in" style={{ animationDelay: '0.3s' }}>
           <div className="text-3xl font-bold text-cyber-400 animate-neural-pulse">
-            {allFilteredBots.length > 0 ? Math.round(allFilteredBots.reduce((sum: number, bot: any) => sum + bot.winRate, 0) / allFilteredBots.length) : 0}%
+            {(() => {
+              // Only count bots with win_rate > 0
+              const botsWithWinRate = allFilteredBots.filter((bot: any) => bot.winRate > 0)
+              if (botsWithWinRate.length === 0) return 0
+              const avgWinRate = botsWithWinRate.reduce((sum: number, bot: any) => sum + bot.winRate, 0) / botsWithWinRate.length
+              return Math.round(avgWinRate)
+            })()}%
           </div>
           <div className="text-sm text-gray-400 mt-1">Avg Win Rate</div>
         </div>
