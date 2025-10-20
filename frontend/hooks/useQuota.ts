@@ -90,7 +90,7 @@ export function useQuotaUsage() {
       }
     },
     staleTime: 0, // Always fetch fresh data
-    refetchInterval: 30000, // Refetch every 30 seconds
+    refetchInterval: 120000, // Refetch every 120 seconds
     retry: false, // Don't retry on auth errors
   })
 }

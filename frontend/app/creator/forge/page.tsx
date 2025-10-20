@@ -24,14 +24,17 @@ import { useDefaultCredentials, useCredentials } from '@/hooks/useCredentials'
 import { usePlan } from '@/hooks/usePlan'
 import { useFeatureFlag, FEATURE_FLAGS } from '@/hooks/useFeatureFlag'
 import config from '@/lib/config'
+import { api } from '@/lib/api'
 import BotPromptsTab from '@/components/BotPromptsTab'
 import PreTrialValidationModal from '@/components/PreTrialValidationModal'
 import UpgradeModal from '@/components/UpgradeModal'
+import ImageUpload from '@/components/ImageUpload'
 
 // Bot creation schema
 const botSchema = z.object({
   name: z.string().min(1, 'Entity name is required'),
   description: z.string().min(10, 'Description must be at least 10 characters'),
+  image_url: z.string().optional(),
   bot_type: z.enum(['TECHNICAL', 'ML', 'DL', 'LLM', 'FUTURES', 'FUTURES_RPA', 'SPOT']),
   // bot_mode is auto-set based on template type
   exchange_type: z.enum(['BINANCE', 'KRAKEN', 'BYBIT', 'HUOBI', 'MULTI', 'OKX', 'BITGET']),
@@ -43,8 +46,6 @@ const botSchema = z.object({
   // Pricing
   price_per_month: z.number().min(0, 'Price must be 0 or higher').default(0),
   is_free: z.boolean().default(false),
-  // Image upload
-  image_url: z.string().url().optional().or(z.literal('')),
   // Advanced configuration
   leverage: z.number().min(1).max(125).default(10),
   risk_percentage: z.number().min(0.1).max(10).default(2),
@@ -304,47 +305,70 @@ export default function ForgePage() {
     }
   }, [defaultCredentials, step, exchangeType, credentialType, networkType])
 
-  // Handle image file selection
-  const handleImageSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle image file selection and upload to GCS
+  const handleImageSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) { // 5MB limit
-        toast.error('Image must be smaller than 5MB')
-        return
+    if (!file) return
+
+    // Validate file
+    if (file.size > 5 * 1024 * 1024) { // 5MB limit
+      toast.error('Image must be smaller than 5MB')
+      return
+    }
+    
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please select an image file')
+      return
+    }
+
+    setSelectedImage(file)
+    
+    // Create preview
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      setImagePreview(e.target?.result as string)
+    }
+    reader.readAsDataURL(file)
+
+    // Upload to GCS
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+
+      const response = await api.post('/bots/upload-image', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      })
+
+      if (response.data.success) {
+        setValue('image_url', response.data.url)
+        toast.success('Image uploaded successfully!')
+      } else {
+        toast.error('Upload failed')
       }
-      
-      if (!file.type.startsWith('image/')) {
-        toast.error('Please select an image file')
-        return
-      }
-      
-      setSelectedImage(file)
-      
-      // Create preview
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        setImagePreview(e.target?.result as string)
-      }
-      reader.readAsDataURL(file)
+    } catch (err: any) {
+      console.error('Upload error:', err)
+      toast.error(err.response?.data?.detail || 'Upload failed')
     }
   }
 
   // Upload image to server
   const uploadImage = async (file: File): Promise<string> => {
     const formData = new FormData()
-    formData.append('image', file)
+    formData.append('file', file)
     
-    const response = await fetch('/api/upload/image', {
-      method: 'POST',
-      body: formData,
+    const response = await api.post('/bots/upload-image', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
     })
     
-    if (!response.ok) {
+    if (!response.data.success) {
       throw new Error('Failed to upload image')
     }
     
-    const data = await response.json()
-    return data.url
+    return response.data.url
   }
 
   // Clear balance data when network changes (but keep credentials loading)

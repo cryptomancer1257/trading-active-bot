@@ -64,13 +64,13 @@ export default function ActivityFeed() {
     fetchActivityData()
   }, [])
 
-  // Auto-refresh every 30 seconds
+  // Auto-refresh every 120 seconds
   useEffect(() => {
     if (!autoRefresh) return
 
     const interval = setInterval(() => {
       fetchActivityData(true)
-    }, 30000)
+    }, 120000)
 
     return () => clearInterval(interval)
   }, [autoRefresh])

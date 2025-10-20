@@ -161,8 +161,18 @@ export default function MyEntitiesPage() {
               <div key={bot.id} className="bg-gray-800 rounded-lg shadow-md border border-gray-700 p-6 hover:shadow-lg transition-shadow">
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center">
-                    <div className="w-12 h-12 bg-purple-600 rounded-lg flex items-center justify-center">
-                      <CpuChipIcon className="h-6 w-6 text-white" />
+                    <div className="w-12 h-12 rounded-lg flex items-center justify-center overflow-hidden">
+                      {bot.image_url ? (
+                        <img 
+                          src={bot.image_url} 
+                          alt={bot.name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full bg-purple-600 flex items-center justify-center">
+                          <CpuChipIcon className="h-6 w-6 text-white" />
+                        </div>
+                      )}
                     </div>
                     <div className="ml-3">
                       <h3 className="text-lg font-semibold text-white">{bot.name}</h3>

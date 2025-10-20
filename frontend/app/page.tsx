@@ -63,7 +63,7 @@ export default function HomePage() {
       const response = await api.get('/bots/stats')
       return response.data
     },
-    refetchInterval: 30000, // Refresh every 30 seconds
+    refetchInterval: 120000, // Refresh every 120 seconds
   })
 
   // Format stats for display

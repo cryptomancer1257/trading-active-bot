@@ -403,6 +403,7 @@ class BotPublic(BaseModel):
     default_config: Optional[Dict[str, Any]] = None
     created_at: datetime
     status: Optional[str] = None
+    image_url: Optional[str] = None
     
     # Performance metrics (calculated dynamically)
     total_pnl: Optional[float] = 0.0

@@ -184,8 +184,8 @@ export default function BotDetailPage() {
   useEffect(() => {
     if (bot?.id) {
       fetchBotLogs()
-      // Auto-refresh logs every 5 seconds
-      const interval = setInterval(fetchBotLogs, 5000)
+      // Auto-refresh logs every 120 seconds
+      const interval = setInterval(fetchBotLogs, 120000)
       return () => clearInterval(interval)
     }
   }, [bot?.id, fetchBotLogs])
@@ -978,7 +978,22 @@ export default function BotDetailPage() {
             <ArrowLeftIcon className="h-5 w-5 mr-2" />
             Back to My Entities
           </Link>
-          <h1 className="text-3xl font-extrabold text-white">{bot.name}</h1>
+          <div className="flex items-center space-x-4">
+            <div className="w-16 h-16 rounded-lg overflow-hidden shadow-lg">
+              {bot.image_url ? (
+                <img 
+                  src={bot.image_url} 
+                  alt={bot.name}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div className="w-full h-full bg-gradient-to-r from-purple-600 to-purple-700 flex items-center justify-center">
+                  <Cog6ToothIcon className="h-8 w-8 text-white" />
+                </div>
+              )}
+            </div>
+            <h1 className="text-3xl font-extrabold text-white">{bot.name}</h1>
+          </div>
           <div className="w-10"></div> {/* Spacer */}
         </div>
 

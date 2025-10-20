@@ -323,8 +323,18 @@ export default function ArsenalPage() {
             {/* Header */}
             <div className="flex items-start justify-between mb-4">
               <div className="flex items-center space-x-3">
-                <div className={`p-3 rounded-lg bg-gradient-to-r ${bot.gradient} shadow-lg`}>
-                  <CpuChipIcon className="h-6 w-6 text-white" />
+                <div className="w-12 h-12 rounded-lg overflow-hidden shadow-lg">
+                  {bot.image_url ? (
+                    <img 
+                      src={bot.image_url} 
+                      alt={bot.name}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className={`w-full h-full bg-gradient-to-r ${bot.gradient} flex items-center justify-center`}>
+                      <CpuChipIcon className="h-6 w-6 text-white" />
+                    </div>
+                  )}
                 </div>
                 <div>
                   <h3 className="text-xl font-bold text-gray-200">{bot.name}</h3>

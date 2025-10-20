@@ -11,6 +11,7 @@ import toast from 'react-hot-toast'
 import { useGetBot, useUpdateBot } from '@/hooks/useBots'
 import { usePlan } from '@/hooks/usePlan'
 import { useFeatureFlag, FEATURE_FLAGS } from '@/hooks/useFeatureFlag'
+import { api } from '@/lib/api'
 import { 
   CpuChipIcon, 
   ArrowLeftIcon,
@@ -34,7 +35,7 @@ const botEditSchema = z.object({
   price_per_month: z.number().min(0, 'Price must be 0 or higher').default(0),
   is_free: z.boolean().default(false),
   // Image upload
-  image_url: z.string().url().optional().or(z.literal('')),
+  image_url: z.string().optional().nullable(),
   // Advanced configuration
   leverage: z.number().min(1).max(125).default(10),
   risk_percentage: z.number().min(0.1).max(10).default(2),
@@ -122,10 +123,12 @@ export default function EditBotPage() {
       setValue('timeframes', timeframesArray)
       console.log('🔄 Setting timeframes to:', timeframesArray)
       
-      // Pricing fields
-      console.log('🔄 Setting price_per_month from bot:', (bot as any).price_per_month)
+      // Pricing fields - Ensure price_per_month is a number
+      const priceValue = (bot as any).price_per_month
+      const priceNumber = typeof priceValue === 'string' ? parseFloat(priceValue) : (priceValue || 0)
+      console.log('🔄 Setting price_per_month from bot:', priceValue, '→', priceNumber)
       console.log('🔄 Setting is_free from bot:', (bot as any).is_free)
-      setValue('price_per_month', (bot as any).price_per_month || 0)
+      setValue('price_per_month', priceNumber)
       setValue('is_free', (bot as any).is_free || false)
       setValue('image_url', (bot as any).image_url || '')
       
@@ -211,21 +214,30 @@ export default function EditBotPage() {
 
     setIsUploadingImage(true)
     try {
+      console.log('📤 Uploading image to GCS...', selectedImage.name)
       const formData = new FormData()
-      formData.append('image', selectedImage)
+      formData.append('file', selectedImage)
 
-      const response = await fetch('/api/upload/image', {
-        method: 'POST',
-        body: formData,
+      const response = await api.post('/bots/upload-image', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
       })
 
-      if (!response.ok) throw new Error('Upload failed')
+      console.log('📥 Upload response:', response.data)
 
-      const data = await response.json()
-      toast.success('✅ Avatar uploaded successfully!')
-      return data.url
+      if (response.data && response.data.success && response.data.url) {
+        console.log('✅ Avatar uploaded to GCS:', response.data.url)
+        toast.success('✅ Avatar uploaded successfully!')
+        return response.data.url
+      } else {
+        console.error('❌ Invalid upload response:', response.data)
+        throw new Error('Upload failed - invalid response')
+      }
     } catch (error: any) {
-      toast.error(`❌ Upload failed: ${error.message}`)
+      console.error('❌ Upload error:', error)
+      console.error('❌ Error response:', error.response?.data)
+      toast.error(`❌ Upload failed: ${error.response?.data?.detail || error.message}`)
       return null
     } finally {
       setIsUploadingImage(false)
@@ -274,6 +286,8 @@ export default function EditBotPage() {
     console.log('🔄 Form submitted with data:', data)
     console.log('🔄 PRICING DEBUG - price_per_month:', data.price_per_month)
     console.log('🔄 PRICING DEBUG - is_free:', data.is_free)
+    console.log('🔄 IMAGE DEBUG - image_url:', data.image_url)
+    console.log('🔄 IMAGE DEBUG - selectedImage:', selectedImage?.name)
     console.log('🔄 LLM DEBUG - llm_provider:', data.llm_provider)
     console.log('🔄 LLM DEBUG - llm_model:', data.llm_model)
     console.log('🔄 Bot ID:', botId)
@@ -410,7 +424,10 @@ export default function EditBotPage() {
               </div>
               <div className="flex-1">
                 <h3 className="text-green-400 font-medium">Entity Updated Successfully!</h3>
-                <p className="text-green-300 text-sm">Your changes have been saved. You can now re-publish to update the marketplace listing.</p>
+                <p className="text-green-300 text-sm">
+                  Your changes have been saved.
+                  {canRePublishToMarketplace && ' You can now re-publish to update the marketplace listing.'}
+                </p>
               </div>
               <button
                 onClick={() => setJustUpdated(false)}
@@ -523,10 +540,9 @@ export default function EditBotPage() {
                 </div>
               </div>
 
-              {/* Marketplace Pricing - Feature Flag Controlled */}
-              {canRePublishToMarketplace && (
-                <div>
-                  <label className="form-label">Marketplace Pricing</label>
+              {/* Marketplace Pricing - Always show, feature flag only controls publish button */}
+              <div>
+                <label className="form-label">Marketplace Pricing</label>
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-3">
@@ -592,8 +608,7 @@ export default function EditBotPage() {
                       </div>
                     </div>
                   </div>
-                </div>
-              )}
+              </div>
             </div>
           </div>
 
@@ -953,29 +968,31 @@ export default function EditBotPage() {
               Cancel
             </Link>
             
-            {/* Re-publish Button */}
-            <button
-              type="button"
-              onClick={handleRepublishBot}
-              disabled={isRepublishing}
-              className={`btn px-6 py-3 disabled:opacity-50 transition-all duration-300 ${
-                justUpdated 
-                  ? 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white animate-pulse shadow-lg shadow-green-500/25' 
-                  : 'bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white'
-              }`}
-            >
-              {isRepublishing ? (
-                <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                  Publishing...
-                </>
-              ) : (
-                <>
-                  <LinkIcon className="h-4 w-4 mr-2" />
-                  {justUpdated ? '✨ Ready to Re-publish!' : '🚀 Re-publish to Marketplace'}
-                </>
-              )}
-            </button>
+            {/* Re-publish Button - Feature Flag Controlled */}
+            {canRePublishToMarketplace && (
+              <button
+                type="button"
+                onClick={handleRepublishBot}
+                disabled={isRepublishing}
+                className={`btn px-6 py-3 disabled:opacity-50 transition-all duration-300 ${
+                  justUpdated 
+                    ? 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white animate-pulse shadow-lg shadow-green-500/25' 
+                    : 'bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white'
+                }`}
+              >
+                {isRepublishing ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Publishing...
+                  </>
+                ) : (
+                  <>
+                    <LinkIcon className="h-4 w-4 mr-2" />
+                    {justUpdated ? '✨ Ready to Re-publish!' : '🚀 Re-publish to Marketplace'}
+                  </>
+                )}
+              </button>
+            )}
             
             <button
               type="submit"
