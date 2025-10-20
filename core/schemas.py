@@ -1577,3 +1577,42 @@ class PlanHistoryInDB(BaseModel):
     
     class Config:
         from_attributes = True
+
+
+# ============================================================================
+# Feature Flags Schemas
+# ============================================================================
+
+class FeatureFlagBase(BaseModel):
+    flag_key: str = Field(..., min_length=1, max_length=100)
+    flag_name: str = Field(..., min_length=1, max_length=255)
+    description: Optional[str] = None
+    is_enabled: bool = False
+
+
+class FeatureFlagCreate(FeatureFlagBase):
+    pass
+
+
+class FeatureFlagUpdate(BaseModel):
+    flag_name: Optional[str] = Field(None, min_length=1, max_length=255)
+    description: Optional[str] = None
+    is_enabled: Optional[bool] = None
+
+
+class FeatureFlagInDB(FeatureFlagBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+class FeatureFlagResponse(FeatureFlagInDB):
+    pass
+
+
+class FeatureFlagsListResponse(BaseModel):
+    flags: List[FeatureFlagInDB]
+    total: int
