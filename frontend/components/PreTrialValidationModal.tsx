@@ -342,7 +342,7 @@ export default function PreTrialValidationModal({
             }`}
           >
             {validation?.hasExchangeCredentials && validation?.hasPrompt
-              ? 'Start Free Trial' 
+              ? 'Start' 
               : 'Configure Missing Items'
             }
           </button>
