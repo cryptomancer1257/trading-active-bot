@@ -140,11 +140,17 @@ def get_quota_usage(
             models.UserPlan.status == models.PlanStatus.ACTIVE
         ).first()
         
+        # If no active plan, return default FREE plan values
         if not user_plan:
-            raise HTTPException(
-                status_code=404, 
-                detail="No active plan found"
-            )
+            return {
+                "total": 0,
+                "used": 0,
+                "remaining": 0,
+                "percentage": 0,
+                "reset_at": None,
+                "plan_name": "free",
+                "can_purchase": False
+            }
         
         # Calculate remaining quota
         remaining = user_plan.llm_quota_total - user_plan.llm_quota_used

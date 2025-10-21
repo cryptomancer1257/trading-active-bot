@@ -29,7 +29,7 @@ FREE_PLAN_CONFIG = {
     "price_usd": 0.00,
     "max_bots": 5,
     "max_subscriptions_per_bot": 5,
-    "allowed_environment": "testnet",
+    "allowed_environment": models.NetworkType.TESTNET,  # Use enum instead of string
     "publish_marketplace": False,
     "subscription_expiry_days": 3,  # 3-day trial
     "compute_quota_per_day": 24,  # 24 API calls per bot/day (legacy)
@@ -42,7 +42,7 @@ PRO_PLAN_CONFIG = {
     "price_usd": 60.00,  # $60/month (as per pricing table)
     "max_bots": 20,
     "max_subscriptions_per_bot": 20,
-    "allowed_environment": "mainnet",
+    "allowed_environment": models.NetworkType.MAINNET,  # Use enum instead of string
     "publish_marketplace": True,
     "subscription_expiry_days": 30,  # 30 days
     "compute_quota_per_day": 24,  # 24 API calls per bot/day (legacy)
@@ -55,7 +55,7 @@ ULTRA_PLAN_CONFIG = {
     "price_usd": 500.00,  # $500/month
     "max_bots": 999999,  # Unlimited
     "max_subscriptions_per_bot": 999999,  # Unlimited
-    "allowed_environment": "mainnet",
+    "allowed_environment": models.NetworkType.MAINNET,  # Use enum instead of string
     "publish_marketplace": True,
     "subscription_expiry_days": 30,  # 30 days
     "compute_quota_per_day": 240,  # 240 API calls per bot/day (legacy)

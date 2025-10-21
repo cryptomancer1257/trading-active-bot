@@ -130,9 +130,9 @@ def get_credentials(
 
 @router.get("/default/{exchange_type}/{credential_type}/{network_type}", response_model=Optional[schemas.DeveloperExchangeCredentialsInDB])
 def get_default_credentials(
-    exchange_type: models.ExchangeType,
-    credential_type: models.CredentialType,
-    network_type: models.NetworkType,
+    exchange_type: str,  # Changed from enum to string
+    credential_type: str,  # Changed from enum to string
+    network_type: str,  # Changed from enum to string
     db: Session = Depends(get_db),
     current_user: models.User = Depends(security.get_current_active_user)
 ):
@@ -145,12 +145,31 @@ def get_default_credentials(
             detail="Only developers and admins can manage exchange credentials"
         )
     
+    # Convert strings to enums (case-insensitive)
+    try:
+        exchange_enum = models.ExchangeType[exchange_type.upper()]
+        credential_enum = models.CredentialType[credential_type.upper()]
+        # NetworkType values are lowercase, so try by name first
+        try:
+            network_enum = models.NetworkType[network_type.upper()]
+        except KeyError:
+            # If that fails, try finding by value (for backward compatibility)
+            network_enum = next(
+                (nt for nt in models.NetworkType if nt.value.upper() == network_type.upper()),
+                models.NetworkType.TESTNET  # Default to testnet
+            )
+    except (KeyError, StopIteration):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid exchange_type, credential_type, or network_type"
+        )
+    
     credentials = crud.get_default_developer_credentials(
         db=db,
         user_id=current_user.id,
-        exchange_type=exchange_type,
-        credential_type=credential_type,
-        network_type=network_type
+        exchange_type=exchange_enum,
+        credential_type=credential_enum,
+        network_type=network_enum
     )
     
     if not credentials:

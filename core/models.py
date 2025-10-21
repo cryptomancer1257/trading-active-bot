@@ -41,8 +41,8 @@ class TradeStatus(enum.Enum):
     CLOSED = "CLOSED"
 
 class NetworkType(enum.Enum):
-    TESTNET = "TESTNET"
-    MAINNET = "MAINNET"
+    TESTNET = "testnet"  # lowercase to match database enum
+    MAINNET = "mainnet"  # lowercase to match database enum
 
 class TradeMode(enum.Enum):
     SPOT = "SPOT"
