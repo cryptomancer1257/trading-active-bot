@@ -1,9 +1,8 @@
 import axios from 'axios'
-
-const API_BASE_URL = 'http://localhost:8000'
+import { config } from './config'
 
 export const api = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: config.apiUrl,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -11,7 +10,7 @@ export const api = axios.create({
 
 // Add token to requests if available
 api.interceptors.request.use((config) => {
-  console.log(`🚀 API Request: ${config.method?.toUpperCase()} ${API_BASE_URL}${config.url}`)
+  console.log(`🚀 API Request: ${config.method?.toUpperCase()} ${api.defaults.baseURL}${config.url}`)
   const token = localStorage.getItem('access_token')
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
@@ -43,8 +42,8 @@ api.interceptors.response.use(
   },
   (error) => {
     if (error.code === 'ERR_NETWORK') {
-      console.error('🔥 Network Error: Backend server not reachable at', API_BASE_URL)
-      console.error('💡 Make sure backend is running on port 8000')
+      console.error('🔥 Network Error: Backend server not reachable at', api.defaults.baseURL)
+      console.error('💡 Make sure backend is running')
     } else {
       console.error('❌ API Error:', error.config?.url, error.response?.status, error.response?.data)
     }

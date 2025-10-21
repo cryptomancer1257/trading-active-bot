@@ -67,11 +67,20 @@ async def lifespan(app: FastAPI):
         await app.shutdown()
 
 # Create FastAPI app
+import os
+
+# Check if we're in production
+is_production = os.getenv("ENVIRONMENT", "").lower() in ["production", "prod"]
+
 app = FastAPI(
     lifespan=lifespan,
     title="Trading Bot Marketplace",
     description="A comprehensive marketplace for trading bot rental",
-    version="2.0.0"
+    version="2.0.0",
+    # Disable Swagger/OpenAPI docs in production for security
+    docs_url=None if is_production else "/docs",
+    redoc_url=None if is_production else "/redoc",
+    openapi_url=None if is_production else "/openapi.json"
 )
 
 # Add CORS middleware

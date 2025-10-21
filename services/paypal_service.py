@@ -502,8 +502,8 @@ class PayPalService:
                 "payer_name": db_payment.payer_name
             }
             
-            # Call Studio API like ICP payment does (localhost:8000)
-            studio_api_base = os.getenv('STUDIO_API_BASE', 'http://localhost:8000')
+            # Call Studio API like ICP payment does
+            studio_api_base = os.getenv('STUDIO_API_BASE', os.getenv('API_BASE_URL', 'https://quantumforge.cryptomancer.ai'))
             
             # Use bot's API key instead of STUDIO_API_KEY
             headers = {

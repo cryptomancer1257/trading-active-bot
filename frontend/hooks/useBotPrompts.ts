@@ -44,17 +44,39 @@ export interface UpdateBotPromptRequest {
 }
 
 // API functions
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || (typeof window !== 'undefined' ? window.location.origin : 'https://quantumforge.cryptomancer.ai')
 
 const fetchBotPrompts = async (botId: number): Promise<BotPrompt[]> => {
+  console.log(`🔍 Fetching bot prompts for bot ${botId} from ${API_BASE}/bot-prompts/bots/${botId}/prompts`)
+  
+  const token = localStorage.getItem('access_token')
+  if (!token) {
+    console.error('❌ No access token found')
+    throw new Error('No access token found')
+  }
+  
   const response = await fetch(`${API_BASE}/bot-prompts/bots/${botId}/prompts`, {
     headers: {
-      'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+      'Authorization': `Bearer ${token}`,
     },
   })
+  
   if (!response.ok) {
-    throw new Error('Failed to fetch bot prompts')
+    const errorText = await response.text()
+    console.error(`❌ Failed to fetch bot prompts: ${response.status} ${response.statusText}`)
+    console.error(`❌ Error details:`, errorText)
+    
+    if (response.status === 404) {
+      throw new Error(`Bot ${botId} not found or you don't have access to it`)
+    } else if (response.status === 403) {
+      throw new Error(`You don't have permission to access bot ${botId}`)
+    } else if (response.status === 401) {
+      throw new Error('Authentication required - please login again')
+    }
+    
+    throw new Error(`Failed to fetch bot prompts: ${response.status} ${response.statusText}`)
   }
+  
   return response.json()
 }
 

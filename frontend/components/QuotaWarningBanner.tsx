@@ -5,6 +5,10 @@ import { useState } from 'react'
 import QuotaTopUpModal from './QuotaTopUpModal'
 
 export default function QuotaWarningBanner() {
+  // TEMPORARY: Hide quota warning banner
+  return null
+  
+  /*
   const [showTopUpModal, setShowTopUpModal] = useState(false)
   const [isDismissed, setIsDismissed] = useState(false)
   const { data: quotaUsage } = useQuotaUsage()
@@ -22,34 +26,33 @@ export default function QuotaWarningBanner() {
 
   return (
     <>
-      {/* Exhausted Banner - Red */}
       {isExhausted && (
         <div className="bg-gradient-to-r from-red-900/90 to-orange-900/90 border-b border-red-500/50 backdrop-blur-sm">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <span className="text-2xl animate-pulse">🚨</span>
-                <div>
-                  <p className="text-white font-bold text-sm">
-                    LLM Quota Exhausted!
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div className="flex items-center gap-3 flex-1 min-w-0">
+                <div className="flex-shrink-0 text-2xl">
+                  🚨
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-white mb-0.5">
+                    LLM Quota Exhausted
                   </p>
-                  <p className="text-red-200 text-xs">
-                    Your bots cannot use LLM features. Purchase more quota to continue.
+                  <p className="text-xs text-red-200">
+                    You've used {quotaUsage.used} of {quotaUsage.total} daily quota. Top up now to continue using AI features.
                   </p>
                 </div>
               </div>
-              <div className="flex items-center space-x-2">
-                {quotaUsage.can_purchase && (
-                  <button
-                    onClick={() => setShowTopUpModal(true)}
-                    className="px-4 py-2 bg-white text-red-900 rounded-lg font-semibold text-sm hover:bg-gray-100 transition-colors"
-                  >
-                    Buy Quota Now
-                  </button>
-                )}
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <button
+                  onClick={() => setShowTopUpModal(true)}
+                  className="px-4 py-2 bg-white text-red-900 rounded-lg text-sm font-medium hover:bg-red-50 transition-colors"
+                >
+                  ⚡ Top Up Now
+                </button>
                 <button
                   onClick={() => setIsDismissed(true)}
-                  className="p-2 text-white hover:text-gray-200 transition-colors"
+                  className="p-2 text-red-200 hover:text-white hover:bg-red-800/50 rounded-lg transition-colors"
                   aria-label="Dismiss"
                 >
                   ✕
@@ -60,34 +63,30 @@ export default function QuotaWarningBanner() {
         </div>
       )}
 
-      {/* Critical Banner - Orange */}
       {isCritical && (
-        <div className="bg-gradient-to-r from-orange-900/80 to-yellow-900/80 border-b border-orange-500/50 backdrop-blur-sm">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <span className="text-xl">⚠️</span>
-                <div>
-                  <p className="text-white font-bold text-sm">
-                    Critical: Only {quotaUsage.remaining} LLM calls remaining
-                  </p>
-                  <p className="text-orange-200 text-xs">
-                    Purchase additional quota to avoid service interruption.
+        <div className="bg-gradient-to-r from-orange-900/90 to-yellow-900/90 border-b border-orange-500/50 backdrop-blur-sm">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div className="flex items-center gap-3 flex-1 min-w-0">
+                <div className="flex-shrink-0 text-xl">
+                  ⚠️
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-white">
+                    Critical: Only {quotaUsage.remaining} LLM calls remaining today
                   </p>
                 </div>
               </div>
-              <div className="flex items-center space-x-2">
-                {quotaUsage.can_purchase && (
-                  <button
-                    onClick={() => setShowTopUpModal(true)}
-                    className="px-4 py-2 bg-white text-orange-900 rounded-lg font-semibold text-sm hover:bg-gray-100 transition-colors"
-                  >
-                    Buy More Quota
-                  </button>
-                )}
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <button
+                  onClick={() => setShowTopUpModal(true)}
+                  className="px-3 py-1.5 bg-white text-orange-900 rounded-lg text-xs font-medium hover:bg-orange-50 transition-colors"
+                >
+                  Top Up
+                </button>
                 <button
                   onClick={() => setIsDismissed(true)}
-                  className="p-2 text-white hover:text-gray-200 transition-colors"
+                  className="p-1.5 text-orange-200 hover:text-white hover:bg-orange-800/50 rounded-lg transition-colors"
                   aria-label="Dismiss"
                 >
                   ✕
@@ -98,36 +97,33 @@ export default function QuotaWarningBanner() {
         </div>
       )}
 
-      {/* Low Quota Banner - Yellow */}
       {isLow && (
-        <div className="bg-gradient-to-r from-yellow-900/70 to-yellow-800/70 border-b border-yellow-500/50 backdrop-blur-sm">
+        <div className="bg-gradient-to-r from-yellow-900/90 to-amber-900/90 border-b border-yellow-500/50 backdrop-blur-sm">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <span className="text-lg">💡</span>
-                <div>
-                  <p className="text-white font-semibold text-sm">
-                    Low LLM Quota: {quotaUsage.remaining} calls remaining
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div className="flex items-center gap-3 flex-1 min-w-0">
+                <div className="flex-shrink-0 text-lg">
+                  💡
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-white">
+                    Low quota: {quotaUsage.remaining} of {quotaUsage.total} LLM calls remaining today
+                    <span className="ml-1 text-yellow-200">
+                      ({Math.round((quotaUsage.remaining / quotaUsage.total) * 100)}% left)
+                    </span>
                   </p>
-                  {quotaUsage.reset_at && (
-                    <p className="text-yellow-200 text-xs">
-                      Resets on {new Date(quotaUsage.reset_at as string).toLocaleDateString()}
-                    </p>
-                  )}
                 </div>
               </div>
-              <div className="flex items-center space-x-2">
-                {quotaUsage.can_purchase && (
-                  <button
-                    onClick={() => setShowTopUpModal(true)}
-                    className="px-3 py-1.5 bg-white text-yellow-900 rounded-lg font-semibold text-xs hover:bg-gray-100 transition-colors"
-                  >
-                    Buy Quota
-                  </button>
-                )}
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <button
+                  onClick={() => setShowTopUpModal(true)}
+                  className="px-3 py-1 bg-white text-yellow-900 rounded text-xs font-medium hover:bg-yellow-50 transition-colors"
+                >
+                  Top Up
+                </button>
                 <button
                   onClick={() => setIsDismissed(true)}
-                  className="p-1 text-white hover:text-gray-200 transition-colors text-sm"
+                  className="p-1 text-yellow-200 hover:text-white hover:bg-yellow-800/50 rounded transition-colors"
                   aria-label="Dismiss"
                 >
                   ✕
@@ -138,12 +134,11 @@ export default function QuotaWarningBanner() {
         </div>
       )}
 
-      {/* Top-up Modal */}
       <QuotaTopUpModal 
         isOpen={showTopUpModal}
         onClose={() => setShowTopUpModal(false)}
       />
     </>
   )
+  */
 }
-

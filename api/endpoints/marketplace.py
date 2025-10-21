@@ -767,7 +767,7 @@ def bot_by_token(token: str, db: Session = Depends(get_db)):
         tags = []
     timeframes = _extract_timeframes(bot)
 
-    base_url = os.getenv('STUDIO_BASE_URL', 'http://localhost:8000')
+    base_url = os.getenv('STUDIO_BASE_URL', os.getenv('API_BASE_URL', 'https://quantumforge.cryptomancer.ai'))
     api_base = base_url
     api_endpoints = {
         'pause': '/marketplace/subscription/pause',
