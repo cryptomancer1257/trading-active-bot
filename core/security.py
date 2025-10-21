@@ -20,7 +20,8 @@ from core.database import get_db
 # Lấy các biến từ .env hoặc dùng giá trị mặc định
 SECRET_KEY = os.getenv("SECRET_KEY", "a_super_secret_key_for_dev")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 # 24 giờ
+ACCESS_TOKEN_EXPIRE_MINUTES = 60  # 1 giờ - Short-lived access token
+REFRESH_TOKEN_EXPIRE_DAYS = 30  # 30 ngày - Long-lived refresh token
 
 # Cấu hình mã hóa mật khẩu
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -43,9 +44,77 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
         expire = datetime.utcnow() + expires_delta
     else:
         expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
+    to_encode.update({"exp": expire, "type": "access"})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
+
+def create_refresh_token(user_id: int, db: Session, user_agent: str = None, ip_address: str = None) -> str:
+    """Tạo refresh token và lưu vào database."""
+    import secrets
+    
+    # Generate random refresh token
+    token = secrets.token_urlsafe(64)
+    
+    # Set expiry
+    expires_at = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    
+    # Create refresh token record
+    refresh_token = models.RefreshToken(
+        user_id=user_id,
+        token=token,
+        expires_at=expires_at,
+        user_agent=user_agent,
+        ip_address=ip_address
+    )
+    
+    db.add(refresh_token)
+    db.commit()
+    
+    return token
+
+def verify_refresh_token(token: str, db: Session) -> Optional[models.User]:
+    """Verify refresh token và trả về user nếu valid."""
+    # Find token in database
+    refresh_token = db.query(models.RefreshToken).filter(
+        models.RefreshToken.token == token,
+        models.RefreshToken.is_revoked == False
+    ).first()
+    
+    if not refresh_token:
+        return None
+    
+    # Check if token is expired
+    if refresh_token.expires_at < datetime.utcnow():
+        return None
+    
+    # Get user
+    user = db.query(models.User).filter(models.User.id == refresh_token.user_id).first()
+    return user
+
+def revoke_refresh_token(token: str, db: Session) -> bool:
+    """Revoke một refresh token."""
+    refresh_token = db.query(models.RefreshToken).filter(
+        models.RefreshToken.token == token
+    ).first()
+    
+    if refresh_token:
+        refresh_token.is_revoked = True
+        refresh_token.revoked_at = datetime.utcnow()
+        db.commit()
+        return True
+    return False
+
+def revoke_all_user_tokens(user_id: int, db: Session) -> int:
+    """Revoke tất cả refresh tokens của một user (logout all devices)."""
+    count = db.query(models.RefreshToken).filter(
+        models.RefreshToken.user_id == user_id,
+        models.RefreshToken.is_revoked == False
+    ).update({
+        "is_revoked": True,
+        "revoked_at": datetime.utcnow()
+    })
+    db.commit()
+    return count
 
 # --- Dependencies để bảo vệ Endpoints ---
 

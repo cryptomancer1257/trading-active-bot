@@ -425,9 +425,15 @@ export default function BotDetailPage() {
                 </label>
                 <select
                   value={trialConfig.networkType}
-                  onChange={(e) => setTrialConfig(prev => ({ ...prev, networkType: e.target.value }))}
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                  disabled={currentPlan?.plan_name === 'free' && trialConfig.networkType === 'TESTNET'}
+                  onChange={(e) => {
+                    // FREE plan users can only select TESTNET
+                    if (currentPlan?.plan_name === 'free' && e.target.value === 'MAINNET') {
+                      toast.error('Free plan users can only use TESTNET. Please upgrade to Pro for MAINNET trading.')
+                      return
+                    }
+                    setTrialConfig(prev => ({ ...prev, networkType: e.target.value }))
+                  }}
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
                 >
                   <option value="TESTNET">TESTNET (Safe Testing)</option>
                   <option value="MAINNET" disabled={currentPlan?.plan_name === 'free'}>

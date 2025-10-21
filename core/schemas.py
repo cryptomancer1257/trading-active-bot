@@ -612,6 +612,7 @@ class SubscriptionTrialCreate(BaseModel):
     trading_pair: str = "BTC/USDT"
     timeframe: str = "1h"
     trial_duration_hours: float = Field(default=24.0, ge=0.1, le=168.0)  # 0.1 hours (6 minutes) to 1 week
+    is_testnet: bool = True  # Default to testnet for safety (FREE plan restricted to testnet only)
 
 class MarketplaceSubscriptionCreate(BaseModel):
     """Schema for creating subscription from marketplace with user principal ID"""

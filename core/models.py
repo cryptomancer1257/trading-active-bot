@@ -1283,7 +1283,7 @@ class UserPlan(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     
     # Plan details
-    plan_name = Column(Enum(PlanName), nullable=False, default=PlanName.FREE)
+    plan_name = Column(Enum(PlanName, values_callable=lambda x: [e.value for e in x]), nullable=False, default=PlanName.FREE)
     price_usd = Column(DECIMAL(10, 2), nullable=False, default=0.00)  # Current price after discount
     original_price_usd = Column(DECIMAL(10, 2), nullable=False, default=0.00)  # Original price before discount
     discount_percentage = Column(DECIMAL(5, 2), nullable=False, default=0.00)  # Discount percentage (0-100)
@@ -1291,7 +1291,7 @@ class UserPlan(Base):
     # Limits
     max_bots = Column(Integer, nullable=False, default=5)
     max_subscriptions_per_bot = Column(Integer, nullable=False, default=5)
-    allowed_environment = Column(Enum(NetworkType), nullable=False, default=NetworkType.TESTNET)
+    allowed_environment = Column(Enum(NetworkType, values_callable=lambda x: [e.value for e in x]), nullable=False, default=NetworkType.TESTNET)
     publish_marketplace = Column(Boolean, nullable=False, default=False)
     subscription_expiry_days = Column(Integer, nullable=False, default=3)
     compute_quota_per_day = Column(Integer, nullable=False, default=1000)  # Legacy, deprecated
@@ -1305,12 +1305,12 @@ class UserPlan(Base):
     revenue_share_percentage = Column(DECIMAL(5, 2), nullable=False, default=0.00)
     
     # Plan status
-    status = Column(Enum(PlanStatus), nullable=False, default=PlanStatus.ACTIVE)
+    status = Column(Enum(PlanStatus, values_callable=lambda x: [e.value for e in x]), nullable=False, default=PlanStatus.ACTIVE)
     expiry_date = Column(DateTime, nullable=True)
     auto_renew = Column(Boolean, nullable=False, default=False)
     
     # Payment details
-    payment_method = Column(Enum(PaymentMethod), nullable=True)
+    payment_method = Column(Enum(PaymentMethod, values_callable=lambda x: [e.value for e in x]), nullable=True)
     paypal_subscription_id = Column(String(255), nullable=True)
     last_payment_id = Column(String(255), nullable=True)
     last_payment_date = Column(DateTime, nullable=True)
@@ -1337,7 +1337,7 @@ class PlanPricingTemplate(Base):
     __tablename__ = "plan_pricing_templates"
     
     id = Column(Integer, primary_key=True, index=True)
-    plan_name = Column(Enum(PlanName), nullable=False, unique=True)
+    plan_name = Column(Enum(PlanName, values_callable=lambda x: [e.value for e in x]), nullable=False, unique=True)
     
     # Pricing
     original_price_usd = Column(DECIMAL(10, 2), nullable=False, default=0.00)
@@ -1368,7 +1368,7 @@ class PlanHistory(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    plan_name = Column(Enum(PlanName), nullable=False)
+    plan_name = Column(Enum(PlanName, values_callable=lambda x: [e.value for e in x]), nullable=False)
     action = Column(Enum(PlanAction), nullable=False)
     payment_id = Column(String(255), nullable=True)
     amount_usd = Column(DECIMAL(10, 2), nullable=True)
@@ -1396,7 +1396,7 @@ class QuotaTopUp(Base):
     price_usd = Column(DECIMAL(10, 2), nullable=False)  # Price paid
     
     # Payment details
-    payment_method = Column(Enum(PaymentMethod), nullable=False)
+    payment_method = Column(Enum(PaymentMethod, values_callable=lambda x: [e.value for e in x]), nullable=False)
     payment_id = Column(String(255), nullable=True)  # PayPal order ID
     payment_status = Column(String(50), nullable=False, default='pending')  # pending, completed, failed
     
@@ -1430,4 +1430,32 @@ class FeatureFlag(Base):
     __table_args__ = (
         Index('idx_feature_flags_key', 'flag_key'),
         Index('idx_feature_flags_enabled', 'is_enabled'),
+    )
+
+
+class RefreshToken(Base):
+    """Refresh tokens for JWT authentication"""
+    __tablename__ = "refresh_tokens"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    token = Column(String(500), nullable=False, unique=True, index=True)
+    expires_at = Column(DateTime, nullable=False)
+    is_revoked = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+    revoked_at = Column(DateTime, nullable=True)
+    
+    # Device/session info for security
+    user_agent = Column(String(500), nullable=True)
+    ip_address = Column(String(45), nullable=True)  # IPv6 max length
+    
+    # Relationships
+    user = relationship("User", backref="refresh_tokens")
+    
+    # Indexes
+    __table_args__ = (
+        Index('idx_refresh_tokens_user_id', 'user_id'),
+        Index('idx_refresh_tokens_token', 'token'),
+        Index('idx_refresh_tokens_expires_at', 'expires_at'),
+        Index('idx_refresh_tokens_is_revoked', 'is_revoked'),
     )
