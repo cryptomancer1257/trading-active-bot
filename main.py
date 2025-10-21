@@ -32,6 +32,7 @@ from api.endpoints import dashboard
 from api.endpoints import plans
 from api.endpoints import feature_flags
 from api.endpoints import quota_topups
+from api.endpoints import plan_pricing
 
 import logging
 logger = logging.getLogger("uvicorn.error")
@@ -104,6 +105,7 @@ app.include_router(dashboard.router, prefix="/v1/dashboard", tags=["Dashboard"])
 app.include_router(plans.router, prefix="/api", tags=["Plans"])
 app.include_router(quota_topups.router, prefix="/quota-topups", tags=["Quota Top-ups"])
 app.include_router(feature_flags.router, prefix="/feature-flags", tags=["Feature Flags"])
+app.include_router(plan_pricing.router, prefix="/admin/plan-pricing", tags=["Admin Plan Pricing"])
 
 
 @app.post("/webhook")

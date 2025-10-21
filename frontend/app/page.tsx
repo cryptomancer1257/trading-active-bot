@@ -7,6 +7,7 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { usePlan } from '@/hooks/usePlan'
 import { useFeatureFlags } from '@/hooks/useFeatureFlags'
+import { usePlanPricing } from '@/hooks/usePlanPricing'
 import PlanBadge from '@/components/PlanBadge'
 import UpgradeModal from '@/components/UpgradeModal'
 import QuotaUsageCard from '@/components/QuotaUsageCard'
@@ -42,6 +43,7 @@ export default function HomePage() {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const [targetPlan, setTargetPlan] = useState<'pro' | 'ultra'>('pro')
   const { currentPlan, limits, isPro, isFree } = usePlan()
+  const { getPrice, hasActiveDiscount, getDiscount } = usePlanPricing()
   // Check if plan package is enabled via feature flags
   const { isPlanPackageEnabled, planPackageStatus, isLoadingPlanPackage, planPackageError } = useFeatureFlags()
   
@@ -221,7 +223,9 @@ export default function HomePage() {
                         }}
                         className="px-6 py-2.5 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold text-sm rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all shadow-lg hover:shadow-purple-500/50 transform hover:scale-105 whitespace-nowrap"
                       >
-                        {limits.usage.can_create_bot ? 'Upgrade to Pro - $60/mo' : '⚡ Upgrade Now - $60/mo'}
+                        {limits.usage.can_create_bot 
+                          ? `Upgrade to Pro - $${getPrice('pro', 'current')}/mo` 
+                          : `⚡ Upgrade Now - $${getPrice('pro', 'current')}/mo`}
                       </button>
                     ) : (
                       <Link
@@ -361,7 +365,15 @@ export default function HomePage() {
                     <div className="flex flex-col items-center">
                       <span className="text-2xl mb-2">⚡</span>
                       <span className="text-xl font-bold text-white mb-1">Pro</span>
-                      <span className="text-3xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-400">$60</span>
+                      <div className="flex flex-col items-center">
+                        {hasActiveDiscount('pro') && (
+                          <span className="text-sm text-gray-400 line-through">${getPrice('pro', 'original')}</span>
+                        )}
+                        <span className="text-3xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-400">${getPrice('pro', 'current')}</span>
+                        {hasActiveDiscount('pro') && (
+                          <span className="text-xs text-green-400 mt-1">Save {getDiscount('pro')}%</span>
+                        )}
+                      </div>
                       <span className="text-xs text-gray-400 mt-1">per month</span>
                     </div>
                   </th>
@@ -369,7 +381,15 @@ export default function HomePage() {
                     <div className="flex flex-col items-center">
                       <span className="text-2xl mb-2">💎</span>
                       <span className="text-xl font-bold text-white mb-1">Ultra</span>
-                      <span className="text-3xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-yellow-400 to-orange-400">$500</span>
+                      <div className="flex flex-col items-center">
+                        {hasActiveDiscount('ultra') && (
+                          <span className="text-sm text-gray-400 line-through">${getPrice('ultra', 'original')}</span>
+                        )}
+                        <span className="text-3xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-yellow-400 to-orange-400">${getPrice('ultra', 'current')}</span>
+                        {hasActiveDiscount('ultra') && (
+                          <span className="text-xs text-green-400 mt-1">Save {getDiscount('ultra')}%</span>
+                        )}
+                      </div>
                       <span className="text-xs text-gray-400 mt-1">per month</span>
                     </div>
                   </th>
@@ -666,7 +686,7 @@ export default function HomePage() {
                   <td colSpan={4} className="py-3 px-6">
                     <h3 className="text-lg font-bold text-cyber-400 flex items-center">
                       <span className="mr-2">4️⃣</span>
-                      Marketplace Access
+                      Marketplace Access <span className="text-sm text-gray-500 ml-2">(Coming soon)</span>
                     </h3>
                   </td>
                 </tr>
