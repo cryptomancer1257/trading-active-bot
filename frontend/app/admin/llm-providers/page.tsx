@@ -437,7 +437,7 @@ export default function AdminLLMProvidersPage() {
               Use the API to create your first platform LLM provider
             </p>
             <a
-              href="http://localhost:8000/docs#/Admin%20LLM%20Providers"
+              href={`${typeof window !== 'undefined' ? window.location.origin : ''}/docs#/Admin%20LLM%20Providers`}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-block mt-4 px-4 py-2 bg-quantum-600 text-white rounded-lg hover:bg-quantum-700"
@@ -457,7 +457,7 @@ export default function AdminLLMProvidersPage() {
                 To create, update, or delete providers, use the Admin API endpoints
               </p>
               <a
-                href="http://localhost:8000/docs#/Admin%20LLM%20Providers"
+                href={`${typeof window !== 'undefined' ? window.location.origin : ''}/docs#/Admin%20LLM%20Providers`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-sm text-quantum-400 hover:text-quantum-300 underline"

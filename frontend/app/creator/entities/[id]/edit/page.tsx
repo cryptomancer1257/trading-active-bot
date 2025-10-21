@@ -254,7 +254,8 @@ export default function EditBotPage() {
     setIsRepublishing(true)
     try {
       const token = localStorage.getItem('access_token')
-      const response = await fetch(`http://localhost:8000/marketplace/publish-token?bot_id=${botId}`, {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || (typeof window !== 'undefined' ? window.location.origin : 'https://quantumforge.cryptomancer.ai')
+      const response = await fetch(`${apiUrl}/marketplace/publish-token?bot_id=${botId}`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,

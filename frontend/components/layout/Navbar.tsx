@@ -23,10 +23,11 @@ const creatorNavigation = [
   { name: 'Market Intelligence', href: '/creator/intelligence', current: false },
 ]
 
-const adminNavigation = [
-  { name: 'System Override', href: '/admin/override', current: false },
-  { name: 'User Matrix', href: '/admin/matrix', current: false },
-  { name: 'Core Systems', href: '/admin/core', current: false },
+// TEMPORARY: Hide admin navigation items until pages are implemented
+const adminNavigation: { name: string; href: string; current: boolean }[] = [
+  // { name: 'System Override', href: '/admin/override', current: false },
+  // { name: 'User Matrix', href: '/admin/matrix', current: false },
+  // { name: 'Core Systems', href: '/admin/core', current: false },
 ]
 
 export default function Navbar() {

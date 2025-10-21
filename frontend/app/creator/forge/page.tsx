@@ -421,7 +421,8 @@ export default function ForgePage() {
     setNameCheckMessage('Checking availability...')
     
     try {
-      const response = await fetch(`http://localhost:8000/bots/check-name/${encodeURIComponent(name)}`)
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || (typeof window !== 'undefined' ? window.location.origin : 'https://quantumforge.cryptomancer.ai')
+      const response = await fetch(`${apiUrl}/bots/check-name/${encodeURIComponent(name)}`)
       const result = await response.json()
       
       if (result.available) {
@@ -985,7 +986,8 @@ export default function ForgePage() {
     setIsSubmitting(true)
     try {
       const token = localStorage.getItem('access_token')
-      const response = await fetch(`http://localhost:8000/marketplace/publish-token?bot_id=${createdBotId}`, {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || (typeof window !== 'undefined' ? window.location.origin : 'https://quantumforge.cryptomancer.ai')
+      const response = await fetch(`${apiUrl}/marketplace/publish-token?bot_id=${createdBotId}`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
