@@ -256,6 +256,82 @@ async def resend_verification_email(
         "message": "Verification email sent. Please check your inbox."
     }
 
+@router.post("/forgot-password")
+async def forgot_password(
+    email: str = Body(..., embed=True),
+    db: Session = Depends(get_db)
+):
+    """Request password reset email"""
+    user = crud.get_user_by_email(db, email=email)
+    
+    # Don't reveal if user exists or not for security
+    if not user:
+        return {
+            "success": True,
+            "message": "If an account exists with this email, a password reset link will be sent."
+        }
+    
+    # Generate reset token
+    reset_token = secrets.token_urlsafe(32)
+    user.reset_password_token = reset_token
+    user.reset_password_token_expires = datetime.utcnow() + timedelta(hours=1)
+    db.commit()
+    
+    # Send reset email
+    username = user.developer_name if user.developer_name else user.email.split('@')[0]
+    email_sent = email_service.send_password_reset_email(
+        to_email=user.email,
+        username=username,
+        reset_token=reset_token
+    )
+    
+    if not email_sent:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to send reset email. Please try again later."
+        )
+    
+    return {
+        "success": True,
+        "message": "If an account exists with this email, a password reset link will be sent."
+    }
+
+@router.post("/reset-password")
+async def reset_password(
+    token: str = Body(...),
+    new_password: str = Body(..., min_length=8),
+    db: Session = Depends(get_db)
+):
+    """Reset password using reset token"""
+    # Find user by reset token
+    user = db.query(crud.models.User).filter(
+        crud.models.User.reset_password_token == token
+    ).first()
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset token"
+        )
+    
+    # Check if token is expired
+    if user.reset_password_token_expires and user.reset_password_token_expires < datetime.utcnow():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Reset token has expired. Please request a new one."
+        )
+    
+    # Update password
+    user.hashed_password = security.get_password_hash(new_password)
+    user.reset_password_token = None
+    user.reset_password_token_expires = None
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": "Password reset successfully. You can now log in with your new password."
+    }
+
 @router.get("/me", response_model=schemas.UserProfile)
 def get_current_user_profile(
     current_user: schemas.UserInDB = Depends(security.get_current_active_user),

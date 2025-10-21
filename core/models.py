@@ -132,6 +132,8 @@ class User(Base):
     email_verified = Column(Boolean, default=False)  # Email verification status
     verification_token = Column(String(255), nullable=True)  # Token for email verification
     verification_token_expires = Column(DateTime, nullable=True)  # Token expiration time
+    reset_password_token = Column(String(255), nullable=True)  # Token for password reset
+    reset_password_token_expires = Column(DateTime, nullable=True)  # Reset token expiration time
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
     
