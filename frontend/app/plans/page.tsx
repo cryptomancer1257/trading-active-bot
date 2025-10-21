@@ -1,14 +1,55 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { usePlan } from '@/hooks/usePlan'
 import PlanBadge from '@/components/PlanBadge'
 import UpgradeModal from '@/components/UpgradeModal'
+import config from '@/lib/config'
+
+interface PlanPricing {
+  plan_name: string
+  original_price_usd: number
+  discount_percentage: number
+  current_price_usd: number
+  campaign_name: string | null
+  campaign_active: boolean
+}
 
 export default function PlansPage() {
   const { currentPlan, planConfigs, limits, isLoadingPlan, isPro, cancelPlan } = usePlan()
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
+  const [targetPlan, setTargetPlan] = useState<'pro' | 'ultra'>('pro')
   const [showCancelConfirm, setShowCancelConfirm] = useState(false)
+  const [pricings, setPricings] = useState<Record<string, PlanPricing>>({})
+  
+  useEffect(() => {
+    fetchPricings()
+  }, [])
+  
+  const fetchPricings = async () => {
+    try {
+      const plans = ['free', 'pro', 'ultra']
+      const results: Record<string, PlanPricing> = {}
+      
+      for (const planName of plans) {
+        const response = await fetch(`${config.studioBaseUrl}/admin/plan-pricing/${planName}`)
+        if (response.ok) {
+          const data = await response.json()
+          // Convert string prices to numbers
+          results[planName] = {
+            ...data,
+            original_price_usd: parseFloat(data.original_price_usd) || 0,
+            discount_percentage: parseFloat(data.discount_percentage) || 0,
+            current_price_usd: parseFloat(data.current_price_usd) || 0
+          }
+        }
+      }
+      
+      setPricings(results)
+    } catch (error) {
+      console.error('Failed to fetch pricing:', error)
+    }
+  }
 
   const handleCancelPlan = async () => {
     try {
@@ -141,15 +182,39 @@ export default function PlansPage() {
             <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-gradient-to-r from-purple-500 to-pink-500 text-white px-3 py-1 rounded-full text-xs font-bold shadow-lg">
               ⚡ RECOMMENDED
             </div>
+            
+            {pricings.pro?.discount_percentage > 0 && pricings.pro?.campaign_active && (
+              <div className="absolute -top-3 -right-3 bg-gradient-to-r from-yellow-400 to-orange-500 text-white px-4 py-2 rounded-full text-sm font-bold shadow-lg transform rotate-12 animate-pulse">
+                {pricings.pro.discount_percentage}% OFF
+              </div>
+            )}
 
             <div className="text-center mb-4 pt-2">
               <div className="inline-flex items-center justify-center w-12 h-12 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full mb-3">
                 <span className="text-2xl">⚡</span>
               </div>
               <h2 className="text-xl font-bold text-gray-900">Pro</h2>
-              <div className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent my-3">
-                $60
-              </div>
+              
+              {pricings.pro?.campaign_active && pricings.pro?.campaign_name && (
+                <div className="text-xs text-orange-600 font-semibold mb-2">
+                  🎉 {pricings.pro.campaign_name}
+                </div>
+              )}
+              
+              {pricings.pro?.discount_percentage > 0 ? (
+                <div>
+                  <div className="text-lg text-gray-400 line-through mb-1">
+                    ${pricings.pro.original_price_usd.toFixed(2)}
+                  </div>
+                  <div className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent my-2">
+                    ${pricings.pro.current_price_usd.toFixed(2)}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent my-3">
+                  ${pricings.pro?.current_price_usd?.toFixed(2) || '60'}
+                </div>
+              )}
               <p className="text-sm text-gray-600">per month</p>
             </div>
 
@@ -203,7 +268,10 @@ export default function PlansPage() {
               </div>
             ) : (
               <button
-                onClick={() => setShowUpgradeModal(true)}
+                onClick={() => {
+                  setTargetPlan('pro')
+                  setShowUpgradeModal(true)
+                }}
                 className="w-full px-4 py-2.5 bg-gradient-to-r from-purple-600 to-pink-600 text-white text-sm font-bold rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all shadow-lg hover:shadow-xl"
               >
                 Upgrade to Pro
@@ -212,15 +280,39 @@ export default function PlansPage() {
           </div>
 
           {/* Ultra Plan */}
-          <div className="bg-gradient-to-br from-yellow-50 to-orange-50 rounded-2xl shadow-xl p-6 border-2 border-yellow-400/50">
+          <div className="bg-gradient-to-br from-yellow-50 to-orange-50 rounded-2xl shadow-xl p-6 border-2 border-yellow-400/50 relative">
+            {pricings.ultra?.discount_percentage > 0 && pricings.ultra?.campaign_active && (
+              <div className="absolute -top-3 -right-3 bg-gradient-to-r from-red-500 to-pink-500 text-white px-4 py-2 rounded-full text-sm font-bold shadow-lg transform rotate-12 animate-pulse">
+                {pricings.ultra.discount_percentage}% OFF
+              </div>
+            )}
+            
             <div className="text-center mb-4">
               <div className="inline-flex items-center justify-center w-12 h-12 bg-gradient-to-r from-yellow-400 to-orange-500 rounded-full mb-3">
                 <span className="text-2xl">💎</span>
               </div>
               <h2 className="text-xl font-bold text-gray-900">Ultra</h2>
-              <div className="text-3xl font-bold bg-gradient-to-r from-yellow-600 to-orange-600 bg-clip-text text-transparent my-3">
-                $500
-              </div>
+              
+              {pricings.ultra?.campaign_active && pricings.ultra?.campaign_name && (
+                <div className="text-xs text-orange-600 font-semibold mb-2">
+                  🎉 {pricings.ultra.campaign_name}
+                </div>
+              )}
+              
+              {pricings.ultra?.discount_percentage > 0 ? (
+                <div>
+                  <div className="text-lg text-gray-400 line-through mb-1">
+                    ${pricings.ultra.original_price_usd.toFixed(2)}
+                  </div>
+                  <div className="text-3xl font-bold bg-gradient-to-r from-yellow-600 to-orange-600 bg-clip-text text-transparent my-2">
+                    ${pricings.ultra.current_price_usd.toFixed(2)}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-3xl font-bold bg-gradient-to-r from-yellow-600 to-orange-600 bg-clip-text text-transparent my-3">
+                  ${pricings.ultra?.current_price_usd?.toFixed(2) || '500'}
+                </div>
+              )}
               <p className="text-sm text-gray-600">per month</p>
             </div>
 
@@ -256,7 +348,10 @@ export default function PlansPage() {
             </ul>
 
             <button
-              onClick={() => setShowUpgradeModal(true)}
+              onClick={() => {
+                setTargetPlan('ultra')
+                setShowUpgradeModal(true)
+              }}
               className="w-full px-4 py-2.5 bg-gradient-to-r from-yellow-500 to-orange-500 text-white text-sm font-bold rounded-lg hover:from-yellow-600 hover:to-orange-600 transition-all shadow-lg hover:shadow-xl"
             >
               Upgrade to Ultra
@@ -305,6 +400,7 @@ export default function PlansPage() {
       <UpgradeModal 
         isOpen={showUpgradeModal}
         onClose={() => setShowUpgradeModal(false)}
+        targetPlan={targetPlan}
       />
 
       {/* Cancel Confirmation Modal */}

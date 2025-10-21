@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useQuotaUsage } from '@/hooks/useQuota'
+import { usePlanPricing } from '@/hooks/usePlanPricing'
 import QuotaTopUpModal from './QuotaTopUpModal'
 import QuotaUnavailableCard from './QuotaUnavailableCard'
 import QuotaExhaustedCard from './QuotaExhaustedCard'
@@ -14,6 +15,7 @@ interface QuotaUsageCardProps {
 export default function QuotaUsageCard({ className = '', autoTriggerOnExhausted = true }: QuotaUsageCardProps) {
   const [showTopUpModal, setShowTopUpModal] = useState(false)
   const { data: quotaUsage, isLoading, error } = useQuotaUsage()
+  const { getPrice } = usePlanPricing()
 
   // Auto-trigger popup when quota is exhausted
   useEffect(() => {
@@ -86,14 +88,14 @@ export default function QuotaUsageCard({ className = '', autoTriggerOnExhausted 
             href="/plans"
             className="block w-full px-4 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold text-sm rounded-lg transition-all shadow-lg hover:shadow-purple-500/50 transform hover:scale-105 text-center"
           >
-            ⚡ Upgrade to Pro Plan - $60/mo
+            ⚡ Upgrade to Pro Plan - ${getPrice('pro', 'current')}/mo
           </a>
           
           <a
             href="/plans"
             className="block w-full px-4 py-2 bg-gradient-to-r from-yellow-500/20 to-orange-500/20 hover:from-yellow-500/30 hover:to-orange-500/30 text-yellow-300 font-semibold text-sm rounded-lg transition-all border border-yellow-500/30 text-center"
           >
-            💎 View Ultra Plan - $500/mo
+            💎 View Ultra Plan - ${getPrice('ultra', 'current')}/mo
           </a>
         </div>
       </div>

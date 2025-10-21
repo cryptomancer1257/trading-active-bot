@@ -324,7 +324,7 @@ export default function BotDetailPage() {
       const currentUserId = user?.id || 1 // Fallback to admin user if not authenticated
       
       const subscriptionData = {
-        user_principal_id: `trial_user_${Date.now()}`, // Generate unique principal ID for trial
+        user_principal_id: `developer_${currentUserId}_${Date.now().toString().slice(-6)}`, // Generate unique principal ID for developer
         user_id: currentUserId, // Add developer user_id
         bot_id: bot.id,
         subscription_start: startDate.toISOString(),

@@ -10,6 +10,7 @@ import {
   UserGroupIcon,
   Cog6ToothIcon,
   ShieldCheckIcon,
+  CurrencyDollarIcon,
 } from '@heroicons/react/24/outline'
 
 interface AdminNavItem {
@@ -22,6 +23,7 @@ interface AdminNavItem {
 const navigation: AdminNavItem[] = [
   { name: 'Dashboard', href: '/admin', icon: HomeIcon },
   { name: 'Feature Flags', href: '/admin/feature-flags', icon: FlagIcon },
+  { name: 'Plan Pricing', href: '/admin/plan-pricing', icon: CurrencyDollarIcon },
   { name: 'LLM Providers', href: '/admin/llm-providers', icon: CpuChipIcon },
   { name: 'User Management', href: '/admin/users', icon: UserGroupIcon },
   { name: 'Analytics', href: '/admin/analytics', icon: ChartBarIcon },

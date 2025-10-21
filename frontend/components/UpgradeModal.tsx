@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { usePlan } from '@/hooks/usePlan'
+import { usePlanPricing } from '@/hooks/usePlanPricing'
 import { PayPalButtons, PayPalScriptProvider } from '@paypal/react-paypal-js'
 
 interface UpgradeModalProps {
@@ -12,6 +13,7 @@ interface UpgradeModalProps {
 
 export default function UpgradeModal({ isOpen, onClose, targetPlan = 'pro' }: UpgradeModalProps) {
   const { planConfigs, upgradeToPro } = usePlan()
+  const { getPrice, hasActiveDiscount, getDiscount } = usePlanPricing()
   const [isProcessing, setIsProcessing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
@@ -20,7 +22,10 @@ export default function UpgradeModal({ isOpen, onClose, targetPlan = 'pro' }: Up
 
   // Plan configuration
   const isPro = targetPlan === 'pro'
-  const planPrice = isPro ? 60 : 500
+  const planPrice = getPrice(targetPlan, 'current')
+  const originalPrice = getPrice(targetPlan, 'original')
+  const hasDiscount = hasActiveDiscount(targetPlan)
+  const discountPercent = getDiscount(targetPlan)
   const planName = isPro ? 'Pro' : 'Ultra'
   const planIcon = isPro ? '⚡' : '💎'
   const planGradient = isPro 
@@ -81,7 +86,19 @@ export default function UpgradeModal({ isOpen, onClose, targetPlan = 'pro' }: Up
                 <div className={`inline-flex items-center justify-center w-14 h-14 bg-gradient-to-r ${planGradient} rounded-full mb-3`}>
                   <span className="text-2xl">{planIcon}</span>
                 </div>
-                <h2 className="text-xl md:text-2xl font-bold text-gray-900 mb-1">Upgrade to {planName} - ${planPrice}/month</h2>
+                <div className="mb-1">
+                  <h2 className="text-xl md:text-2xl font-bold text-gray-900">
+                    Upgrade to {planName} - ${planPrice}/month
+                  </h2>
+                  {hasDiscount && (
+                    <div className="flex items-center justify-center gap-2 mt-1">
+                      <span className="text-sm text-gray-500 line-through">${originalPrice}/month</span>
+                      <span className="text-xs font-semibold text-green-600 bg-green-100 px-2 py-0.5 rounded-full">
+                        Save {discountPercent}%
+                      </span>
+                    </div>
+                  )}
+                </div>
                 <p className="text-xs md:text-sm text-gray-600">Unlock {isPro ? 'unlimited' : 'ultimate'} potential</p>
               </div>
 

@@ -2,10 +2,12 @@
 
 import { useState } from 'react'
 import { usePlan } from '@/hooks/usePlan'
+import { usePlanPricing } from '@/hooks/usePlanPricing'
 import UpgradeModal from './UpgradeModal'
 
 export default function UpgradeBanner() {
   const { isFree, limits } = usePlan()
+  const { getPrice } = usePlanPricing()
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
 
   if (!isFree || !limits) return null
@@ -38,7 +40,7 @@ export default function UpgradeBanner() {
             onClick={() => setShowUpgradeModal(true)}
             className="px-6 py-2.5 bg-white text-purple-600 font-bold rounded-lg hover:bg-purple-50 transition-all shadow-lg hover:scale-105"
           >
-            Upgrade to Pro - $60/month
+            Upgrade to Pro - ${getPrice('pro', 'current')}/month
           </button>
         </div>
       </div>

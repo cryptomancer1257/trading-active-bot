@@ -1284,7 +1284,9 @@ class UserPlan(Base):
     
     # Plan details
     plan_name = Column(Enum(PlanName), nullable=False, default=PlanName.FREE)
-    price_usd = Column(DECIMAL(10, 2), nullable=False, default=0.00)
+    price_usd = Column(DECIMAL(10, 2), nullable=False, default=0.00)  # Current price after discount
+    original_price_usd = Column(DECIMAL(10, 2), nullable=False, default=0.00)  # Original price before discount
+    discount_percentage = Column(DECIMAL(5, 2), nullable=False, default=0.00)  # Discount percentage (0-100)
     
     # Limits
     max_bots = Column(Integer, nullable=False, default=5)
@@ -1327,6 +1329,37 @@ class UserPlan(Base):
         Index('idx_user_plan_name', 'plan_name'),
         Index('idx_user_plan_status', 'status'),
         Index('idx_user_plan_expiry', 'expiry_date'),
+    )
+
+
+class PlanPricingTemplate(Base):
+    """Pricing templates for each plan type (managed by admin)"""
+    __tablename__ = "plan_pricing_templates"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    plan_name = Column(Enum(PlanName), nullable=False, unique=True)
+    
+    # Pricing
+    original_price_usd = Column(DECIMAL(10, 2), nullable=False, default=0.00)
+    discount_percentage = Column(DECIMAL(5, 2), nullable=False, default=0.00)
+    
+    # Computed field (original_price * (1 - discount/100))
+    @property
+    def current_price_usd(self):
+        return float(self.original_price_usd) * (1 - float(self.discount_percentage) / 100)
+    
+    # Campaign details
+    campaign_name = Column(String(255), nullable=True)
+    campaign_active = Column(Boolean, nullable=False, default=True)
+    campaign_start_date = Column(DateTime, nullable=True)
+    campaign_end_date = Column(DateTime, nullable=True)
+    
+    # Timestamps
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    
+    __table_args__ = (
+        Index('idx_plan_pricing_plan_name', 'plan_name'),
     )
 
 
