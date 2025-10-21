@@ -9,6 +9,9 @@ interface PlanConfigsResponse {
 
 export const usePlan = () => {
   const queryClient = useQueryClient()
+  
+  // Check if user is logged in
+  const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
 
   // Get current plan
   const { data: currentPlan, isLoading: isLoadingPlan, error: planError } = useQuery<UserPlan>({
@@ -27,6 +30,7 @@ export const usePlan = () => {
       
       return response.json()
     },
+    enabled: !!token, // Only fetch if logged in
     staleTime: 5 * 60 * 1000, // 5 minutes
   })
 
@@ -62,6 +66,7 @@ export const usePlan = () => {
       
       return response.json()
     },
+    enabled: !!token, // Only fetch if logged in
     staleTime: 1 * 60 * 1000, // 1 minute
   })
 

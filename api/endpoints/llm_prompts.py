@@ -122,11 +122,11 @@ def create_llm_prompt(
 ):
     """Create a new LLM prompt template"""
     try:
-        # Only developers can create prompts
-        if current_user.role != models.UserRole.DEVELOPER:
+        # Only developers and admins can create prompts
+        if current_user.role not in [models.UserRole.DEVELOPER, models.UserRole.ADMIN]:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only developers can create prompt templates"
+                detail="Only developers and admins can create prompt templates"
             )
         
         new_prompt = crud.create_prompt_template(

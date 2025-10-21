@@ -64,6 +64,8 @@ export interface PurchaseQuotaResponse {
 
 // Hook for getting quota usage
 export function useQuotaUsage() {
+  const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
+  
   return useQuery<QuotaUsage>({
     queryKey: ['quota-usage'],
     queryFn: async () => {
@@ -89,6 +91,7 @@ export function useQuotaUsage() {
         throw error
       }
     },
+    enabled: !!token, // Only fetch if logged in
     staleTime: 0, // Always fetch fresh data
     refetchInterval: 120000, // Refetch every 120 seconds
     retry: false, // Don't retry on auth errors
@@ -117,12 +120,15 @@ export function useQuotaPackages() {
 
 // Hook for getting quota top-up history
 export function useQuotaHistory() {
+  const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
+  
   return useQuery<QuotaTopUpHistory>({
     queryKey: ['quota-history'],
     queryFn: async () => {
       const response = await api.get('/quota-topups/history')
       return response.data
     },
+    enabled: !!token, // Only fetch if logged in
     staleTime: 60000, // 1 minute
   })
 }
