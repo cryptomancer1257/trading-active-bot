@@ -86,8 +86,27 @@ async def get_plan_pricing_template(
     db: Session = Depends(get_db)
 ):
     """Get pricing template for a specific plan (Public endpoint)"""
+    # Convert string to PlanName enum (by name, not value)
+    try:
+        plan_enum = models.PlanName[plan_name.upper()]
+    except (ValueError, KeyError):
+        # Return default template if invalid plan name
+        return {
+            'id': 0,
+            'plan_name': plan_name,
+            'original_price_usd': 0.00,
+            'discount_percentage': 0.00,
+            'current_price_usd': 0.00,
+            'campaign_name': None,
+            'campaign_active': False,
+            'campaign_start_date': None,
+            'campaign_end_date': None,
+            'created_at': datetime.now(),
+            'updated_at': datetime.now()
+        }
+    
     template = db.query(models.PlanPricingTemplate).filter(
-        models.PlanPricingTemplate.plan_name == plan_name
+        models.PlanPricingTemplate.plan_name == plan_enum
     ).first()
     
     if not template:

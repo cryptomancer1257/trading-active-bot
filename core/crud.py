@@ -1218,7 +1218,7 @@ def create_subscription(db: Session, sub: schemas.SubscriptionCreate, user_id: i
     return db_sub
 
 def create_trial_subscription(db: Session, trial: schemas.SubscriptionTrialCreate, user_id: int):
-    """Create a trial subscription with default safe settings for testnet"""
+    """Create a trial subscription with default safe settings (testnet or mainnet based on plan)"""
     from datetime import datetime, timedelta
     
     # Check if user already has an ACTIVE trial for this bot
@@ -1237,7 +1237,7 @@ def create_trial_subscription(db: Session, trial: schemas.SubscriptionTrialCreat
     
     # Default safe execution config for trials
     default_execution_config = {
-        "initial_balance": 1000.0,  # $1000 testnet balance
+        "initial_balance": 1000.0,  # $1000 testnet balance (or small amount for mainnet)
         "max_position_size": 0.1,   # 10% max position
         "order_type": "market",
         "slippage_tolerance": 0.001
@@ -1262,7 +1262,7 @@ def create_trial_subscription(db: Session, trial: schemas.SubscriptionTrialCreat
         strategy_config={},  # Use bot's default config
         execution_config=default_execution_config,
         risk_config=default_risk_config,
-        is_testnet=True,     # Always testnet for trials
+        is_testnet=trial.is_testnet,  # Use network type from request (FREE plan restricted to testnet)
         is_trial=True,       # Mark as trial
         trial_expires_at=trial_expires,
         expires_at=trial_expires,  # Same as trial expiry

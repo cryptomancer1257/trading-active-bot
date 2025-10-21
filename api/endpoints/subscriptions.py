@@ -247,38 +247,40 @@ def create_trial_subscription(
         if not bot or bot.status != models.BotStatus.APPROVED:
             raise HTTPException(status_code=404, detail="Bot not found or not approved for trial")
 
-        # Check if user has exchange credentials for the requested exchange and testnet
+        # Check if user has exchange credentials for the requested exchange and network type
         user_credentials = crud.get_user_exchange_credentials(
             db, 
             user_id=current_user.id, 
             exchange=trial_in.exchange_type.value,
-            is_testnet=True  # Always testnet for trials
+            is_testnet=trial_in.is_testnet  # Use network type from request
         )
         
         if not user_credentials:
+            network_label = "testnet" if trial_in.is_testnet else "mainnet"
             raise HTTPException(
                 status_code=400,
-                detail=f"No testnet API credentials found for {trial_in.exchange_type.value}. Please add your exchange credentials first."
+                detail=f"No {network_label} API credentials found for {trial_in.exchange_type.value}. Please add your exchange credentials first."
             )
         
         # Use the first valid credentials
         credentials = user_credentials[0]
         
-        # Validate API credentials work with testnet
+        # Validate API credentials work with the requested network
         from services.exchange_factory import validate_exchange_credentials
         is_valid, message = validate_exchange_credentials(
             exchange_name=credentials.exchange.value,
             api_key=credentials.api_key,
             api_secret=credentials.api_secret,
-            testnet=True  # Always testnet for trials
+            testnet=trial_in.is_testnet  # Use network type from request
         )
         
         if not is_valid:
             # Update validation status
             crud.update_credentials_validation(db, credentials.id, False, message)
+            network_label = "Testnet" if trial_in.is_testnet else "Mainnet"
             raise HTTPException(
                 status_code=400,
-                detail=f"Testnet API validation failed: {message}. Please check your credentials."
+                detail=f"{network_label} API validation failed: {message}. Please check your credentials."
             )
         
         # Update validation status as valid
@@ -336,10 +338,11 @@ def create_trial_subscription(
             run_bot_signal_logic.apply_async(args=[bot.id, trial_subscription.id], countdown=30)
             logger.info(f"✅ Triggered run_bot_signal_logic for trial PASSIVE bot (subscription {trial_subscription.id})")
         
+        network_label = "testnet" if trial_in.is_testnet else "mainnet"
         return schemas.SubscriptionResponse(
             subscription_id=trial_subscription.id,
             status=trial_subscription.status.value,
-            message=f"Trial subscription created! Bot will run on testnet for {trial_in.trial_duration_hours} hours with safe defaults."
+            message=f"Trial subscription created! Bot will run on {network_label} for {trial_in.trial_duration_hours} hours with safe defaults."
         )
         
     except HTTPException:

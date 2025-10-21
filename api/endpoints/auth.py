@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # file: api/endpoints/auth.py
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Body, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from typing import Annotated, List, Optional
@@ -52,12 +52,13 @@ def register_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     
     return new_user
 
-@router.post("/token", response_model=schemas.Token)
+@router.post("/token")
 async def login_for_access_token(
+    request: Request,
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
     db: Session = Depends(get_db)
 ):
-    """Login and get access token"""
+    """Login and get access token + refresh token"""
     user = crud.get_user_by_email(db, email=form_data.username)
     if not user or not security.verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
@@ -73,10 +74,27 @@ async def login_for_access_token(
             detail="Email not verified. Please check your inbox and verify your email address.",
         )
     
+    # Create access token (short-lived)
     access_token = security.create_access_token(
         data={"sub": str(user.id), "role": user.role.value}
     )
-    return {"access_token": access_token, "token_type": "bearer"}
+    
+    # Create refresh token (long-lived) and save to DB
+    user_agent = request.headers.get("user-agent", "")
+    client_ip = request.client.host if request.client else None
+    refresh_token = security.create_refresh_token(
+        user_id=user.id,
+        db=db,
+        user_agent=user_agent,
+        ip_address=client_ip
+    )
+    
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer",
+        "expires_in": security.ACCESS_TOKEN_EXPIRE_MINUTES * 60  # in seconds
+    }
 
 @router.post("/google", response_model=schemas.Token)
 async def google_auth(
@@ -506,3 +524,83 @@ def validate_exchange_credentials(
         exchange=credentials.exchange,
         is_testnet=credentials.is_testnet
     )
+
+@router.post("/refresh")
+async def refresh_access_token(
+    request: Request,
+    refresh_token: str = Body(..., embed=True),
+    db: Session = Depends(get_db)
+):
+    """
+    Refresh access token using refresh token.
+    This implements token rotation for security.
+    """
+    # Verify refresh token
+    user = security.verify_refresh_token(refresh_token, db)
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    # Revoke old refresh token (token rotation)
+    security.revoke_refresh_token(refresh_token, db)
+    
+    # Create new access token
+    new_access_token = security.create_access_token(
+        data={"sub": str(user.id), "role": user.role.value}
+    )
+    
+    # Create new refresh token
+    user_agent = request.headers.get("user-agent", "")
+    client_ip = request.client.host if request.client else None
+    new_refresh_token = security.create_refresh_token(
+        user_id=user.id,
+        db=db,
+        user_agent=user_agent,
+        ip_address=client_ip
+    )
+    
+    return {
+        "access_token": new_access_token,
+        "refresh_token": new_refresh_token,
+        "token_type": "bearer",
+        "expires_in": security.ACCESS_TOKEN_EXPIRE_MINUTES * 60
+    }
+
+
+@router.post("/logout")
+async def logout(
+    refresh_token: str = Body(..., embed=True),
+    db: Session = Depends(get_db)
+):
+    """
+    Logout user by revoking refresh token.
+    Frontend should also clear access token from storage.
+    """
+    revoked = security.revoke_refresh_token(refresh_token, db)
+    
+    if not revoked:
+        # Even if token not found, return success (idempotent)
+        pass
+    
+    return {"message": "Successfully logged out"}
+
+
+@router.post("/logout-all")
+async def logout_all_devices(
+    current_user: Annotated[crud.models.User, Depends(security.get_current_active_user)],
+    db: Session = Depends(get_db)
+):
+    """
+    Logout user from all devices by revoking all refresh tokens.
+    Requires valid access token.
+    """
+    count = security.revoke_all_user_tokens(current_user.id, db)
+    
+    return {
+        "message": f"Successfully logged out from {count} device(s)",
+        "revoked_count": count
+    }

@@ -182,6 +182,51 @@ export default function CredentialsPage() {
           </button>
         </div>
 
+        {/* IP Whitelist Warning */}
+        <div className="mb-6 bg-gradient-to-r from-orange-500/10 to-yellow-500/10 border-l-4 border-orange-500 rounded-lg p-4 shadow-lg">
+          <div className="flex items-start gap-3">
+            <ExclamationTriangleIcon className="w-6 h-6 text-orange-400 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <h3 className="text-lg font-semibold text-orange-300 mb-2 flex items-center gap-2">
+                ⚠️ Important: Add Our Server IP to Exchange Whitelist
+              </h3>
+              <div className="space-y-3 text-sm text-gray-300">
+                <p>
+                  For your API keys to work with our trading bots, you <strong className="text-white">MUST whitelist our server IP</strong> in your exchange's API settings.
+                </p>
+                
+                <div className="bg-gray-900/50 rounded-md p-3 border border-orange-500/30">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs text-gray-400 mb-1">Server IP Address:</p>
+                      <code className="text-lg font-mono text-orange-300 font-bold">35.197.130.241</code>
+                    </div>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText('35.197.130.241')
+                        toast.success('IP address copied to clipboard!')
+                      }}
+                      className="px-3 py-1.5 bg-orange-500/20 hover:bg-orange-500/30 text-orange-300 rounded-md text-xs font-medium transition-colors border border-orange-500/30"
+                    >
+                      📋 Copy IP
+                    </button>
+                  </div>
+                </div>
+
+                <div className="text-xs text-gray-400">
+                  <p className="mb-1">📖 <strong>How to whitelist IP:</strong></p>
+                  <ul className="list-disc list-inside space-y-1 ml-2">
+                    <li><strong>Binance:</strong> API Management → Edit API → IP Access Restrictions → Add IP</li>
+                    <li><strong>Bybit:</strong> API Management → Select API → IP Restrictions → Add Trusted IP</li>
+                    <li><strong>OKX:</strong> API Management → API Key Settings → IP Whitelist → Add IP</li>
+                    <li><strong>Others:</strong> Check your exchange's API settings for IP whitelist/restrictions</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Credentials Grid */}
         {!credentials || credentials.length === 0 ? (
           <div className="card-cyber p-8 text-center">
@@ -253,9 +298,39 @@ export default function CredentialsPage() {
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="card-cyber max-w-lg w-full max-h-[90vh] overflow-y-auto">
               <div className="p-6">
-                <h2 className="text-2xl font-bold text-white mb-6">
+                <h2 className="text-2xl font-bold text-white mb-4">
                   {editingCredentials ? 'Edit Credentials' : 'Add New Credentials'}
                 </h2>
+
+                {/* IP Whitelist Reminder in Modal */}
+                {!editingCredentials && (
+                  <div className="mb-6 bg-orange-500/10 border border-orange-500/30 rounded-lg p-3">
+                    <div className="flex items-start gap-2">
+                      <ExclamationTriangleIcon className="w-5 h-5 text-orange-400 flex-shrink-0 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="text-sm text-orange-300 font-medium mb-1">
+                          📌 Before adding API keys, whitelist our IP!
+                        </p>
+                        <div className="bg-gray-900/50 rounded px-2 py-1.5 mb-2">
+                          <code className="text-xs font-mono text-orange-300">35.197.130.241</code>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText('35.197.130.241')
+                              toast.success('IP copied!')
+                            }}
+                            className="ml-2 text-xs text-orange-400 hover:text-orange-300 underline"
+                          >
+                            copy
+                          </button>
+                        </div>
+                        <p className="text-xs text-gray-400">
+                          Add this IP to your exchange's API whitelist settings, otherwise your API keys won't work.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
                   {/* Exchange Type */}

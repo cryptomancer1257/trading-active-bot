@@ -100,13 +100,19 @@ export default function LoginForm() {
         throw new Error('No access token received from backend')
       }
       
-      // Clear any existing token first
+      // Clear any existing tokens first
       localStorage.removeItem('access_token')
-      console.log('🔵 Cleared old token')
+      localStorage.removeItem('refresh_token')
+      console.log('🔵 Cleared old tokens')
       
-      // Store token in localStorage with correct key that AuthContext expects
+      // Store both access and refresh tokens
       localStorage.setItem('access_token', data.access_token)
-      console.log('✅ Token saved to localStorage')
+      if (data.refresh_token) {
+        localStorage.setItem('refresh_token', data.refresh_token)
+        console.log('✅ Both access and refresh tokens saved')
+      } else {
+        console.log('✅ Access token saved (no refresh token in response)')
+      }
       
       // Verify token was actually saved
       const verifyToken = localStorage.getItem('access_token')
