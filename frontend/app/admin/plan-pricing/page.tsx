@@ -91,7 +91,7 @@ export default function AdminPlanPricingPage() {
       }
     } catch (error) {
       console.error('❌ Error fetching pricings:', error)
-      toast.error('Failed to load plan pricing: ' + error.message)
+      toast.error('Failed to load plan pricing: ' + (error instanceof Error ? error.message : 'Unknown error'))
     } finally {
       setLoading(false)
     }
