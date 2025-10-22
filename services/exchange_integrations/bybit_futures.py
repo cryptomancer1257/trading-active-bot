@@ -77,7 +77,15 @@ class BybitFuturesIntegration(BaseFuturesExchange):
             data = response.json()
             
             if data.get('retCode') != 0:
-                raise Exception(f"Bybit API error: {data.get('retMsg', 'Unknown error')}")
+                # Enhanced error logging
+                error_msg = data.get('retMsg', 'Unknown error')
+                error_code = data.get('retCode', 'N/A')
+                logger.error(f"❌ Bybit API Error:")
+                logger.error(f"   Code: {error_code}")
+                logger.error(f"   Message: {error_msg}")
+                logger.error(f"   Full Response: {data}")
+                logger.error(f"   Request Params: {params}")
+                raise Exception(f"Bybit API error: {error_msg}")
             
             return data.get('result', {})
             
@@ -256,24 +264,25 @@ class BybitFuturesIntegration(BaseFuturesExchange):
         
         Important: For Bybit V5 API, market orders:
         - Do NOT use timeInForce (will cause price validation errors)
-        - Use marketUnit='baseCoin' to specify quantity in base currency (e.g. BTC)
+        - Do NOT use marketUnit (causes price validation errors in some cases)
         - Market orders execute immediately at best available price
+        - Quantity is interpreted as base currency (e.g. BTC) by default
         """
         try:
             quantity_float = float(quantity)
             rounded_quantity = self.round_quantity(quantity_float, symbol)
             
+            # Minimal params for market order - LESS IS MORE!
             params = {
                 'category': 'linear',
                 'symbol': symbol,
                 'side': 'Buy' if side == 'BUY' else 'Sell',
                 'orderType': 'Market',
-                'qty': rounded_quantity,
-                'marketUnit': 'baseCoin'  # Specify market unit to avoid price validation errors
-                # Note: timeInForce not needed for Market orders
+                'qty': rounded_quantity
+                # Note: NO timeInForce, NO marketUnit for market orders
             }
             
-            logger.info(f"📊 Bybit market order params: {params}")
+            logger.info(f"📊 Bybit market order params (minimal): {params}")
             result = self._make_request("POST", "/v5/order/create", params, signed=True)
             
             return FuturesOrderInfo(
