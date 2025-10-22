@@ -40,7 +40,10 @@ export default function QuotaTopUpModal({ isOpen, onClose }: QuotaTopUpModalProp
       console.log('🛒 Starting purchase process for package:', selectedPackage)
       
       // Check if we're in demo mode (no authentication)
-      const isDemoMode = !localStorage.getItem('token') || localStorage.getItem('token') === 'null'
+      const isDemoMode = !localStorage.getItem('access_token') || localStorage.getItem('access_token') === 'null'
+      
+      console.log('🔍 Auth check - access_token:', localStorage.getItem('access_token') ? 'EXISTS' : 'MISSING')
+      console.log('🔍 Demo mode:', isDemoMode ? 'YES' : 'NO')
       
       if (isDemoMode) {
         console.log('🎭 Demo mode: Simulating purchase')
