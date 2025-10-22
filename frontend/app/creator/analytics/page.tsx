@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { useAuthGuard } from '@/hooks/useAuthGuard'
 import { UserRole } from '@/lib/types'
 import { ChartBarIcon, CpuChipIcon, RocketLaunchIcon, BoltIcon, TrophyIcon, ArrowTrendingUpIcon } from '@heroicons/react/24/outline'
@@ -13,11 +14,17 @@ export default function AnalyticsPage() {
     requiredRole: UserRole.DEVELOPER 
   })
 
+  const [networkTab, setNetworkTab] = useState<'mainnet' | 'testnet'>('mainnet')  // Default to mainnet
+
   // Fetch analytics data
   const { data: analytics, isLoading } = useQuery({
-    queryKey: ['developer-analytics'],
+    queryKey: ['developer-analytics', networkTab],  // Add networkTab to query key
     queryFn: async () => {
-      const response = await api.get('/bots/analytics/overview?days=30')
+      const params = new URLSearchParams({
+        days: '30',
+        network_filter: networkTab
+      })
+      const response = await api.get(`/bots/analytics/overview?${params.toString()}`)
       return response.data
     },
     enabled: !!user,
@@ -74,7 +81,37 @@ export default function AnalyticsPage() {
         </h1>
         <p className="text-xl text-gray-400">
           Deep analysis of your AI entities' performance and behavior patterns
+          {networkTab === 'mainnet' 
+            ? ' - Live trading on real markets.' 
+            : ' - Backtesting on testnet environments.'
+          }
         </p>
+      </div>
+
+      {/* Network Type Tabs */}
+      <div className="flex justify-center mb-6">
+        <div className="inline-flex bg-dark-800 rounded-lg p-1 border border-quantum-500/20">
+          <button
+            onClick={() => setNetworkTab('mainnet')}
+            className={`px-6 py-2 rounded-md font-medium transition-all ${
+              networkTab === 'mainnet'
+                ? 'bg-gradient-to-r from-neural-500 to-green-600 text-white shadow-lg'
+                : 'text-gray-400 hover:text-gray-200'
+            }`}
+          >
+            🟢 Mainnet (Live Trading)
+          </button>
+          <button
+            onClick={() => setNetworkTab('testnet')}
+            className={`px-6 py-2 rounded-md font-medium transition-all ${
+              networkTab === 'testnet'
+                ? 'bg-gradient-to-r from-cyber-500 to-blue-600 text-white shadow-lg'
+                : 'text-gray-400 hover:text-gray-200'
+            }`}
+          >
+            🧪 Backtest (Testnet)
+          </button>
+        </div>
       </div>
 
       {/* Stats Grid */}

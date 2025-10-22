@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # file: api/endpoints/bots.py
 
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from typing import List, Optional, Any
@@ -226,12 +226,14 @@ def get_public_bots(
     search: Optional[str] = None,
     sort_by: str = "created_at",
     order: str = "desc",
+    network_filter: Optional[str] = Query(None, description="Filter by network: 'mainnet' or 'testnet'"),
     db: Session = Depends(get_db)
 ):
     """Get public approved bots with pagination and filtering"""
     bots, total = crud.get_public_bots(
         db, skip=skip, limit=limit, category_id=category_id, 
-        search=search, sort_by=sort_by, order=order
+        search=search, sort_by=sort_by, order=order,
+        network_filter=network_filter
     )
     return {
         "bots": bots,
@@ -859,6 +861,7 @@ def get_marketplace_bots_list(
 @router.get("/analytics/overview", response_model=dict)
 def get_developer_analytics_overview(
     days: int = 30,
+    network_filter: Optional[str] = Query(None, description="Filter by network: 'mainnet' or 'testnet'"),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(security.get_current_active_developer)
 ):
@@ -889,45 +892,70 @@ def get_developer_analytics_overview(
         end_date = datetime.now()
         start_date = end_date - timedelta(days=days)
         
-        # Get subscription stats
-        total_subscriptions = db.query(func.count(models.Subscription.id)).filter(
+        # Get subscription stats (apply network filter)
+        total_sub_query = db.query(func.count(models.Subscription.id)).filter(
             models.Subscription.bot_id.in_(bot_ids)
-        ).scalar() or 0
+        )
+        if network_filter == "mainnet":
+            total_sub_query = total_sub_query.filter(models.Subscription.is_testnet == False)
+        elif network_filter == "testnet":
+            total_sub_query = total_sub_query.filter(models.Subscription.is_testnet == True)
+        total_subscriptions = total_sub_query.scalar() or 0
         
-        active_subscriptions = db.query(func.count(models.Subscription.id)).filter(
+        active_sub_query = db.query(func.count(models.Subscription.id)).filter(
             models.Subscription.bot_id.in_(bot_ids),
             models.Subscription.status == models.SubscriptionStatus.ACTIVE
-        ).scalar() or 0
+        )
+        if network_filter == "mainnet":
+            active_sub_query = active_sub_query.filter(models.Subscription.is_testnet == False)
+        elif network_filter == "testnet":
+            active_sub_query = active_sub_query.filter(models.Subscription.is_testnet == True)
+        active_subscriptions = active_sub_query.scalar() or 0
         
-        # Get transaction stats
-        transactions = db.query(models.Transaction).join(
+        # Get transaction stats (apply network filter)
+        tx_query = db.query(models.Transaction).join(
             models.Subscription,
             models.Subscription.id == models.Transaction.subscription_id
         ).filter(
             models.Subscription.bot_id.in_(bot_ids),
             models.Transaction.created_at >= start_date
-        ).all()
+        )
+        if network_filter == "mainnet":
+            tx_query = tx_query.filter(models.Subscription.is_testnet == False)
+        elif network_filter == "testnet":
+            tx_query = tx_query.filter(models.Subscription.is_testnet == True)
+        transactions = tx_query.all()
         
         total_transactions = len(transactions)
         total_pnl = sum(float(tx.realized_pnl or 0) for tx in transactions)
         winning_trades = len([tx for tx in transactions if float(tx.realized_pnl or 0) > 0])
         win_rate = (winning_trades / total_transactions * 100) if total_transactions > 0 else 0
         
-        # Get top performing bots
+        # Get top performing bots (apply network filter)
         top_bots = []
         for bot in bots[:5]:  # Top 5 bots
-            bot_subs = db.query(func.count(models.Subscription.id)).filter(
+            bot_sub_query = db.query(func.count(models.Subscription.id)).filter(
                 models.Subscription.bot_id == bot.id,
                 models.Subscription.status == models.SubscriptionStatus.ACTIVE
-            ).scalar() or 0
+            )
+            if network_filter == "mainnet":
+                bot_sub_query = bot_sub_query.filter(models.Subscription.is_testnet == False)
+            elif network_filter == "testnet":
+                bot_sub_query = bot_sub_query.filter(models.Subscription.is_testnet == True)
+            bot_subs = bot_sub_query.scalar() or 0
             
-            bot_txs = db.query(models.Transaction).join(
+            bot_tx_query = db.query(models.Transaction).join(
                 models.Subscription,
                 models.Subscription.id == models.Transaction.subscription_id
             ).filter(
                 models.Subscription.bot_id == bot.id,
                 models.Transaction.created_at >= start_date
-            ).all()
+            )
+            if network_filter == "mainnet":
+                bot_tx_query = bot_tx_query.filter(models.Subscription.is_testnet == False)
+            elif network_filter == "testnet":
+                bot_tx_query = bot_tx_query.filter(models.Subscription.is_testnet == True)
+            bot_txs = bot_tx_query.all()
             
             bot_pnl = sum(float(tx.realized_pnl or 0) for tx in bot_txs)
             bot_trades = len(bot_txs)
@@ -967,12 +995,13 @@ def get_bot_analytics(
     days: int = 30,
     page: int = 1,
     limit: int = 10,
+    network_filter: Optional[str] = Query(None, description="Filter by network: 'mainnet' or 'testnet'"),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(security.get_current_active_user)
 ):
     """Get bot analytics including transactions, subscribers, and performance metrics with pagination"""
     # Allow all authenticated users to view analytics, not just the bot owner
-    return crud.get_bot_analytics(db, bot_id=bot_id, developer_id=None, days=days, page=page, limit=limit)
+    return crud.get_bot_analytics(db, bot_id=bot_id, developer_id=None, days=days, page=page, limit=limit, network_filter=network_filter)
 
 @router.get("/{bot_id}/subscriptions", response_model=dict)
 def get_bot_subscriptions(

@@ -27,6 +27,7 @@ export default function ActivityFeed() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [autoRefresh, setAutoRefresh] = useState(true)
+  const [networkTab, setNetworkTab] = useState<'mainnet' | 'testnet'>('mainnet')  // Default to mainnet
 
   const fetchActivityData = async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true)
@@ -35,12 +36,22 @@ export default function ActivityFeed() {
     try {
       const token = localStorage.getItem('access_token')
       
+      // Build query params with network filter
+      const activityParams = new URLSearchParams({
+        limit: '20',
+        hours: '24',
+        network_filter: networkTab
+      })
+      const statsParams = new URLSearchParams({
+        network_filter: networkTab
+      })
+      
       // Fetch activity and stats in parallel
       const [activityRes, statsRes] = await Promise.all([
-        fetch('/api/v1/dashboard/activity?limit=20&hours=24', {
+        fetch(`/api/v1/dashboard/activity?${activityParams.toString()}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         }),
-        fetch('/api/v1/dashboard/stats', {
+        fetch(`/api/v1/dashboard/stats?${statsParams.toString()}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         })
       ])
@@ -62,7 +73,7 @@ export default function ActivityFeed() {
 
   useEffect(() => {
     fetchActivityData()
-  }, [])
+  }, [networkTab])  // Re-fetch when network tab changes
 
   // Auto-refresh every 120 seconds
   useEffect(() => {
@@ -90,6 +101,32 @@ export default function ActivityFeed() {
 
   return (
     <div>
+      {/* Network Type Tabs */}
+      <div className="flex justify-center mb-6">
+        <div className="inline-flex bg-dark-800 rounded-lg p-1 border border-quantum-500/20">
+          <button
+            onClick={() => setNetworkTab('mainnet')}
+            className={`px-6 py-2 rounded-md font-medium transition-all ${
+              networkTab === 'mainnet'
+                ? 'bg-gradient-to-r from-neural-500 to-green-600 text-white shadow-lg'
+                : 'text-gray-400 hover:text-gray-200'
+            }`}
+          >
+            🟢 Mainnet (Live Trading)
+          </button>
+          <button
+            onClick={() => setNetworkTab('testnet')}
+            className={`px-6 py-2 rounded-md font-medium transition-all ${
+              networkTab === 'testnet'
+                ? 'bg-gradient-to-r from-cyber-500 to-blue-600 text-white shadow-lg'
+                : 'text-gray-400 hover:text-gray-200'
+            }`}
+          >
+            🧪 Backtest (Testnet)
+          </button>
+        </div>
+      </div>
+
       {/* Stats Bar */}
       {stats && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
