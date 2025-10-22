@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useQuotaUsage } from '@/hooks/useQuota'
 import { usePlanPricing } from '@/hooks/usePlanPricing'
+import { usePlan } from '@/hooks/usePlan'
 import QuotaTopUpModal from './QuotaTopUpModal'
 import QuotaUnavailableCard from './QuotaUnavailableCard'
 import QuotaExhaustedCard from './QuotaExhaustedCard'
@@ -15,6 +16,7 @@ interface QuotaUsageCardProps {
 export default function QuotaUsageCard({ className = '', autoTriggerOnExhausted = true }: QuotaUsageCardProps) {
   const [showTopUpModal, setShowTopUpModal] = useState(false)
   const { data: quotaUsage, isLoading, error } = useQuotaUsage()
+  const { currentPlan } = usePlan()  // NEW: Get current plan info
   const { getPrice } = usePlanPricing()
 
   // Auto-trigger popup when quota is exhausted
@@ -37,7 +39,7 @@ export default function QuotaUsageCard({ className = '', autoTriggerOnExhausted 
   }
 
   if (error || !quotaUsage) {
-    return <QuotaUnavailableCard className={className} />
+    return <QuotaUnavailableCard className={className} planName={currentPlan?.plan_name || 'free'} />
   }
 
   // Free Plan - Show special message

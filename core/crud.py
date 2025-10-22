@@ -318,7 +318,7 @@ def get_approved_bots(db: Session, skip: int = 0, limit: int = 100):
         models.Bot.status == models.BotStatus.APPROVED
     ).offset(skip).limit(limit).all()
 
-def get_public_bots(db: Session, skip: int = 0, limit: int = 50, category_id: Optional[int] = None, search: Optional[str] = None, sort_by: str = "created_at", order: str = "desc"):
+def get_public_bots(db: Session, skip: int = 0, limit: int = 50, category_id: Optional[int] = None, search: Optional[str] = None, sort_by: str = "created_at", order: str = "desc", network_filter: Optional[str] = None):
     from sqlalchemy import func, case
     
     query = db.query(models.Bot).filter(models.Bot.status == schemas.BotStatus.APPROVED)
@@ -368,6 +368,29 @@ def get_public_bots(db: Session, skip: int = 0, limit: int = 50, category_id: Op
         
         # Get all transactions for all subscriptions of this bot
         subscription_ids = [sub.id for sub in subscriptions]
+        
+        # Apply network filter if specified
+        if network_filter == "mainnet":
+            filtered_sub_ids = [sub.id for sub in subscriptions if not sub.is_testnet]
+            if not filtered_sub_ids:
+                # No mainnet subscriptions, skip this bot
+                bot.total_pnl = 0.0
+                bot.win_rate = 0.0
+                bot.total_trades = 0
+                bot.winning_trades = 0
+                continue
+            subscription_ids = filtered_sub_ids
+        elif network_filter == "testnet":
+            filtered_sub_ids = [sub.id for sub in subscriptions if sub.is_testnet]
+            if not filtered_sub_ids:
+                # No testnet subscriptions, skip this bot
+                bot.total_pnl = 0.0
+                bot.win_rate = 0.0
+                bot.total_trades = 0
+                bot.winning_trades = 0
+                continue
+            subscription_ids = filtered_sub_ids
+        
         transactions = db.query(models.Transaction).filter(
             models.Transaction.subscription_id.in_(subscription_ids)
         ).all()
@@ -467,7 +490,7 @@ def get_bots_by_developer(db: Session, developer_id: int):
     
     return bots
 
-def get_bot_analytics(db: Session, bot_id: int, developer_id: Optional[int] = None, days: int = 30, page: int = 1, limit: int = 10):
+def get_bot_analytics(db: Session, bot_id: int, developer_id: Optional[int] = None, days: int = 30, page: int = 1, limit: int = 10, network_filter: Optional[str] = None):
     """Get comprehensive analytics for a bot with paginated recent transactions"""
     from sqlalchemy import func, and_, case
     from datetime import datetime, timedelta
@@ -492,23 +515,37 @@ def get_bot_analytics(db: Session, bot_id: int, developer_id: Optional[int] = No
     end_date = datetime.now()
     start_date = end_date - timedelta(days=days)
     
-    # Get subscription stats
-    total_subscriptions = db.query(func.count(models.Subscription.id)).filter(
+    # Get subscription stats (apply network filter)
+    total_sub_query = db.query(func.count(models.Subscription.id)).filter(
         models.Subscription.bot_id == bot_id
-    ).scalar() or 0
+    )
+    if network_filter == "mainnet":
+        total_sub_query = total_sub_query.filter(models.Subscription.is_testnet == False)
+    elif network_filter == "testnet":
+        total_sub_query = total_sub_query.filter(models.Subscription.is_testnet == True)
+    total_subscriptions = total_sub_query.scalar() or 0
     
-    active_subscriptions = db.query(func.count(models.Subscription.id)).filter(
+    active_sub_query = db.query(func.count(models.Subscription.id)).filter(
         models.Subscription.bot_id == bot_id,
         models.Subscription.status == models.SubscriptionStatus.ACTIVE
-    ).scalar() or 0
+    )
+    if network_filter == "mainnet":
+        active_sub_query = active_sub_query.filter(models.Subscription.is_testnet == False)
+    elif network_filter == "testnet":
+        active_sub_query = active_sub_query.filter(models.Subscription.is_testnet == True)
+    active_subscriptions = active_sub_query.scalar() or 0
     
-    # Get transaction stats
+    # Get transaction stats (apply network filter)
     transactions_query = db.query(models.Transaction).join(
         models.Subscription,
         models.Subscription.id == models.Transaction.subscription_id
     ).filter(
         models.Subscription.bot_id == bot_id
     )
+    if network_filter == "mainnet":
+        transactions_query = transactions_query.filter(models.Subscription.is_testnet == False)
+    elif network_filter == "testnet":
+        transactions_query = transactions_query.filter(models.Subscription.is_testnet == True)
     
     # Get ALL transactions in period (OPEN + CLOSED)
     all_transactions_in_period = transactions_query.filter(
@@ -547,7 +584,7 @@ def get_bot_analytics(db: Session, bot_id: int, developer_id: Optional[int] = No
     
     # Get transactions grouped by date for chart (ALL transactions - OPEN + CLOSED)
     # Use CASE statement to sum realized_pnl for CLOSED and unrealized_pnl for OPEN
-    daily_stats = db.query(
+    daily_stats_query = db.query(
         func.date(models.Transaction.created_at).label('date'),
         func.count(models.Transaction.id).label('count'),
         func.sum(
@@ -574,7 +611,14 @@ def get_bot_analytics(db: Session, bot_id: int, developer_id: Optional[int] = No
     ).filter(
         models.Subscription.bot_id == bot_id,
         models.Transaction.created_at >= start_date
-    ).group_by(
+    )
+    # Apply network filter
+    if network_filter == "mainnet":
+        daily_stats_query = daily_stats_query.filter(models.Subscription.is_testnet == False)
+    elif network_filter == "testnet":
+        daily_stats_query = daily_stats_query.filter(models.Subscription.is_testnet == True)
+    
+    daily_stats = daily_stats_query.group_by(
         func.date(models.Transaction.created_at)
     ).order_by(
         func.date(models.Transaction.created_at)
@@ -591,26 +635,37 @@ def get_bot_analytics(db: Session, bot_id: int, developer_id: Optional[int] = No
             'unrealized_pnl': float(stat.unrealized_pnl) if stat.unrealized_pnl else 0
         })
     
-    # Get total count of transactions for pagination
-    total_transactions_count = db.query(func.count(models.Transaction.id)).join(
+    # Get total count of transactions for pagination (apply network filter)
+    total_count_query = db.query(func.count(models.Transaction.id)).join(
         models.Subscription,
         models.Subscription.id == models.Transaction.subscription_id
     ).filter(
         models.Subscription.bot_id == bot_id
-    ).scalar() or 0
+    )
+    if network_filter == "mainnet":
+        total_count_query = total_count_query.filter(models.Subscription.is_testnet == False)
+    elif network_filter == "testnet":
+        total_count_query = total_count_query.filter(models.Subscription.is_testnet == True)
+    total_transactions_count = total_count_query.scalar() or 0
     
     # Calculate pagination offset
     offset = (page - 1) * limit
     
-    # Get recent transactions with pagination (show both OPEN and CLOSED)
-    recent_transactions = db.query(
+    # Get recent transactions with pagination (show both OPEN and CLOSED, apply network filter)
+    recent_tx_query = db.query(
         models.Transaction
     ).join(
         models.Subscription,
         models.Subscription.id == models.Transaction.subscription_id
     ).filter(
         models.Subscription.bot_id == bot_id
-    ).order_by(
+    )
+    if network_filter == "mainnet":
+        recent_tx_query = recent_tx_query.filter(models.Subscription.is_testnet == False)
+    elif network_filter == "testnet":
+        recent_tx_query = recent_tx_query.filter(models.Subscription.is_testnet == True)
+    
+    recent_transactions = recent_tx_query.order_by(
         models.Transaction.created_at.desc()
     ).offset(offset).limit(limit).all()
     

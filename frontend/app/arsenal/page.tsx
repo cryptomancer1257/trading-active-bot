@@ -6,9 +6,17 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import Link from 'next/link'
 
-// Fetch bots from API with sorting
-const fetchPublicBots = async (sortBy: string = 'performance', order: string = 'desc') => {
-  const response = await api.get(`/bots/?limit=100&sort_by=${sortBy}&order=${order}`)
+// Fetch bots from API with sorting and network filter
+const fetchPublicBots = async (sortBy: string = 'performance', order: string = 'desc', networkFilter?: string) => {
+  const params = new URLSearchParams({
+    limit: '100',
+    sort_by: sortBy,
+    order: order
+  })
+  if (networkFilter) {
+    params.append('network_filter', networkFilter)
+  }
+  const response = await api.get(`/bots/?${params.toString()}`)
   return response.data
 }
 
@@ -87,15 +95,16 @@ export default function ArsenalPage() {
   const [selectedRisk, setSelectedRisk] = useState("All")
   const [currentPage, setCurrentPage] = useState(1)
   const [sortBy, setSortBy] = useState<'performance' | 'deployments' | 'name'>('performance')
+  const [networkTab, setNetworkTab] = useState<'mainnet' | 'testnet'>('mainnet')  // Default to mainnet
   const botsPerPage = 10
 
-  // Fetch bots from API with sorting
+  // Fetch bots from API with sorting and network filter
   const { data: botsData, isLoading, error } = useQuery({
-    queryKey: ['public-bots', sortBy],
+    queryKey: ['public-bots', sortBy, networkTab],  // Add networkTab to query key
     queryFn: () => {
       // Map frontend sortBy to backend sort_by
       const backendSortBy = sortBy === 'performance' ? 'total_pnl' : sortBy === 'deployments' ? 'rating' : 'name'
-      return fetchPublicBots(backendSortBy, 'desc')
+      return fetchPublicBots(backendSortBy, 'desc', networkTab)  // Pass networkTab
     },
     staleTime: 60000, // Cache for 1 minute
   })
@@ -200,11 +209,46 @@ export default function ArsenalPage() {
         </h1>
         <p className="text-xl text-gray-400 max-w-3xl mx-auto">
           Discover and analyze autonomous trading entities created by the neural network community.
-          Each AI entity represents years of algorithmic evolution.
+          {networkTab === 'mainnet' 
+            ? ' Live trading performance on real markets.' 
+            : ' Backtesting results on testnet environments.'
+          }
         </p>
         <p className="text-sm text-gray-500 mt-2">
           Total Bots: {botsData?.total || 0} | Showing: {filteredBots.length} of {allFilteredCount} (Page {currentPage}/{totalPages})
         </p>
+      </div>
+
+      {/* Network Type Tabs */}
+      <div className="flex justify-center mb-6">
+        <div className="inline-flex bg-dark-800 rounded-lg p-1 border border-quantum-500/20">
+          <button
+            onClick={() => {
+              setNetworkTab('mainnet')
+              setCurrentPage(1)  // Reset pagination
+            }}
+            className={`px-6 py-2 rounded-md font-medium transition-all ${
+              networkTab === 'mainnet'
+                ? 'bg-gradient-to-r from-neural-500 to-green-600 text-white shadow-lg'
+                : 'text-gray-400 hover:text-gray-200'
+            }`}
+          >
+            🟢 Mainnet (Live Trading)
+          </button>
+          <button
+            onClick={() => {
+              setNetworkTab('testnet')
+              setCurrentPage(1)  // Reset pagination
+            }}
+            className={`px-6 py-2 rounded-md font-medium transition-all ${
+              networkTab === 'testnet'
+                ? 'bg-gradient-to-r from-cyber-500 to-blue-600 text-white shadow-lg'
+                : 'text-gray-400 hover:text-gray-200'
+            }`}
+          >
+            🧪 Backtest (Testnet)
+          </button>
+        </div>
       </div>
 
       {/* Search and Filters */}

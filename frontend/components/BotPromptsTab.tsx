@@ -64,6 +64,17 @@ export default function BotPromptsTab({ botId }: BotPromptsTabProps) {
 
   const handleAttachPrompt = async (promptId: number) => {
     try {
+      // Auto-replace: If a strategy is already attached, detach it first
+      if (attachedPrompts.length > 0) {
+        const oldStrategy = attachedPrompts[0]
+        console.log('🔄 Auto-replacing old strategy:', oldStrategy.prompt_template?.name)
+        
+        await detachPromptMutation.mutateAsync({
+          botId,
+          promptId: oldStrategy.prompt_template.id
+        })
+      }
+      
       await attachPromptMutation.mutateAsync({
         botId,
         promptId,
@@ -72,7 +83,13 @@ export default function BotPromptsTab({ botId }: BotPromptsTabProps) {
           custom_override: customOverride || undefined
         }
       })
-      toast.success('Strategy attached successfully!')
+      
+      if (attachedPrompts.length > 0) {
+        toast.success('Strategy replaced successfully!')
+      } else {
+        toast.success('Strategy attached successfully!')
+      }
+      
       setShowAttachModal(false)
       setSelectedPrompt(null)
     } catch (error) {
@@ -167,9 +184,9 @@ export default function BotPromptsTab({ botId }: BotPromptsTabProps) {
       {/* Attached Strategies */}
       <div>
         <h3 className="text-xl font-semibold text-gray-200 mb-4 flex items-center">
-          Attached Strategies ({attachedPrompts.length})
+          Attached Strategy ({attachedPrompts.length}/1)
           <span className="ml-2 text-sm text-gray-500 font-normal">
-            (Strategies currently linked to this bot)
+            (Attaching a new strategy will replace the current one)
           </span>
         </h3>
         {attachedPrompts.length > 0 ? (
@@ -273,10 +290,14 @@ export default function BotPromptsTab({ botId }: BotPromptsTabProps) {
                     setSelectedPrompt(prompt)
                     setShowAttachModal(true)
                   }}
-                  className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                  className={`inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md shadow-sm text-white ${
+                    attachedPrompts.length > 0
+                      ? 'bg-orange-600 hover:bg-orange-700 focus:ring-orange-500'
+                      : 'bg-green-600 hover:bg-green-700 focus:ring-green-500'
+                  } focus:outline-none focus:ring-2 focus:ring-offset-2`}
                 >
                   <PlusIcon className="-ml-0.5 mr-2 h-4 w-4" />
-                  Attach
+                  {attachedPrompts.length > 0 ? 'Replace' : 'Attach'}
                 </button>
               </li>
             ))}
@@ -322,10 +343,14 @@ export default function BotPromptsTab({ botId }: BotPromptsTabProps) {
                     setSelectedPrompt(prompt)
                     setShowAttachModal(true)
                   }}
-                  className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500"
+                  className={`inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md shadow-sm text-white ${
+                    attachedPrompts.length > 0
+                      ? 'bg-orange-600 hover:bg-orange-700 focus:ring-orange-500'
+                      : 'bg-purple-600 hover:bg-purple-700 focus:ring-purple-500'
+                  } focus:outline-none focus:ring-2 focus:ring-offset-2`}
                 >
                   <PlusIcon className="-ml-0.5 mr-2 h-4 w-4" />
-                  Attach
+                  {attachedPrompts.length > 0 ? 'Replace' : 'Attach'}
                 </button>
               </li>
             ))}

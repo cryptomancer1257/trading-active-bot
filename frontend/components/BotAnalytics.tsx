@@ -75,10 +75,11 @@ export default function BotAnalytics({ botId, isOwner = false }: BotAnalyticsPro
   const [periodDays, setPeriodDays] = useState(30)
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(20)
+  const [networkTab, setNetworkTab] = useState<'mainnet' | 'testnet'>('mainnet')  // Default to mainnet
 
   useEffect(() => {
     fetchAnalytics()
-  }, [botId, periodDays, currentPage, itemsPerPage])
+  }, [botId, periodDays, currentPage, itemsPerPage, networkTab])  // Add networkTab to dependencies
 
   const fetchAnalytics = async () => {
     setIsLoading(true)
@@ -86,8 +87,15 @@ export default function BotAnalytics({ botId, isOwner = false }: BotAnalyticsPro
     
     try {
       const token = localStorage.getItem('access_token')
+      const params = new URLSearchParams({
+        days: periodDays.toString(),
+        page: currentPage.toString(),
+        limit: itemsPerPage.toString(),
+        network_filter: networkTab
+      })
+      
       const response = await fetch(
-        `${config.studioBaseUrl}/bots/${botId}/analytics?days=${periodDays}&page=${currentPage}&limit=${itemsPerPage}`,
+        `${config.studioBaseUrl}/bots/${botId}/analytics?${params.toString()}`,
         {
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -135,7 +143,7 @@ export default function BotAnalytics({ botId, isOwner = false }: BotAnalyticsPro
 
   return (
     <div className="space-y-6">
-      {/* Period Selector */}
+      {/* Period Selector and Network Tabs */}
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-white">Analytics</h2>
         <div className="flex space-x-2">
@@ -152,6 +160,38 @@ export default function BotAnalytics({ botId, isOwner = false }: BotAnalyticsPro
               {days}D
             </button>
           ))}
+        </div>
+      </div>
+
+      {/* Network Type Tabs */}
+      <div className="flex justify-center">
+        <div className="inline-flex bg-dark-800 rounded-lg p-1 border border-quantum-500/20">
+          <button
+            onClick={() => {
+              setNetworkTab('mainnet')
+              setCurrentPage(1)  // Reset pagination
+            }}
+            className={`px-6 py-2 rounded-md font-medium transition-all ${
+              networkTab === 'mainnet'
+                ? 'bg-gradient-to-r from-neural-500 to-green-600 text-white shadow-lg'
+                : 'text-gray-400 hover:text-gray-200'
+            }`}
+          >
+            🟢 Mainnet (Live Trading)
+          </button>
+          <button
+            onClick={() => {
+              setNetworkTab('testnet')
+              setCurrentPage(1)  // Reset pagination
+            }}
+            className={`px-6 py-2 rounded-md font-medium transition-all ${
+              networkTab === 'testnet'
+                ? 'bg-gradient-to-r from-cyber-500 to-blue-600 text-white shadow-lg'
+                : 'text-gray-400 hover:text-gray-200'
+            }`}
+          >
+            🧪 Backtest (Testnet)
+          </button>
         </div>
       </div>
 

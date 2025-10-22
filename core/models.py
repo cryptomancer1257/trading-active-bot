@@ -63,6 +63,7 @@ class PaymentMethod(enum.Enum):
     PAYPAL = "paypal"
     STRIPE = "stripe"
     CRYPTO = "crypto"
+    TRIAL = "trial"
 
 class PlanAction(enum.Enum):
     UPGRADE = "upgrade"
@@ -105,11 +106,6 @@ class PayPalPaymentStatus(enum.Enum):
     CANCELLED = "CANCELLED"
     FAILED = "FAILED"
     COMPLETED_PENDING_RENTAL = "COMPLETED_PENDING_RENTAL"
-
-class PaymentMethod(enum.Enum):
-    STRIPE = "STRIPE"
-    PAYPAL = "PAYPAL"
-    TRIAL = "TRIAL"
 
 class LLMProviderType(enum.Enum):
     OPENAI = "OPENAI"

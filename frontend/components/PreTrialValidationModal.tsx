@@ -128,7 +128,7 @@ export default function PreTrialValidationModal({
 
   const openPromptsTab = () => {
     if (typeof window !== 'undefined') {
-      localStorage.setItem('bot-detail-tab', 'prompts')
+      localStorage.setItem('bot-detail-tab', 'strategies')
       window.location.reload()
     }
   }
@@ -143,7 +143,7 @@ export default function PreTrialValidationModal({
           <div className="flex items-center justify-between">
             <h2 className="text-2xl font-bold text-white flex items-center">
               <span className="mr-3">🔍</span>
-              Pre-Trial Configuration Check
+              Pre-Configuration Check
             </h2>
             <button
               onClick={onClose}
@@ -155,7 +155,7 @@ export default function PreTrialValidationModal({
             </button>
           </div>
           <p className="text-gray-400 mt-2">
-            Before starting your free trial, we need to verify your configuration
+            Before starting, we need to verify your configuration
           </p>
         </div>
 
@@ -265,7 +265,7 @@ export default function PreTrialValidationModal({
                 </div>
               )}
 
-              {/* Prompt Check */}
+              {/* Strategy Check */}
               <div className={`rounded-lg p-4 border ${
                 validation.hasPrompt 
                   ? 'bg-green-900/30 border-green-500/30' 
@@ -278,12 +278,12 @@ export default function PreTrialValidationModal({
                     </span>
                     <div>
                       <h4 className="text-lg font-semibold text-white">
-                        Bot Prompt Configuration
+                        Bot Strategy Configuration
                       </h4>
                       <p className="text-sm text-gray-300">
                         {validation.hasPrompt 
-                          ? `Found ${validation.promptCount} attached prompt(s)`
-                          : 'No prompts attached to this bot'
+                          ? `Found ${validation.promptCount} attached ${validation.promptCount === 1 ? 'strategy' : 'strategies'}`
+                          : 'No strategies attached to this bot'
                         }
                       </p>
                     </div>
@@ -293,14 +293,14 @@ export default function PreTrialValidationModal({
                       onClick={openPromptsTab}
                       className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors text-sm"
                     >
-                      Attach Prompt
+                      Attach Strategy
                     </button>
                   )}
                 </div>
                 {validation.missingPrompt && (
                   <div className="mt-3 p-3 bg-red-900/20 border border-red-500/20 rounded text-sm text-red-300">
-                    <p className="font-medium mb-1">⚠️ Prompt Required</p>
-                    <p>This bot requires at least one prompt to guide its trading strategy and decision-making.</p>
+                    <p className="font-medium mb-1">⚠️ Strategy Required</p>
+                    <p>This bot requires at least one strategy to guide its trading strategy and decision-making.</p>
                   </div>
                 )}
               </div>
@@ -311,7 +311,7 @@ export default function PreTrialValidationModal({
                 {validation.hasExchangeCredentials && validation.hasPrompt ? (
                   <div className="text-green-400 flex items-center">
                     <span className="mr-2">🎉</span>
-                    <span>All configurations are ready! You can start your {networkType === 'TESTNET' ? 'free trial' : 'trade'}.</span>
+                    <span>All configurations are ready! You can start your {networkType === 'TESTNET' ? 'backtest' : 'trading'}.</span>
                   </div>
                 ) : (
                   <div className="text-red-400 flex items-center">

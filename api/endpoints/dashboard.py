@@ -20,6 +20,7 @@ router = APIRouter(tags=["Dashboard"])
 async def get_dashboard_activity(
     limit: int = Query(default=20, le=100),
     hours: int = Query(default=24, le=168),  # Max 7 days
+    network_filter: Optional[str] = Query(None, description="Filter by network: 'mainnet' or 'testnet'"),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(security.get_current_active_user)
 ):
@@ -32,13 +33,21 @@ async def get_dashboard_activity(
         activities = []
         
         # 1. Get recent trades from transactions table
-        recent_transactions = db.query(models.Transaction).join(
+        query = db.query(models.Transaction).join(
             models.Subscription,
             models.Transaction.subscription_id == models.Subscription.id
         ).filter(
             models.Subscription.user_id == current_user.id,
             models.Transaction.created_at >= cutoff_time
-        ).order_by(desc(models.Transaction.created_at)).limit(limit).all()
+        )
+        
+        # Apply network filter
+        if network_filter == "mainnet":
+            query = query.filter(models.Subscription.is_testnet == False)
+        elif network_filter == "testnet":
+            query = query.filter(models.Subscription.is_testnet == True)
+        
+        recent_transactions = query.order_by(desc(models.Transaction.created_at)).limit(limit).all()
         
         for tx in recent_transactions:
             # Get subscription and bot info
@@ -87,13 +96,21 @@ async def get_dashboard_activity(
         
         # 2. Get risk management events (from bot actions with risk alerts)
         # We can check for cooldown events or daily loss limit hits
-        risk_events = db.query(models.Subscription).filter(
+        risk_query = db.query(models.Subscription).filter(
             models.Subscription.user_id == current_user.id,
             or_(
                 models.Subscription.cooldown_until.isnot(None),
                 models.Subscription.daily_loss_amount > 0
             )
-        ).all()
+        )
+        
+        # Apply network filter
+        if network_filter == "mainnet":
+            risk_query = risk_query.filter(models.Subscription.is_testnet == False)
+        elif network_filter == "testnet":
+            risk_query = risk_query.filter(models.Subscription.is_testnet == True)
+        
+        risk_events = risk_query.all()
         
         for sub in risk_events:
             if sub.cooldown_until and sub.cooldown_until > datetime.utcnow():
@@ -128,10 +145,18 @@ async def get_dashboard_activity(
                     })
         
         # 3. Get active subscriptions status
-        active_subs = db.query(models.Subscription).filter(
+        active_subs_query = db.query(models.Subscription).filter(
             models.Subscription.user_id == current_user.id,
             models.Subscription.status == 'ACTIVE'
-        ).all()
+        )
+        
+        # Apply network filter
+        if network_filter == "mainnet":
+            active_subs_query = active_subs_query.filter(models.Subscription.is_testnet == False)
+        elif network_filter == "testnet":
+            active_subs_query = active_subs_query.filter(models.Subscription.is_testnet == True)
+        
+        active_subs = active_subs_query.all()
         
         for sub in active_subs[:5]:  # Top 5 most recent
             if sub.last_run_at and sub.last_run_at >= cutoff_time:
@@ -167,6 +192,7 @@ async def get_dashboard_activity(
 
 @router.get("/stats")
 async def get_dashboard_stats(
+    network_filter: Optional[str] = Query(None, description="Filter by network: 'mainnet' or 'testnet'"),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(security.get_current_active_user)
 ):
@@ -175,21 +201,37 @@ async def get_dashboard_stats(
     """
     try:
         # Active subscriptions
-        active_subs = db.query(models.Subscription).filter(
+        active_subs_query = db.query(models.Subscription).filter(
             models.Subscription.user_id == current_user.id,
             models.Subscription.status == 'ACTIVE'
-        ).count()
+        )
+        
+        # Apply network filter
+        if network_filter == "mainnet":
+            active_subs_query = active_subs_query.filter(models.Subscription.is_testnet == False)
+        elif network_filter == "testnet":
+            active_subs_query = active_subs_query.filter(models.Subscription.is_testnet == True)
+        
+        active_subs = active_subs_query.count()
         
         # Trades today - from Transaction table
         today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
         
         # Get today's transactions
-        today_transactions = db.query(models.Transaction).join(
+        today_tx_query = db.query(models.Transaction).join(
             models.Subscription
         ).filter(
             models.Subscription.user_id == current_user.id,
             models.Transaction.created_at >= today_start
-        ).all()
+        )
+        
+        # Apply network filter
+        if network_filter == "mainnet":
+            today_tx_query = today_tx_query.filter(models.Subscription.is_testnet == False)
+        elif network_filter == "testnet":
+            today_tx_query = today_tx_query.filter(models.Subscription.is_testnet == True)
+        
+        today_transactions = today_tx_query.all()
         
         trades_today = len(today_transactions)
         

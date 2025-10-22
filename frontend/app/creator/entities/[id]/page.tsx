@@ -350,7 +350,7 @@ export default function BotDetailPage() {
         const result = await response.json()
         const successMessage = isPro 
           ? '🎉 Trading Started! Your bot is now active.'
-          : '🎉 24h Free Trial Started! Your bot is now active.'
+          : '🎉 24h Backtest Started! Your bot is now active.'
         toast.success(successMessage)
         
       } else {
@@ -361,10 +361,10 @@ export default function BotDetailPage() {
           // Extract limit info from error message (e.g., "5/5")
           const limitMatch = error.detail?.match(/\((\d+)\/(\d+)\)/)
           const limitInfo = limitMatch ? ` (${limitMatch[1]}/${limitMatch[2]})` : ''
-          toast.error(`🚫 Trial subscription limit reached${limitInfo}!`)
+          toast.error(`🚫 Subscription limit reached${limitInfo}!`)
           setShowUpgradeModal(true)
         } else {
-          toast.error(`Failed to start trial: ${error.detail || 'Unknown error'}`)
+          toast.error(`Failed to start subscription: ${error.detail || 'Unknown error'}`)
         }
       }
       
@@ -407,17 +407,26 @@ export default function BotDetailPage() {
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <h3 className="text-xl font-bold text-white mb-2">🧪 Backtest Your Bot</h3>
-                  <p className="text-gray-300">Test your bot's performance with 24h free trial</p>
+                  <p className="text-gray-300">
+                    {isPro 
+                      ? "Test your bot's performance" 
+                      : "Test your bot's performance with 24h free trial"
+                    }
+                  </p>
                 </div>
-                <div className="text-right">
-                  <div className="text-2xl font-bold text-green-400">FREE</div>
-                  <div className="text-sm text-gray-400">24 hours</div>
-                </div>
+                {!isPro && (
+                  <div className="text-right">
+                    <div className="text-2xl font-bold text-green-400">FREE</div>
+                    <div className="text-sm text-gray-400">24 hours</div>
+                  </div>
+                )}
               </div>
 
           {/* Trial Configuration */}
           <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700 mb-6">
-            <h4 className="text-lg font-semibold text-white mb-4">⚙️ Trial Configuration</h4>
+            <h4 className="text-lg font-semibold text-white mb-4">
+              ⚙️ {isPro ? 'Trading Configuration' : 'Trial Configuration'}
+            </h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">
@@ -630,7 +639,7 @@ export default function BotDetailPage() {
                 <span className="ml-2 px-2 py-0.5 text-xs bg-red-500 text-white rounded-full">REQUIRED</span>
               </h4>
               <div className="text-gray-300 space-y-2 text-sm">
-                <p className="text-yellow-400 font-medium mb-2">⚠️ Bot requires a prompt to analyze market and make decisions!</p>
+                <p className="text-yellow-400 font-medium mb-2">⚠️ Bot requires a strategy to analyze market and make decisions!</p>
                 <div className="space-y-1.5">
                   <div className="flex items-start">
                     <span className="mr-2">1️⃣</span>
@@ -638,16 +647,12 @@ export default function BotDetailPage() {
                   </div>
                   <div className="flex items-start">
                     <span className="mr-2">2️⃣</span>
-                    <span>Attach at least one prompt to your bot</span>
-                  </div>
-                  <div className="flex items-start">
-                    <span className="mr-2">3️⃣</span>
-                    <span>Configure prompt settings (market analysis, risk level, etc.)</span>
+                    <span>Attach a strategy to your bot</span>
                   </div>
                 </div>
                 <div className="mt-3 p-2 bg-indigo-900/30 border border-indigo-500/20 rounded text-xs flex items-start">
                   <span className="mr-2">💡</span>
-                  <span>The prompt guides your bot's trading strategy and decision-making process. Without a prompt, the bot cannot operate.</span>
+                  <span>The strategy guides your bot's trading strategy and decision-making process. Without a strategy, the bot cannot operate.</span>
                 </div>
               </div>
             </div>
@@ -691,10 +696,10 @@ export default function BotDetailPage() {
                 {isStartingTrial ? (
                   <span className="flex items-center">
                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                    {isPro ? 'Starting...' : 'Starting Trial...'}
+                    Starting...
                   </span>
                 ) : (
-                  isPro ? '🚀 Start Trade' : '🚀 Start 24h Free Trial'
+                  isPro ? '🚀 Start Trading' : '🚀 Start 24h Backtest'
                 )}
               </button>
               

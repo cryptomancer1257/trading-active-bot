@@ -135,8 +135,8 @@ export default function QuotaTopUpModal({ isOpen, onClose }: QuotaTopUpModalProp
           <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 rounded-t-2xl">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-2xl font-bold text-gray-900">Buy Additional LLM Quota</h2>
-                <p className="text-gray-600">Choose a package to get more LLM API calls</p>
+                <h2 className="text-2xl font-bold text-gray-900">Buy Additional Trades Quota</h2>
+                <p className="text-gray-600">Choose a package to get more Trade times</p>
               </div>
               <button
                 onClick={onClose}
@@ -184,7 +184,7 @@ export default function QuotaTopUpModal({ isOpen, onClose }: QuotaTopUpModalProp
                         </div>
                         <p className="text-gray-600 mt-2">{pkg.description}</p>
                         <div className="mt-3 text-sm text-gray-500">
-                          +{pkg.quota} LLM calls
+                          +{pkg.quota} Trade times
                         </div>
                       </div>
                     </div>

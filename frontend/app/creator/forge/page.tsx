@@ -1990,17 +1990,26 @@ export default function ForgePage() {
               <div className="flex items-center justify-between mb-6">
                 <div>
                   <h2 className="text-2xl font-bold cyber-text mb-2">🧪 Backtest Your Bot</h2>
-                  <p className="text-gray-300">Test your bot's performance with 24h free trial</p>
+                  <p className="text-gray-300">
+                    {isPro 
+                      ? "Test your bot's performance" 
+                      : "Test your bot's performance with 24h free trial"
+                    }
+                  </p>
                 </div>
-                <div className="text-right">
-                  <div className="text-2xl font-bold text-green-400">FREE</div>
-                  <div className="text-sm text-gray-400">24 hours</div>
-                </div>
+                {!isPro && (
+                  <div className="text-right">
+                    <div className="text-2xl font-bold text-green-400">FREE</div>
+                    <div className="text-sm text-gray-400">24 hours</div>
+                  </div>
+                )}
                   </div>
 
               {/* Trial Configuration */}
               <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700 mb-6">
-                <h4 className="text-lg font-semibold text-white mb-4">⚙️ Trial Configuration</h4>
+                <h4 className="text-lg font-semibold text-white mb-4">
+                  ⚙️ {isPro ? 'Trading Configuration' : 'Trial Configuration'}
+                </h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-300 mb-2">
