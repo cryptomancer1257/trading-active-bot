@@ -148,7 +148,7 @@ export default function BotDetailPage() {
 
   // Update trading pair when bot loads
   useEffect(() => {
-    if (bot && bot.trading_pairs && bot.trading_pairs.length > 0) {
+    if (bot?.trading_pairs && bot.trading_pairs.length > 0) {
       setTrialConfig(prev => ({
         ...prev,
         tradingPair: bot.trading_pairs[0] // Use bot's first supported trading pair
