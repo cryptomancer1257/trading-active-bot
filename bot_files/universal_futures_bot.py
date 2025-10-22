@@ -657,6 +657,32 @@ class UniversalFuturesBot(CustomBot):
             logger.info(f"   Stop Loss: ${stop_loss_price:.2f} ({stop_loss_pct*100:.1f}%)")
             logger.info(f"   Take Profit: ${take_profit_price:.2f} ({take_profit_pct*100:.1f}%)")
             
+            # Cancel all existing STOP/TP orders for this symbol BEFORE placing new ones
+            logger.info(f"🧹 Cancelling all existing SL/TP orders for {symbol}...")
+            try:
+                existing_orders = self.futures_client.get_open_orders(symbol)
+                cancelled_count = 0
+                for order in existing_orders:
+                    order_type = order.get('type', '')
+                    if order_type in ['STOP_MARKET', 'TAKE_PROFIT_MARKET', 'STOP', 'TAKE_PROFIT']:
+                        order_id = str(order.get('orderId', order.get('order_id', order.get('orderId', ''))))
+                        try:
+                            self.futures_client.cancel_order(symbol, order_id)
+                            cancelled_count += 1
+                            logger.info(f"   ✅ Cancelled {order_type} order: {order_id}")
+                        except Exception as cancel_err:
+                            logger.warning(f"   ⚠️ Failed to cancel order {order_id}: {cancel_err}")
+                
+                if cancelled_count > 0:
+                    logger.info(f"✅ Cancelled {cancelled_count} existing SL/TP orders")
+                    # Wait briefly for cancellations to settle
+                    import time
+                    time.sleep(0.5)
+                else:
+                    logger.info(f"✅ No existing SL/TP orders to cancel")
+            except Exception as cancel_all_err:
+                logger.warning(f"⚠️ Failed to check/cancel existing orders: {cancel_all_err}")
+            
             # Place managed orders (stop loss + take profit)
             sl_order = None
             tp_orders = None
@@ -703,14 +729,17 @@ class UniversalFuturesBot(CustomBot):
                         adjusted_tp_price = current_market_price * (1 - max(self.take_profit_pct, min_distance_pct))
                         logger.warning(f"⚠️ TP too close, adjusted: ${take_profit_price:.2f} → ${adjusted_tp_price:.2f}")
                 
-                # Create managed orders
+                # Create managed orders with reduceOnly=True
+                # This ensures that if position closes (SL or TP), remaining orders will be REJECTED by exchange
+                # preventing unwanted reverse positions
+                logger.info(f"🛡️ Creating managed orders with reduceOnly=True (prevents reverse positions)")
                 managed_orders = self.futures_client.create_managed_orders(
                     symbol=symbol,
                     side=sl_side,
                     quantity=quantity_str,
                     stop_price=f"{adjusted_stop_price:.2f}",
                     take_profit_price=f"{adjusted_tp_price:.2f}",
-                    reduce_only=True
+                    reduce_only=True  # ✅ Critical: Prevents opening reverse positions when position is already closed
                 )
                 
                 sl_order = managed_orders.get('stop_loss_order')
