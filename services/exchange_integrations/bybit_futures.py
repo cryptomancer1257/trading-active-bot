@@ -252,7 +252,13 @@ class BybitFuturesIntegration(BaseFuturesExchange):
         return f"{rounded_qty:.{decimals}f}"
     
     def create_market_order(self, symbol: str, side: str, quantity: str) -> FuturesOrderInfo:
-        """Create Bybit market order"""
+        """Create Bybit market order
+        
+        Important: For Bybit V5 API, market orders:
+        - Do NOT use timeInForce (will cause price validation errors)
+        - Use marketUnit='baseCoin' to specify quantity in base currency (e.g. BTC)
+        - Market orders execute immediately at best available price
+        """
         try:
             quantity_float = float(quantity)
             rounded_quantity = self.round_quantity(quantity_float, symbol)
@@ -263,9 +269,11 @@ class BybitFuturesIntegration(BaseFuturesExchange):
                 'side': 'Buy' if side == 'BUY' else 'Sell',
                 'orderType': 'Market',
                 'qty': rounded_quantity,
-                'timeInForce': 'GTC'
+                'marketUnit': 'baseCoin'  # Specify market unit to avoid price validation errors
+                # Note: timeInForce not needed for Market orders
             }
             
+            logger.info(f"📊 Bybit market order params: {params}")
             result = self._make_request("POST", "/v5/order/create", params, signed=True)
             
             return FuturesOrderInfo(
