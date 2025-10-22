@@ -1376,7 +1376,7 @@ def create_exchange_credentials(db: Session, credentials: schemas.ExchangeCreden
     db.refresh(db_credentials)
     return db_credentials
 
-def get_user_exchange_credentials(db: Session, user_id: int, exchange: str = None, is_testnet: bool = None):
+def get_user_exchange_credentials(db: Session, user_id: int, exchange: str = None, is_testnet: bool = None, credential_type: str = None):
     """Get user's exchange credentials with optional filtering (legacy - use principal_id version)"""
     query = db.query(models.DeveloperExchangeCredentials).filter(
         models.DeveloperExchangeCredentials.user_id == user_id,
@@ -1384,9 +1384,13 @@ def get_user_exchange_credentials(db: Session, user_id: int, exchange: str = Non
     )
     
     if exchange:
-        query = query.filter(models.DeveloperExchangeCredentials.exchange == exchange)
+        query = query.filter(models.DeveloperExchangeCredentials.exchange_type == exchange)
     if is_testnet is not None:
-        query = query.filter(models.DeveloperExchangeCredentials.is_testnet == is_testnet)
+        # Convert boolean to NetworkType enum value (lowercase to match DB enum values in models.py)
+        network_value = "testnet" if is_testnet else "mainnet"
+        query = query.filter(models.DeveloperExchangeCredentials.network_type == network_value)
+    if credential_type:
+        query = query.filter(models.DeveloperExchangeCredentials.credential_type == credential_type)
     
     return query.all()
 

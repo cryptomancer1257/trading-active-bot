@@ -81,7 +81,7 @@ export default function CredentialsPage() {
     setEditingCredentials(cred)
     setValue('exchange_type', cred.exchange_type)
     setValue('credential_type', cred.credential_type)
-    // Convert lowercase network_type from DB to uppercase for form
+    // Convert lowercase network_type from API to uppercase for form select
     setValue('network_type', cred.network_type?.toUpperCase())
     setValue('name', cred.name)
     setValue('is_default', cred.is_default)
@@ -107,7 +107,7 @@ export default function CredentialsPage() {
 
   const onSubmit = async (data: CredentialsFormData) => {
     try {
-      // Convert network_type to lowercase for API
+      // Convert network_type from UPPERCASE (form) to lowercase (API expects)
       const submissionData = {
         ...data,
         network_type: data.network_type?.toLowerCase() as any

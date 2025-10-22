@@ -68,7 +68,7 @@ export default function PreTrialValidationModal({
         credentials?.some(cred => 
           cred.exchange_type === exchangeType &&
           cred.credential_type === credentialType &&
-          cred.network_type === networkType &&
+          cred.network_type?.toUpperCase() === networkType?.toUpperCase() && // Case-insensitive compare
           cred.is_active
         ) || !!defaultCredentials
       )
