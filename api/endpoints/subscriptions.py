@@ -246,6 +246,25 @@ def create_trial_subscription(
         
         if not bot or bot.status != models.BotStatus.APPROVED:
             raise HTTPException(status_code=404, detail="Bot not found or not approved for trial")
+        
+        # Validate trading pairs against bot's configured pairs (same validation as create_subscription)
+        if bot.trading_pairs:
+            # Primary trading pair must be in bot's trading_pairs
+            if trial_in.trading_pair not in bot.trading_pairs:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Primary trading pair '{trial_in.trading_pair}' is not supported by this bot. "
+                           f"Supported pairs: {', '.join(bot.trading_pairs)}"
+                )
+            
+            # Note: SubscriptionTrialCreate doesn't have secondary_trading_pairs field
+            # If it's added in the future, add validation here:
+            # if trial_in.secondary_trading_pairs:
+            #     invalid_pairs = [pair for pair in trial_in.secondary_trading_pairs if pair not in bot.trading_pairs]
+            #     if invalid_pairs:
+            #         raise HTTPException(...)
+            #     if trial_in.trading_pair in trial_in.secondary_trading_pairs:
+            #         raise HTTPException(...)
 
         # Determine credential type from bot's trade_mode (convert to uppercase to match CredentialType enum)
         credential_type = bot.trade_mode.upper() if bot.trade_mode else "SPOT"

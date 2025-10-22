@@ -102,7 +102,7 @@ export default function BotDetailPage() {
   const [activeTab, setActiveTab] = useState<TabType>(getInitialTab())
   const [isStartingTrial, setIsStartingTrial] = useState(false)
   const [trialConfig, setTrialConfig] = useState({
-    tradingPair: 'BTC/USDT',
+    tradingPair: bot?.trading_pairs && bot.trading_pairs.length > 0 ? bot.trading_pairs[0] : 'BTC/USDT', // Use bot's first trading pair
     secondaryTradingPairs: [] as string[],
     networkType: 'TESTNET',
     subscriptionStart: '', // For Pro users
@@ -511,7 +511,22 @@ export default function BotDetailPage() {
                   className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
                   onChange={(e) => {
                     const value = e.target.value
-                    if (value && !trialConfig.secondaryTradingPairs.includes(value) && value !== trialConfig.tradingPair) {
+                    if (value) {
+                      // Validate: Cannot add Primary Pair to Secondary Pairs
+                      if (value === trialConfig.tradingPair) {
+                        toast.error(`Cannot add Primary Pair "${value}" to Secondary Pairs`)
+                        e.target.value = '' // Reset select
+                        return
+                      }
+                      
+                      // Validate: Cannot add duplicate
+                      if (trialConfig.secondaryTradingPairs.includes(value)) {
+                        toast.error(`"${value}" is already in Secondary Pairs`)
+                        e.target.value = '' // Reset select
+                        return
+                      }
+                      
+                      // Add to secondary pairs
                       setTrialConfig(prev => ({
                         ...prev,
                         secondaryTradingPairs: [...prev.secondaryTradingPairs, value]
