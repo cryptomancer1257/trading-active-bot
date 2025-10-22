@@ -175,3 +175,27 @@ export const useTradingStrategyTemplates = (params?: {
     },
   })
 }
+
+// ============================================
+// PROMPT CATEGORIES (From Database)
+// ============================================
+
+export interface PromptCategory {
+  id: number
+  category_name: string
+  description?: string
+  parent_category?: string
+  template_count: number
+  display_order: number
+}
+
+// Get all prompt categories from database
+export const usePromptCategories = () => {
+  return useQuery({
+    queryKey: ['promptCategories'],
+    queryFn: async () => {
+      const response = await api.get('/prompts/categories')
+      return response.data as PromptCategory[]
+    },
+  })
+}

@@ -88,6 +88,18 @@ class PlanChecker:
                 user_id=user.id,
                 plan_name=models.PlanName.FREE,
                 max_bots=5,
+                max_subscriptions_per_bot=5,
+                allowed_environment=models.NetworkType.TESTNET,  # FREE plan only allows TESTNET
+                publish_marketplace=False,
+                subscription_expiry_days=3,
+                compute_quota_per_day=24,
+                revenue_share_percentage=0.00,
+                price_usd=0.00,
+                original_price_usd=0.00,
+                discount_percentage=0.00,
+                auto_renew=False,
+                llm_quota_total=720,
+                llm_quota_used=0,
                 status=models.PlanStatus.ACTIVE
             )
             db.add(user_plan)
