@@ -292,6 +292,7 @@ def get_quota_topup_history(
 def create_paypal_order_demo(request: CreatePayPalOrderRequest):
     """Create PayPal order for quota top-up purchase (DEMO MODE - No auth required)"""
     try:
+        logger.info(f"🎭 Demo PayPal order requested - PAYPAL_MODE: {PAYPAL_MODE}")
         package = request.package
         # Validate package
         if package not in QUOTA_PACKAGES:
@@ -315,9 +316,12 @@ def create_paypal_order_demo(request: CreatePayPalOrderRequest):
         return_url = urllib.parse.quote(f"{clean_frontend_url}/quota-success", safe='')
         cancel_url = urllib.parse.quote(f"{clean_frontend_url}/quota-cancel", safe='')
         
+        # Use correct PayPal domain based on PAYPAL_MODE
+        paypal_checkout_domain = "www.sandbox.paypal.com" if PAYPAL_MODE == "sandbox" else "www.paypal.com"
+        
         return CreatePayPalOrderResponse(
             order_id=demo_token,
-            approve_url=f"https://www.sandbox.paypal.com/checkoutnow?token={demo_token}&return_url={return_url}&cancel_url={cancel_url}",
+            approve_url=f"https://{paypal_checkout_domain}/checkoutnow?token={demo_token}&return_url={return_url}&cancel_url={cancel_url}",
             package=package_info,
             amount=package_info["price"]
         )
@@ -336,6 +340,7 @@ def create_paypal_order(
 ):
     """Create PayPal order for quota top-up purchase"""
     try:
+        logger.info(f"🔐 Real PayPal order requested - PAYPAL_MODE: {PAYPAL_MODE}, API Base: {PAYPAL_API_BASE}")
         package = request.package
         # Validate package
         if package not in QUOTA_PACKAGES:
