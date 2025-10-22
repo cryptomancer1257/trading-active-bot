@@ -74,10 +74,14 @@ async def get_dashboard_activity(
                 current_price = tx.last_updated_price or tx.entry_price
                 details += f" | Entry: ${float(tx.entry_price or 0):.2f} | Current: ${float(current_price or 0):.2f}"
             
+            # Debug timestamp
+            timestamp_str = tx.created_at.isoformat() if tx.created_at else None
+            logger.info(f"Dashboard activity timestamp debug: tx_id={tx.id}, created_at={tx.created_at}, isoformat={timestamp_str}")
+            
             activities.append({
                 'id': f"trade_{tx.id}",
                 'type': 'TRADE',
-                'timestamp': tx.created_at.isoformat() if tx.created_at else None,
+                'timestamp': timestamp_str,
                 'bot_name': subscription.bot.name,
                 'bot_id': subscription.bot.id,
                 'subscription_id': subscription.id,

@@ -35,8 +35,20 @@ interface Activity {
 export default function ActivityItem({ activity }: { activity: Activity }) {
   const getTimeAgo = (timestamp: string) => {
     try {
-      return formatDistanceToNow(new Date(timestamp), { addSuffix: true })
-    } catch {
+      // Parse the timestamp - should be ISO format from backend
+      const date = new Date(timestamp)
+      
+      // Debug: Log the timestamp and parsed date
+      console.log('ActivityItem timestamp debug:', {
+        original: timestamp,
+        parsed: date.toISOString(),
+        local: date.toLocaleString(),
+        now: new Date().toISOString()
+      })
+      
+      return formatDistanceToNow(date, { addSuffix: true })
+    } catch (error) {
+      console.error('Error parsing timestamp:', timestamp, error)
       return 'Recently'
     }
   }
