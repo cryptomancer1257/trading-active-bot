@@ -107,7 +107,7 @@ export default function QuotaTopUpModal({ isOpen, onClose }: QuotaTopUpModalProp
 
   if (success) {
     return (
-      <div className="fixed inset-0 z-50 overflow-y-auto">
+      <div className="fixed inset-0 z-[9999] overflow-y-auto">
         <div className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"></div>
         <div className="flex min-h-full items-center justify-center p-4">
           <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 text-center">
@@ -121,7 +121,7 @@ export default function QuotaTopUpModal({ isOpen, onClose }: QuotaTopUpModalProp
   }
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
+    <div className="fixed inset-0 z-[9999] overflow-y-auto">
       {/* Backdrop */}
       <div 
         className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"

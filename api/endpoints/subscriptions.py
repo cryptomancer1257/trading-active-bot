@@ -247,19 +247,23 @@ def create_trial_subscription(
         if not bot or bot.status != models.BotStatus.APPROVED:
             raise HTTPException(status_code=404, detail="Bot not found or not approved for trial")
 
-        # Check if user has exchange credentials for the requested exchange and network type
+        # Determine credential type from bot's trade_mode (convert to uppercase to match CredentialType enum)
+        credential_type = bot.trade_mode.upper() if bot.trade_mode else "SPOT"
+        
+        # Check if user has exchange credentials for the requested exchange, network type, and credential type
         user_credentials = crud.get_user_exchange_credentials(
             db, 
             user_id=current_user.id, 
             exchange=trial_in.exchange_type.value,
-            is_testnet=trial_in.is_testnet  # Use network type from request
+            is_testnet=trial_in.is_testnet,  # Use network type from request
+            credential_type=credential_type  # Filter by bot's trade mode (SPOT/FUTURES/MARGIN)
         )
         
         if not user_credentials:
             network_label = "testnet" if trial_in.is_testnet else "mainnet"
             raise HTTPException(
                 status_code=400,
-                detail=f"No {network_label} API credentials found for {trial_in.exchange_type.value}. Please add your exchange credentials first."
+                detail=f"No {network_label} {credential_type} API credentials found for {trial_in.exchange_type.value}. Please add your exchange credentials first."
             )
         
         # Use the first valid credentials
