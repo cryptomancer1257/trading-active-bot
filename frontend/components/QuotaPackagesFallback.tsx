@@ -21,23 +21,23 @@ interface QuotaPackagesFallbackProps {
 const FALLBACK_PACKAGES: Record<string, QuotaPackage> = {
   small: {
     name: "Small Pack",
-    quota: 300,
+    quota: 500,
     price: 20.00,
-    description: "300 additional LLM API calls",
+    description: "500 additional Trade times",
     icon: "📦"
   },
   medium: {
     name: "Medium Pack", 
-    quota: 700,
+    quota: 1300,
     price: 50.00,
-    description: "700 additional LLM API calls",
+    description: "1300 additional Trade times",
     icon: "📦📦"
   },
   large: {
     name: "Large Pack",
-    quota: 1500,
+    quota: 2800,
     price: 100.00,
-    description: "1500 additional LLM API calls", 
+    description: "2800 additional Trade times", 
     icon: "📦📦📦"
   }
 }
@@ -87,7 +87,7 @@ export default function QuotaPackagesFallback({
               </div>
               <p className="text-gray-600 mt-2">{pkg.description}</p>
               <div className="mt-3 text-sm text-gray-500">
-                +{pkg.quota} LLM calls
+                +{pkg.quota} Trade times
               </div>
             </div>
           </div>

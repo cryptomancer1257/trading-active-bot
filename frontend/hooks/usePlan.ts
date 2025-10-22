@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import config from '@/lib/config'
+import { api } from '@/lib/api'
 import type { UserPlan, PlanConfig, PlanLimits } from '@/types/plan'
 
 interface PlanConfigsResponse {
@@ -17,34 +17,20 @@ export const usePlan = () => {
   const { data: currentPlan, isLoading: isLoadingPlan, error: planError } = useQuery<UserPlan>({
     queryKey: ['current-plan'],
     queryFn: async () => {
-      const token = localStorage.getItem('access_token')
-      const response = await fetch(`${config.studioBaseUrl}/api/plans/current`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      })
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch current plan')
-      }
-      
-      return response.json()
+      const response = await api.get('/api/plans/current')
+      return response.data
     },
     enabled: !!token, // Only fetch if logged in
     staleTime: 5 * 60 * 1000, // 5 minutes
+    retry: false, // Don't retry on 401
   })
 
   // Get plan configs
   const { data: planConfigs } = useQuery<PlanConfigsResponse>({
     queryKey: ['plan-configs'],
     queryFn: async () => {
-      const response = await fetch(`${config.studioBaseUrl}/api/plans/config`)
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch plan configs')
-      }
-      
-      return response.json()
+      const response = await api.get('/api/plans/config')
+      return response.data
     },
     staleTime: 60 * 60 * 1000, // 1 hour
   })
@@ -53,46 +39,23 @@ export const usePlan = () => {
   const { data: limits, isLoading: isLoadingLimits } = useQuery<PlanLimits>({
     queryKey: ['plan-limits'],
     queryFn: async () => {
-      const token = localStorage.getItem('access_token')
-      const response = await fetch(`${config.studioBaseUrl}/api/plans/limits`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      })
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch plan limits')
-      }
-      
-      return response.json()
+      const response = await api.get('/api/plans/limits')
+      return response.data
     },
     enabled: !!token, // Only fetch if logged in
     staleTime: 1 * 60 * 1000, // 1 minute
+    retry: false, // Don't retry on 401
   })
 
   // Upgrade to Pro mutation
   const upgradeToPro = useMutation({
     mutationFn: async (paymentId: string) => {
-      const token = localStorage.getItem('access_token')
-      const response = await fetch(`${config.studioBaseUrl}/api/plans/upgrade`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          payment_id: paymentId,
-          payment_method: 'paypal',
-          auto_renew: true
-        })
+      const response = await api.post('/api/plans/upgrade', {
+        payment_id: paymentId,
+        payment_method: 'paypal',
+        auto_renew: true
       })
-      
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.detail || 'Failed to upgrade plan')
-      }
-      
-      return response.json()
+      return response.data
     },
     onSuccess: () => {
       // Invalidate queries to refetch updated data
@@ -104,20 +67,8 @@ export const usePlan = () => {
   // Cancel Pro plan mutation
   const cancelPlan = useMutation({
     mutationFn: async () => {
-      const token = localStorage.getItem('access_token')
-      const response = await fetch(`${config.studioBaseUrl}/api/plans/cancel`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      })
-      
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.detail || 'Failed to cancel plan')
-      }
-      
-      return response.json()
+      const response = await api.post('/api/plans/cancel')
+      return response.data
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['current-plan'] })

@@ -38,23 +38,23 @@ PAYPAL_API_BASE = "https://api-m.sandbox.paypal.com" if PAYPAL_MODE == "sandbox"
 QUOTA_PACKAGES = {
     "small": {
         "name": "Small Pack",
-        "quota": 300,
+        "quota": 500,
         "price": 20.00,
-        "description": "300 additional LLM API calls",
+        "description": "500 additional Trade times",
         "icon": "📦"
     },
     "medium": {
         "name": "Medium Pack", 
-        "quota": 700,
+        "quota": 1300,
         "price": 50.00,
-        "description": "700 additional LLM API calls",
+        "description": "1300 additional Trade times",
         "icon": "📦📦"
     },
     "large": {
         "name": "Large Pack",
-        "quota": 1500,
+        "quota": 2800,
         "price": 100.00,
-        "description": "1500 additional LLM API calls", 
+        "description": "2800 additional Trade times", 
         "icon": "📦📦📦"
     }
 }

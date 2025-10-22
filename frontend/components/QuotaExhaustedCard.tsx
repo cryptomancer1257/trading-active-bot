@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import QuotaTopUpModal from './QuotaTopUpModal'
 
 interface QuotaExhaustedCardProps {
@@ -19,6 +20,7 @@ export default function QuotaExhaustedCard({
   resetDate
 }: QuotaExhaustedCardProps) {
   const [showTopUpModal, setShowTopUpModal] = useState(false)
+  const isFree = planName?.toLowerCase() === 'free'
 
   return (
     <>
@@ -54,29 +56,48 @@ export default function QuotaExhaustedCard({
           <div className="bg-red-800/30 border border-red-600/50 rounded-lg p-3 mb-4">
             <p className="text-red-200 text-sm">
               ⚠️ Your bots using LLM features are currently paused. 
-              Purchase more quota to continue trading.
+              {isFree ? ' Upgrade to Pro to continue trading.' : ' Purchase more quota to continue trading.'}
             </p>
           </div>
           
-          {/* Top-up Action Button */}
-          <button
-            onClick={() => setShowTopUpModal(true)}
-            className="w-full px-4 py-3 bg-gradient-to-r from-red-500 to-orange-500 hover:from-red-600 hover:to-orange-600 text-white rounded-lg font-semibold text-sm transition-all transform hover:scale-105 shadow-lg hover:shadow-red-500/25"
-          >
-            🚨 Purchase Quota Now
-          </button>
-          
-          <p className="text-red-400 text-xs mt-3">
-            Get instant access to continue your AI trading
-          </p>
+          {/* Action Button - Different for FREE vs PRO/ULTRA */}
+          {isFree ? (
+            <>
+              <Link
+                href="/plans"
+                className="block w-full px-4 py-3 bg-gradient-to-r from-red-500 to-orange-500 hover:from-red-600 hover:to-orange-600 text-white rounded-lg font-semibold text-sm transition-all transform hover:scale-105 shadow-lg hover:shadow-red-500/25"
+              >
+                ⚡ Upgrade to Pro
+              </Link>
+              
+              <p className="text-red-400 text-xs mt-3">
+                Get access to advanced features and higher quotas
+              </p>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={() => setShowTopUpModal(true)}
+                className="w-full px-4 py-3 bg-gradient-to-r from-red-500 to-orange-500 hover:from-red-600 hover:to-orange-600 text-white rounded-lg font-semibold text-sm transition-all transform hover:scale-105 shadow-lg hover:shadow-red-500/25"
+              >
+                🚨 Purchase Quota Now
+              </button>
+              
+              <p className="text-red-400 text-xs mt-3">
+                Get instant access to continue your AI trading
+              </p>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Top-up Modal */}
-      <QuotaTopUpModal 
-        isOpen={showTopUpModal}
-        onClose={() => setShowTopUpModal(false)}
-      />
+      {/* Top-up Modal - Only for non-FREE users */}
+      {!isFree && (
+        <QuotaTopUpModal 
+          isOpen={showTopUpModal}
+          onClose={() => setShowTopUpModal(false)}
+        />
+      )}
     </>
   )
 }

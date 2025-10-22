@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { usePlan } from '@/hooks/usePlan'
 import PlanBadge from '@/components/PlanBadge'
 import UpgradeModal from '@/components/UpgradeModal'
-import config from '@/lib/config'
+import { api } from '@/lib/api'
 
 interface PlanPricing {
   plan_name: string
@@ -21,20 +21,25 @@ export default function PlansPage() {
   const [targetPlan, setTargetPlan] = useState<'pro' | 'ultra'>('pro')
   const [showCancelConfirm, setShowCancelConfirm] = useState(false)
   const [pricings, setPricings] = useState<Record<string, PlanPricing>>({})
+  const [isLoadingPricing, setIsLoadingPricing] = useState(true)
+  
+  // Check if user is logged in
+  const isLoggedIn = typeof window !== 'undefined' && !!localStorage.getItem('access_token')
   
   useEffect(() => {
     fetchPricings()
   }, [])
   
   const fetchPricings = async () => {
+    setIsLoadingPricing(true)
     try {
       const plans = ['free', 'pro', 'ultra']
       const results: Record<string, PlanPricing> = {}
       
       for (const planName of plans) {
-        const response = await fetch(`${config.studioBaseUrl}/admin/plan-pricing/${planName}`)
-        if (response.ok) {
-          const data = await response.json()
+        try {
+          const response = await api.get(`/admin/plan-pricing/${planName}`)
+          const data = response.data
           // Convert string prices to numbers
           results[planName] = {
             ...data,
@@ -42,12 +47,25 @@ export default function PlansPage() {
             discount_percentage: parseFloat(data.discount_percentage) || 0,
             current_price_usd: parseFloat(data.current_price_usd) || 0
           }
+        } catch (err) {
+          console.error(`Failed to fetch pricing for ${planName}:`, err)
+          // Set default values if fetch fails
+          results[planName] = {
+            plan_name: planName,
+            original_price_usd: planName === 'pro' ? 60 : planName === 'ultra' ? 500 : 0,
+            discount_percentage: 0,
+            current_price_usd: planName === 'pro' ? 60 : planName === 'ultra' ? 500 : 0,
+            campaign_name: null,
+            campaign_active: false
+          }
         }
       }
       
       setPricings(results)
     } catch (error) {
       console.error('Failed to fetch pricing:', error)
+    } finally {
+      setIsLoadingPricing(false)
     }
   }
 
@@ -60,7 +78,17 @@ export default function PlansPage() {
     }
   }
 
-  if (isLoadingPlan) {
+  // Only show loading if user is logged in AND we're loading their plan
+  if (isLoggedIn && isLoadingPlan) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500"></div>
+      </div>
+    )
+  }
+  
+  // Show basic loading for pricing data
+  if (isLoadingPricing && Object.keys(pricings).length === 0) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500"></div>
@@ -78,14 +106,14 @@ export default function PlansPage() {
               <h1 className="text-3xl font-bold text-gray-900">Subscription Plans</h1>
               <p className="text-gray-600 mt-1">Choose the perfect plan for your trading bot business</p>
             </div>
-            <PlanBadge />
+            {isLoggedIn && <PlanBadge />}
           </div>
         </div>
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        {/* Current Usage Stats */}
-        {limits && (
+        {/* Current Usage Stats - Only show if logged in */}
+        {isLoggedIn && limits && (
           <div className="bg-white rounded-xl shadow-sm p-6 mb-8">
             <h2 className="text-xl font-bold text-gray-900 mb-4">Current Usage</h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -269,12 +297,16 @@ export default function PlansPage() {
             ) : (
               <button
                 onClick={() => {
+                  if (!isLoggedIn) {
+                    window.location.href = '/login?redirect=/plans'
+                    return
+                  }
                   setTargetPlan('pro')
                   setShowUpgradeModal(true)
                 }}
                 className="w-full px-4 py-2.5 bg-gradient-to-r from-purple-600 to-pink-600 text-white text-sm font-bold rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all shadow-lg hover:shadow-xl"
               >
-                Upgrade to Pro
+                {isLoggedIn ? 'Upgrade to Pro' : 'Sign in to Upgrade'}
               </button>
             )}
           </div>
@@ -349,12 +381,16 @@ export default function PlansPage() {
 
             <button
               onClick={() => {
+                if (!isLoggedIn) {
+                  window.location.href = '/login?redirect=/plans'
+                  return
+                }
                 setTargetPlan('ultra')
                 setShowUpgradeModal(true)
               }}
               className="w-full px-4 py-2.5 bg-gradient-to-r from-yellow-500 to-orange-500 text-white text-sm font-bold rounded-lg hover:from-yellow-600 hover:to-orange-600 transition-all shadow-lg hover:shadow-xl"
             >
-              Upgrade to Ultra
+              {isLoggedIn ? 'Upgrade to Ultra' : 'Sign in to Upgrade'}
             </button>
           </div>
         </div>
