@@ -1,8 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { useCreatePrompt, useTradingStrategyTemplates, TradingStrategyTemplate } from '@/hooks/usePrompts'
+import { useCreatePrompt, useTradingStrategyTemplates, usePromptCategories, TradingStrategyTemplate } from '@/hooks/usePrompts'
 import { useAuthGuard } from '@/hooks/useAuthGuard'
 import { UserRole } from '@/lib/types'
 import toast from 'react-hot-toast'
@@ -15,7 +15,7 @@ interface PromptFormData {
   name: string
   description: string
   content: string
-  category: 'TRADING' | 'ANALYSIS' | 'RISK_MANAGEMENT'
+  category: string  // Can be full category name from DB or form value (TRADING/ANALYSIS/RISK_MANAGEMENT)
   is_default: boolean
   is_active: boolean
 }
@@ -31,14 +31,14 @@ export default function NewPromptPage() {
     name: '',
     description: '',
     content: '',
-    category: 'TRADING',
+    category: 'TRADING',  // Default, will be overridden by first category from DB
     is_default: false,
     is_active: true
   })
 
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showTemplates, setShowTemplates] = useState(false)
-  const [activeCategory, setActiveCategory] = useState<string>('Trading')
+  const [activeCategory, setActiveCategory] = useState<string>('all')  // Default to "All" filter
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
 
   const createMutation = useCreatePrompt()
@@ -52,10 +52,51 @@ export default function NewPromptPage() {
     limit: 100
   })
   
+  // Get prompt categories from database
+  const { data: promptCategories, isLoading: categoriesLoading } = usePromptCategories()
+  
   // Filter templates by active category (exact match)
   const filteredTemplates = templatePrompts?.filter(template => 
     activeCategory === 'all' || template.category === activeCategory
   ) || []
+  
+  // Helper function to map category name to form value (for backend submission)
+  const mapCategoryToFormValue = (categoryName: string): 'TRADING' | 'ANALYSIS' | 'RISK_MANAGEMENT' => {
+    const normalized = categoryName.toUpperCase().replace(/\s+/g, '_')
+    if (normalized.includes('RISK') || normalized.includes('MANAGEMENT')) return 'RISK_MANAGEMENT'
+    if (normalized.includes('ANALYSIS')) return 'ANALYSIS'
+    return 'TRADING'
+  }
+  
+  // Prepare categories for dropdown - group by parent category
+  const categoriesForDropdown = promptCategories?.map(cat => ({
+    value: cat.category_name,  // Use full category name as value
+    label: cat.category_name,
+    count: cat.template_count,
+    parent: cat.parent_category,
+    formValue: mapCategoryToFormValue(cat.category_name)
+  })).sort((a, b) => {
+    // Sort by parent, then by label
+    if (a.parent !== b.parent) {
+      return (a.parent || '').localeCompare(b.parent || '')
+    }
+    return a.label.localeCompare(b.label)
+  })
+  
+  // Update default category when categories load
+  useEffect(() => {
+    if (categoriesForDropdown && categoriesForDropdown.length > 0) {
+      // Set to first category from DB on initial load
+      const firstCategory = categoriesForDropdown[0].value
+      setFormData(prev => {
+        // Only update if still using default TRADING value
+        if (prev.category === 'TRADING' && firstCategory !== 'TRADING') {
+          return { ...prev, category: firstCategory }
+        }
+        return prev
+      })
+    }
+  }, [categoriesForDropdown])
 
   const handleInputChange = (field: keyof PromptFormData, value: string | boolean) => {
     console.log('Input change:', field, value)
@@ -73,15 +114,12 @@ export default function NewPromptPage() {
     console.log('Using template:', strategy)
     console.log('Template prompt:', strategy.prompt)
     
-    // Map template category to form category
-    const formCategory = strategy.category === 'Risk Management' ? 'RISK_MANAGEMENT' : 'TRADING'
-    
     setFormData(prev => ({
       ...prev,
       name: strategy.title,
       description: `${strategy.category} | ${strategy.timeframe || 'Any'} | Win Rate: ${strategy.win_rate_estimate || 'N/A'}`,
       content: strategy.prompt,
-      category: formCategory
+      category: strategy.category  // Keep the full category name from template
     }))
     setShowTemplates(false)
     toast.success(`Template "${strategy.title}" applied!`)
@@ -93,11 +131,14 @@ export default function NewPromptPage() {
 
     setIsSubmitting(true)
     try {
+      // Map category to backend form value (TRADING/ANALYSIS/RISK_MANAGEMENT)
+      const backendCategory = mapCategoryToFormValue(formData.category)
+      
       await createMutation.mutateAsync({
         name: formData.name,
         description: formData.description,
         content: formData.content,
-        category: formData.category,
+        category: backendCategory,  // Use mapped form value for backend
         is_default: formData.is_default,
         is_active: formData.is_active
       })
@@ -262,14 +303,27 @@ export default function NewPromptPage() {
                           
                           <h4 className="text-white font-medium mb-2">{template.title}</h4>
                           <p className="text-gray-300 text-sm mb-3 line-clamp-2">
-                            {template.best_for || template.category}
-                            {template.timeframe && ` | ${template.timeframe}`}
-                            {template.win_rate_estimate && ` | Win: ${template.win_rate_estimate}`}
+                            {template.best_for || 'Advanced trading strategy'}
                           </p>
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs text-purple-400 bg-purple-500/20 px-2 py-1 rounded">
-                              {template.category}
+                          
+                          {/* Tags: Category, Timeframe, Win Rate */}
+                          <div className="flex items-center gap-2 mb-3 flex-wrap">
+                            <span className="text-xs text-purple-400 bg-purple-500/20 px-2 py-1 rounded font-medium">
+                              📊 {template.category}
                             </span>
+                            {template.timeframe && (
+                              <span className="text-xs text-blue-400 bg-blue-500/20 px-2 py-1 rounded font-medium">
+                                ⏱️ {template.timeframe}
+                              </span>
+                            )}
+                            {template.win_rate_estimate && (
+                              <span className="text-xs text-green-400 bg-green-500/20 px-2 py-1 rounded font-medium">
+                                📈 {template.win_rate_estimate}
+                              </span>
+                            )}
+                          </div>
+                          
+                          <div className="flex items-center justify-end">
                             {!isLocked && (
                               <button
                                 type="button"
@@ -323,10 +377,23 @@ export default function NewPromptPage() {
                   value={formData.category}
                   onChange={(e) => handleInputChange('category', e.target.value as any)}
                   className="w-full px-3 py-2 bg-dark-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-quantum-500"
+                  disabled={categoriesLoading}
                 >
-                  <option value="TRADING">Trading</option>
-                  <option value="ANALYSIS">Analysis</option>
-                  <option value="RISK_MANAGEMENT">Risk Management</option>
+                  {categoriesLoading ? (
+                    <option>Loading categories...</option>
+                  ) : categoriesForDropdown && categoriesForDropdown.length > 0 ? (
+                    categoriesForDropdown.map((cat, idx) => (
+                      <option key={idx} value={cat.value}>
+                        {cat.label} {cat.count > 0 ? `(${cat.count} templates)` : ''}
+                      </option>
+                    ))
+                  ) : (
+                    <>
+                      <option value="TRADING">Trading</option>
+                      <option value="ANALYSIS">Analysis</option>
+                      <option value="RISK_MANAGEMENT">Risk Management</option>
+                    </>
+                  )}
                 </select>
               </div>
             </div>
