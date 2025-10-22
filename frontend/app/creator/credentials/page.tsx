@@ -81,10 +81,12 @@ export default function CredentialsPage() {
     setEditingCredentials(cred)
     setValue('exchange_type', cred.exchange_type)
     setValue('credential_type', cred.credential_type)
-    setValue('network_type', cred.network_type)
+    // Convert lowercase network_type from DB to uppercase for form
+    setValue('network_type', cred.network_type?.toUpperCase())
     setValue('name', cred.name)
     setValue('is_default', cred.is_default)
     setValue('is_active', cred.is_active)
+    // Don't set api_key and api_secret - they should remain blank for security
     setIsModalOpen(true)
   }
 
@@ -95,37 +97,58 @@ export default function CredentialsPage() {
       await deleteMutation.mutateAsync(id)
       toast.success('Credentials deleted successfully')
     } catch (error: any) {
-      toast.error(error.response?.data?.detail || 'Failed to delete credentials')
+      const errorDetail = error.response?.data?.detail
+      const errorMessage = typeof errorDetail === 'string' 
+        ? errorDetail 
+        : 'Failed to delete credentials'
+      toast.error(errorMessage)
     }
   }
 
   const onSubmit = async (data: CredentialsFormData) => {
     try {
+      // Convert network_type to lowercase for API
+      const submissionData = {
+        ...data,
+        network_type: data.network_type?.toLowerCase() as any
+      }
+      
       if (editingCredentials) {
         // Update existing credentials
         const updateData: UpdateCredentialsData = {
-          name: data.name,
-          is_default: data.is_default,
-          is_active: data.is_active
+          name: submissionData.name,
+          is_default: submissionData.is_default,
+          is_active: submissionData.is_active
         }
         
         // Only include secrets if they were provided
-        if (data.api_key) updateData.api_key = data.api_key
-        if (data.api_secret) updateData.api_secret = data.api_secret
-        if (data.passphrase) updateData.passphrase = data.passphrase
+        if (submissionData.api_key) updateData.api_key = submissionData.api_key
+        if (submissionData.api_secret) updateData.api_secret = submissionData.api_secret
+        if (submissionData.passphrase) updateData.passphrase = submissionData.passphrase
 
         await updateMutation.mutateAsync({ id: editingCredentials.id, data: updateData })
         toast.success('Credentials updated successfully')
       } else {
         // Create new credentials
-        await createMutation.mutateAsync(data)
+        await createMutation.mutateAsync(submissionData)
         toast.success('Credentials created successfully')
       }
       
       setIsModalOpen(false)
       reset()
     } catch (error: any) {
-      toast.error(error.response?.data?.detail || 'Failed to save credentials')
+      const errorDetail = error.response?.data?.detail
+      let errorMessage = 'Failed to save credentials'
+      
+      if (typeof errorDetail === 'string') {
+        errorMessage = errorDetail
+      } else if (Array.isArray(errorDetail)) {
+        errorMessage = errorDetail.map(e => e.msg || e).join(', ')
+      } else if (errorDetail && typeof errorDetail === 'object') {
+        errorMessage = JSON.stringify(errorDetail)
+      }
+      
+      toast.error(errorMessage)
     }
   }
 
@@ -421,6 +444,7 @@ export default function CredentialsPage() {
                       {...register('api_key', { required: !editingCredentials })}
                       className="form-input"
                       placeholder="Enter your API key"
+                      autoComplete="off"
                     />
                     {errors.api_key && (
                       <p className="text-red-400 text-sm mt-1">{errors.api_key.message}</p>
@@ -437,6 +461,7 @@ export default function CredentialsPage() {
                       {...register('api_secret', { required: !editingCredentials })}
                       className="form-input"
                       placeholder="Enter your API secret"
+                      autoComplete="new-password"
                     />
                     {errors.api_secret && (
                       <p className="text-red-400 text-sm mt-1">{errors.api_secret.message}</p>
@@ -453,6 +478,7 @@ export default function CredentialsPage() {
                       {...register('passphrase')}
                       className="form-input"
                       placeholder="Enter passphrase if required"
+                      autoComplete="off"
                     />
                   </div>
 
