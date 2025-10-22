@@ -102,7 +102,7 @@ export default function BotDetailPage() {
   const [activeTab, setActiveTab] = useState<TabType>(getInitialTab())
   const [isStartingTrial, setIsStartingTrial] = useState(false)
   const [trialConfig, setTrialConfig] = useState({
-    tradingPair: bot?.trading_pairs && bot.trading_pairs.length > 0 ? bot.trading_pairs[0] : 'BTC/USDT', // Use bot's first trading pair
+    tradingPair: 'BTC/USDT', // Default - will be updated when bot loads
     secondaryTradingPairs: [] as string[],
     networkType: 'TESTNET',
     subscriptionStart: '', // For Pro users
@@ -145,6 +145,16 @@ export default function BotDetailPage() {
 
   // Fetch real bot data from API
   const { data: bot, isLoading: isBotLoading, error: botError } = useGetBot(botId)
+
+  // Update trading pair when bot loads
+  useEffect(() => {
+    if (bot && bot.trading_pairs && bot.trading_pairs.length > 0) {
+      setTrialConfig(prev => ({
+        ...prev,
+        tradingPair: bot.trading_pairs[0] // Use bot's first supported trading pair
+      }))
+    }
+  }, [bot])
 
   // Set default tab to analytics for non-developers after bot loads
   useEffect(() => {
