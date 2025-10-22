@@ -1206,7 +1206,8 @@ def run_bot_logic(self, subscription_id: int):
             # Create subscription config
             subscription_config = {
                 'subscription_id': subscription_id,
-                'timeframe': subscription.bot.timeframe,
+                'timeframe': subscription.bot.timeframe,  # Legacy single timeframe
+                'timeframes': subscription.bot.timeframes or [subscription.bot.timeframe],  # Multi-timeframe support
                 'trading_pair': trading_pair,
                 'is_testnet': use_testnet,
                 'exchange_type': exchange_type.value,
@@ -1777,7 +1778,8 @@ def run_bot_rpa_logic(self, subscription_id: int):
             # Create subscription config
             subscription_config = {
                 'subscription_id': subscription_id,
-                'timeframe': subscription.bot.timeframe,
+                'timeframe': subscription.bot.timeframe,  # Legacy single timeframe
+                'timeframes': subscription.bot.timeframes or [subscription.bot.timeframe],  # Multi-timeframe support
                 'trading_pair': trading_pair,
                 'is_testnet': use_testnet,
                 'exchange_type': exchange_type.value,
