@@ -60,13 +60,22 @@ def format_notification_message(
         )
     else:
         # ACTIVE bot format (with balance info)
-        available_str = available if available is not None else "N/A"
-        total_wallet_str = total_wallet if total_wallet is not None else "N/A"
+        # Format balance values safely
+        if available is not None:
+            available_str = f"${available:,.2f}"
+        else:
+            available_str = "N/A"
+            
+        if total_wallet is not None:
+            total_wallet_str = f"${total_wallet:,.2f}"
+        else:
+            total_wallet_str = "N/A"
+            
         msg = (
             f"🌐 {bot_name}\n"
             f"TESTNET Account Balance:\n"
-            f" 💰 Available: ${available_str:,.2f} USDT\n"
-            f" 💎 Total Wallet: ${total_wallet_str:,.2f} USDT\n"
+            f" 💰 Available: {available_str} USDT\n"
+            f" 💎 Total Wallet: {total_wallet_str} USDT\n"
         )
         
         # Add trading pair if provided
@@ -1484,11 +1493,20 @@ def run_bot_logic(self, subscription_id: int):
                             quantity_val = None  # Signals bot doesn't have quantity
                             logger.info(f"📊 SIGNALS bot notification: entry={entry_price_val}, sl={stop_loss_val}, tp={take_profit_val}")
                         else:
-                            # ACTIVE bot: Extract from trade_result
-                            entry_price_val = trade_result.get('entry_price') if trade_result else None
-                            quantity_val = trade_result.get('quantity') if trade_result else None
-                            stop_loss_val = (trade_result.get("stop_loss", {}).get("price") if isinstance(trade_result.get("stop_loss"), dict) else None) if trade_result else None
-                            take_profit_val = (trade_result.get("take_profit", {}).get("price") if isinstance(trade_result.get("take_profit"), dict) else None) if trade_result else None
+                            # ACTIVE bot: Extract from trade_result (with None safety)
+                            if trade_result and isinstance(trade_result, dict):
+                                entry_price_val = trade_result.get('entry_price')
+                                quantity_val = trade_result.get('quantity')
+                                stop_loss = trade_result.get("stop_loss", {})
+                                stop_loss_val = stop_loss.get("price") if isinstance(stop_loss, dict) else None
+                                take_profit = trade_result.get("take_profit", {})
+                                take_profit_val = take_profit.get("price") if isinstance(take_profit, dict) else None
+                            else:
+                                entry_price_val = None
+                                quantity_val = None
+                                stop_loss_val = None
+                                take_profit_val = None
+                                logger.warning(f"trade_result is None or invalid for ACTIVE bot, using fallback values")
                         
                         if is_signals_bot:
                             # SIGNALS bot: No balance info, add timeframe
@@ -1504,14 +1522,17 @@ def run_bot_logic(self, subscription_id: int):
                                 trading_pair=trading_pair,
                             )
                         else:
-                            # ACTIVE bot: Include balance info
+                            # ACTIVE bot: Include balance info (with None safety for account_status)
+                            available_balance = account_status.get('available_balance', 0) if account_status else 0
+                            total_balance = account_status.get('total_balance', 0) if account_status else 0
+                            
                             message = format_notification_message(
                                 bot_name=subscription.bot.name,
                                 balance_info=balance_info,
-                                available=account_status.get('available_balance', 0),
+                                available=available_balance,
                                 action=final_action.action,
                                 reason=final_action.reason,
-                                total_wallet=account_status.get('total_balance', 0),
+                                total_wallet=total_balance,
                                 entry_price=entry_price_val,
                                 quantity=quantity_val,
                                 stop_loss=stop_loss_val,
@@ -1879,18 +1900,36 @@ def run_bot_rpa_logic(self, subscription_id: int):
                     if telegram_chat_id or discord_user_id:
                         logger.info(f"trade_result: {trade_result}")
 
-                        # Format message for all channels using unified format
+                        # Format message for all channels using unified format (with None safety)
+                        if trade_result and isinstance(trade_result, dict):
+                            entry_price_val = trade_result.get('entry_price')
+                            quantity_val = trade_result.get('quantity')
+                            stop_loss = trade_result.get("stop_loss", {})
+                            stop_loss_val = stop_loss.get("price") if isinstance(stop_loss, dict) else None
+                            take_profit = trade_result.get("take_profit", {})
+                            take_profit_val = take_profit.get("price") if isinstance(take_profit, dict) else None
+                        else:
+                            entry_price_val = None
+                            quantity_val = None
+                            stop_loss_val = None
+                            take_profit_val = None
+                            logger.warning(f"trade_result is None or invalid, using fallback values for notification")
+                        
+                        # Safe extraction of account balances
+                        available_balance = account_status.get('available_balance', 0) if account_status else 0
+                        total_balance = account_status.get('total_balance', 0) if account_status else 0
+                        
                         message = format_notification_message(
                             bot_name=subscription.bot.name,
                             # balance_info=balance_info,
-                            available=account_status.get('available_balance', 0),
+                            available=available_balance,
                             action=final_action.action,
                             reason=final_action.reason,
-                            total_wallet=account_status.get('total_balance', 0),
-                            entry_price= trade_result.get('entry_price') if trade_result else None,
-                            quantity=trade_result.get('quantity') if trade_result else None,
-                            stop_loss=trade_result.get("stop_loss", {}).get("price") if trade_result else None,
-                            take_profit=trade_result.get("take_profit", {}).get("price") if trade_result else None,
+                            total_wallet=total_balance,
+                            entry_price=entry_price_val,
+                            quantity=quantity_val,
+                            stop_loss=stop_loss_val,
+                            take_profit=take_profit_val,
                             trading_pair=trading_pair,
                         )
                         if telegram_chat_id:
@@ -3015,7 +3054,8 @@ async def run_advanced_futures_workflow(bot, subscription_id: int, subscription_
             if open_positions:
                 logger.info(f"   ⏭️  SKIP: {len(open_positions)} OPEN position(s) found")
                 for pos in open_positions:
-                    logger.info(f"      - Position #{pos.id}: {pos.action} {pos.quantity} @ ${pos.entry_price}, P&L: ${pos.unrealized_pnl:.2f}")
+                    pnl = float(pos.unrealized_pnl) if pos.unrealized_pnl is not None else 0.0
+                    logger.info(f"      - Position #{pos.id}: {pos.action} {pos.quantity} @ ${pos.entry_price}, P&L: ${pnl:.2f}")
                 # Continue to next pair
                 continue
             else:
@@ -3298,7 +3338,8 @@ async def run_advanced_futures_rpa_workflow(bot, subscription_id: int, subscript
             if open_positions:
                 logger.info(f"   ⏭️  SKIP: {len(open_positions)} OPEN position(s) found")
                 for pos in open_positions:
-                    logger.info(f"      - Position #{pos.id}: {pos.action} {pos.quantity} @ ${pos.entry_price}, P&L: ${pos.unrealized_pnl:.2f}")
+                    pnl = float(pos.unrealized_pnl) if pos.unrealized_pnl is not None else 0.0
+                    logger.info(f"      - Position #{pos.id}: {pos.action} {pos.quantity} @ ${pos.entry_price}, P&L: ${pnl:.2f}")
                 # Continue to next pair
                 continue
             else:
