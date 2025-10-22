@@ -63,8 +63,8 @@ class TradeStatus(str, Enum):
     CLOSED = "CLOSED"
 
 class NetworkType(str, Enum):
-    TESTNET = "TESTNET"
-    MAINNET = "MAINNET"
+    TESTNET = "testnet"
+    MAINNET = "mainnet"
 
 class TradeMode(str, Enum):
     SPOT = "Spot"
