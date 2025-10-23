@@ -33,7 +33,7 @@ const botEditSchema = z.object({
   timeframes: z.array(z.string()).default(['1h']).optional(),
   // Pricing
   price_per_month: z.number().min(0, 'Price must be 0 or higher').default(0),
-  is_free: z.boolean().default(false),
+  is_free: z.boolean().default(true), // Default to free
   // Image upload
   image_url: z.string().optional().nullable(),
   // Advanced configuration
@@ -548,11 +548,12 @@ export default function EditBotPage() {
               <div>
                 <label className="form-label">Marketplace Pricing</label>
                   <div className="space-y-4">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between" style={{ display: 'none' }}>
                       <div className="flex items-center space-x-3">
                         <input
                           {...register('is_free')}
                           type="checkbox"
+                          defaultChecked={true}
                           className="w-4 h-4 text-quantum-500 bg-dark-700 border-quantum-500/30 rounded focus:ring-quantum-500 focus:ring-2"
                           onChange={(e) => {
                             if (e.target.checked) {
@@ -562,54 +563,31 @@ export default function EditBotPage() {
                         />
                         <label className="form-label !mb-0">Free to use</label>
                       </div>
-                      {watch('is_free') ? (
-                        <span className="text-xs text-gray-500">
-                          💡 Uncheck to set price
-                        </span>
-                      ) : (
-                        <span className="text-xs text-gray-400">
-                          💰 Check to make free
-                        </span>
-                      )}
+                      <span className="text-xs text-gray-500">
+                        💡 Always free
+                      </span>
                     </div>
                     
-                    {!watch('is_free') && (
-                      <div className="animate-fade-in">
-                        <label className="form-label">Price per Month (ICP)</label>
-                        <div className="relative">
-                          <input
-                            {...register('price_per_month', { 
-                              valueAsNumber: true,
-                              onChange: (e) => {
-                                console.log('💰 Price input changed:', e.target.value, typeof e.target.value)
-                                console.log('💰 Current watch value:', watch('price_per_month'))
-                              }
-                            })}
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            className="form-input pl-12"
-                            placeholder="0.00"
-                          />
-                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <span className="text-quantum-400 text-sm font-medium">ICP</span>
-                          </div>
-                        </div>
-                        {errors.price_per_month && <p className="form-error">{errors.price_per_month.message}</p>}
-                        <p className="text-xs text-gray-500 mt-1">
-                          💡 Users will pay in Internet Computer Protocol (ICP) tokens
-                        </p>
-                      </div>
-                    )}
+                    {/* Price per Month hidden but keep default value */}
+                    <div style={{ display: 'none' }}>
+                      <input
+                        {...register('price_per_month', { 
+                          valueAsNumber: true,
+                          value: 0
+                        })}
+                        type="hidden"
+                        value={0}
+                      />
+                    </div>
 
                     {/* Pricing Preview */}
                     <div className="bg-dark-800/50 rounded-lg p-3 border border-quantum-500/20">
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-gray-400">Marketplace Price:</span>
-                        <span className="text-quantum-400 font-medium">
-                          {watch('is_free') ? 'FREE' : `${watch('price_per_month') || 0} ICP/month`}
-                        </span>
-                      </div>
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-gray-400">Marketplace Price:</span>
+                          <span className="text-quantum-400 font-medium">
+                            FREE
+                          </span>
+                        </div>
                     </div>
                   </div>
               </div>

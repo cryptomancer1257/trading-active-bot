@@ -237,3 +237,4 @@ output.xml
 report.html
 config/credentials/
 configs/
+docker-compose.yml

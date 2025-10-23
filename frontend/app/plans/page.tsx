@@ -261,7 +261,7 @@ export default function PlansPage() {
               </li>
               <li className="flex items-start">
                 <span className="text-purple-600 mr-2 mt-0.5">✓</span>
-                <span className="text-gray-900"><strong>720 trades/month</strong></span>
+                <span className="text-gray-900"><strong>720 Analysis + trades/month</strong></span>
               </li>
               <li className="flex items-start">
                 <span className="text-purple-600 mr-2 mt-0.5">✓</span>
@@ -363,7 +363,7 @@ export default function PlansPage() {
               </li>
               <li className="flex items-start">
                 <span className="text-yellow-600 mr-2 mt-0.5">✓</span>
-                <span className="text-gray-900"><strong>7,200 trades/month</strong></span>
+                <span className="text-gray-900"><strong>7,200 Analysis + trades/month</strong></span>
               </li>
               <li className="flex items-start">
                 <span className="text-yellow-600 mr-2 mt-0.5">✓</span>

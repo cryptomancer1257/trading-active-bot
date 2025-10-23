@@ -285,8 +285,26 @@ class BybitFuturesIntegration(BaseFuturesExchange):
             logger.info(f"📊 Bybit market order params (minimal): {params}")
             result = self._make_request("POST", "/v5/order/create", params, signed=True)
             
+            # Log full response for debugging
+            logger.info(f"📋 Bybit order response: {result}")
+            logger.info(f"📋 Response keys: {list(result.keys())}")
+            
+            order_id = result.get('orderId', '')
+            if not order_id or order_id == '':
+                logger.error(f"❌ CRITICAL: Bybit did NOT return orderId!")
+                logger.error(f"   Full response: {result}")
+                logger.error(f"   This will cause position sync to FAIL!")
+                # Try alternative fields
+                order_id = result.get('orderLinkId', '') or result.get('order_id', '') or result.get('id', '')
+                if order_id:
+                    logger.warning(f"⚠️ Using alternative order ID field: {order_id}")
+                else:
+                    logger.error(f"❌ NO order ID found in ANY field!")
+            else:
+                logger.info(f"✅ Bybit order created with ID: {order_id}")
+            
             return FuturesOrderInfo(
-                order_id=result.get('orderId', ''),
+                order_id=order_id if order_id else 'MISSING_ORDER_ID',
                 client_order_id=result.get('orderLinkId', ''),
                 symbol=symbol,
                 side=side,
