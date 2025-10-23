@@ -606,6 +606,12 @@ class UniversalFuturesBot(CustomBot):
                 }
             
             logger.info(f"✅ Market order placed successfully: {order.status}")
+            logger.info(f"📋 Order details: ID={order.order_id}, Symbol={order.symbol}, Qty={order.quantity}")
+            
+            # Validate order_id
+            if not order.order_id or order.order_id == '':
+                logger.error(f"❌ CRITICAL: Order created but NO order_id returned from {self.exchange_name}!")
+                logger.error(f"   Order object: {order}")
             
             # Wait for position to be settled on exchange before placing SL/TP
             import time
@@ -761,6 +767,16 @@ class UniversalFuturesBot(CustomBot):
                 tp_orders = None
             
             # Return trade result
+            main_order_id = getattr(order, 'order_id', 'N/A')
+            
+            # Final validation before returning
+            if not main_order_id or main_order_id == 'N/A' or main_order_id == '':
+                logger.error(f"❌ CRITICAL: About to save transaction WITHOUT valid order_id!")
+                logger.error(f"   Order object: {order}")
+                logger.error(f"   main_order_id value: '{main_order_id}'")
+            else:
+                logger.info(f"✅ Transaction will be saved with order_id: {main_order_id}")
+            
             result = {
                 'status': 'success',
                 'action': action.action,
@@ -770,7 +786,7 @@ class UniversalFuturesBot(CustomBot):
                 'entry_price': actual_entry_price,  # Use actual realtime entry price
                 'leverage': self.leverage,
                 'position_value': position_value,
-                'main_order_id': getattr(order, 'order_id', 'N/A'),
+                'main_order_id': main_order_id,
                 'stop_loss': {
                     'price': stop_loss_price,
                     'order_id': sl_order.get('order_id') if sl_order else None,
@@ -891,6 +907,11 @@ class UniversalFuturesBot(CustomBot):
                 updated_at=datetime.now()
             )
             
+            # Log what we're about to save
+            logger.info(f"💾 Saving transaction to database:")
+            logger.info(f"   order_id from trade_result: '{trade_result.get('main_order_id')}'")
+            logger.info(f"   order_id in transaction object: '{transaction.order_id}'")
+            
             # Add to database
             db.add(transaction)
             db.commit()
@@ -898,6 +919,7 @@ class UniversalFuturesBot(CustomBot):
             
             logger.info(f"✅ Transaction saved to database with ID: {transaction.id} (Status: OPEN)")
             logger.info(f"   Position: {position_side}, Entry: ${entry_price:.2f}, RR: {risk_reward_ratio or 'N/A'}")
+            logger.info(f"   Order ID in DB: '{transaction.order_id}'")
             
         except Exception as e:
             logger.error(f"❌ Failed to save transaction to database: {e}")

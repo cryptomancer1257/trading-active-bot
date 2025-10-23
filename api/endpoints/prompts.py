@@ -16,6 +16,21 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Trading Strategy Templates"])
 
 
+@router.get("/prompt-templates", response_model=List[Dict[str, Any]])
+def get_prompt_templates_for_library(
+    category: Optional[str] = None,
+    search: Optional[str] = None,
+    timeframe: Optional[str] = None,
+    min_win_rate: Optional[int] = None,
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db)
+):
+    """
+    Get list of trading prompt templates for Strategy Library
+    """
+    return list_prompt_templates(category, search, timeframe, min_win_rate, skip, limit, db)
+
 @router.get("/templates", response_model=List[Dict[str, Any]])
 def list_prompt_templates(
     category: Optional[str] = None,
@@ -105,7 +120,7 @@ def get_prompt_template(
     template_id: str,
     db: Session = Depends(get_db)
 ):
-    """Get specific prompt template by ID"""
+    """Get specific prompt template by template_id"""
     try:
         template = db.query(TradingPromptTemplate).filter(
             TradingPromptTemplate.template_id == template_id,
@@ -137,6 +152,48 @@ def get_prompt_template(
         raise
     except Exception as e:
         logger.error(f"Failed to get prompt template {template_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve prompt template"
+        )
+
+@router.get("/templates/by-id/{id}", response_model=Dict[str, Any])
+def get_prompt_template_by_id(
+    id: int,
+    db: Session = Depends(get_db)
+):
+    """Get specific prompt template by database ID"""
+    try:
+        template = db.query(TradingPromptTemplate).filter(
+            TradingPromptTemplate.id == id,
+            TradingPromptTemplate.is_active == True
+        ).first()
+        
+        if not template:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Prompt template with ID '{id}' not found"
+            )
+        
+        return {
+            "id": template.id,
+            "template_id": template.template_id,
+            "title": template.title,
+            "category": template.category,
+            "timeframe": template.timeframe,
+            "win_rate_estimate": template.win_rate_estimate,
+            "prompt": template.prompt,
+            "risk_management": template.risk_management,
+            "best_for": template.best_for,
+            "metadata": template.template_metadata,
+            "created_at": template.created_at.isoformat() if template.created_at else None,
+            "updated_at": template.updated_at.isoformat() if template.updated_at else None
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get prompt template {id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve prompt template"

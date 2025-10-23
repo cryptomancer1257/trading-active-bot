@@ -74,13 +74,22 @@ export default function PromptsPage() {
                 Manage your AI strategy templates for trading analysis and bot strategies
               </p>
             </div>
-            <button
-              onClick={handleCreate}
-              className="btn-quantum flex items-center gap-2"
-            >
-              <PlusIcon className="h-5 w-5" />
-              Create New Strategy
-            </button>
+            <div className="flex gap-3">
+              <button
+                onClick={() => router.push('/creator/strategy-library')}
+                className="btn btn-secondary flex items-center gap-2"
+              >
+                <DocumentTextIcon className="h-5 w-5" />
+                Strategy Library
+              </button>
+              <button
+                onClick={handleCreate}
+                className="btn-quantum flex items-center gap-2"
+              >
+                <PlusIcon className="h-5 w-5" />
+                Create New Strategy
+              </button>
+            </div>
           </div>
         </div>
 

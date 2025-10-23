@@ -10,7 +10,8 @@ import {
   ChartBarIcon,
   DocumentTextIcon,
   ExclamationTriangleIcon,
-  UserGroupIcon
+  UserGroupIcon,
+  BellIcon
 } from '@heroicons/react/24/outline'
 import { CheckCircleIcon, ClockIcon, XCircleIcon, ArchiveBoxIcon } from '@heroicons/react/24/solid'
 import Link from 'next/link'
@@ -79,7 +80,7 @@ interface BotLog {
   signal_data?: any
 }
 
-type TabType = 'overview' | 'strategies' | 'risk-management' | 'settings' | 'analytics' | 'subscriptions'
+type TabType = 'overview' | 'strategies' | 'risk-management' | 'settings' | 'notifications' | 'analytics' | 'subscriptions'
 
 export default function BotDetailPage() {
   const router = useRouter()
@@ -689,7 +690,7 @@ export default function BotDetailPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Subscription Start Date
+                  Trade Start Date
                 </label>
                 <input
                   type="datetime-local"
@@ -700,7 +701,7 @@ export default function BotDetailPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Subscription End Date
+                  Trade End Date
                 </label>
                 <input
                   type="datetime-local"
@@ -1002,6 +1003,121 @@ export default function BotDetailPage() {
         return <BotAnalytics botId={bot.id} isOwner={isOwner} />
       case 'subscriptions':
         return <BotSubscriptions botId={bot.id} />
+      case 'notifications':
+        return (
+          <div className="space-y-6">
+            <h2 className="text-2xl font-bold text-white mb-6">📱 Telegram Notifications</h2>
+            
+            {/* Introduction */}
+            <div className="bg-gradient-to-r from-blue-900/30 to-purple-900/30 p-6 rounded-lg border border-blue-700/50">
+              <h3 className="text-xl font-semibold text-blue-400 mb-3">Receive Real-Time Trading Signals</h3>
+              <p className="text-gray-300">
+                Get instant notifications on Telegram whenever your bot generates trading signals, executes trades, or encounters important events.
+              </p>
+            </div>
+
+            {/* Setup Steps */}
+            <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
+              <h3 className="text-lg font-semibold text-white mb-4">🚀 Setup Instructions</h3>
+              
+              <div className="space-y-6">
+                {/* Step 1 */}
+                <div className="flex items-start space-x-4">
+                  <div className="flex-shrink-0 w-8 h-8 bg-purple-600 rounded-full flex items-center justify-center text-white font-bold">
+                    1
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="text-white font-semibold mb-2">Configure Telegram in Profile</h4>
+                    <p className="text-gray-300 mb-3">
+                      First, you need to link your Telegram account to receive notifications.
+                    </p>
+                    <Link 
+                      href="/profile"
+                      className="inline-flex items-center px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
+                    >
+                      <Cog6ToothIcon className="h-5 w-5 mr-2" />
+                      Go to Profile Settings
+                    </Link>
+                  </div>
+                </div>
+
+                {/* Step 2 */}
+                <div className="flex items-start space-x-4">
+                  <div className="flex-shrink-0 w-8 h-8 bg-purple-600 rounded-full flex items-center justify-center text-white font-bold">
+                    2
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="text-white font-semibold mb-2">Start CryptoMancer AI Bot</h4>
+                    <p className="text-gray-300 mb-3">
+                      Open Telegram and start our bot to activate notifications.
+                    </p>
+                    <a 
+                      href="https://t.me/cryptomancer_ai_bot"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                    >
+                      <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.161l-1.826 8.602c-.136.613-.494.763-.996.475l-2.75-2.026-1.326 1.277c-.147.147-.27.27-.553.27l.197-2.807 5.097-4.604c.222-.197-.048-.306-.346-.108l-6.3 3.966-2.717-.85c-.59-.184-.601-.59.125-.874l10.638-4.102c.494-.18.925.111.763.874z"/>
+                      </svg>
+                      Open @cryptomancer_ai_bot
+                    </a>
+                  </div>
+                </div>
+
+                {/* Step 3 */}
+                <div className="flex items-start space-x-4">
+                  <div className="flex-shrink-0 w-8 h-8 bg-purple-600 rounded-full flex items-center justify-center text-white font-bold">
+                    3
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="text-white font-semibold mb-2">Send /start Command</h4>
+                    <p className="text-gray-300 mb-3">
+                      In the Telegram bot chat, send the command:
+                    </p>
+                    <div className="bg-gray-900 p-4 rounded-lg border border-gray-600">
+                      <code className="text-green-400 font-mono">/start</code>
+                    </div>
+                    <p className="text-gray-400 text-sm mt-2">
+                      This will link your Telegram account with your trading bot.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Step 4 */}
+                <div className="flex items-start space-x-4">
+                  <div className="flex-shrink-0 w-8 h-8 bg-green-600 rounded-full flex items-center justify-center text-white font-bold">
+                    ✓
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="text-white font-semibold mb-2">You're All Set! 🎉</h4>
+                    <p className="text-gray-300">
+                      Once setup is complete, you'll receive notifications for:
+                    </p>
+                    <ul className="list-disc list-inside text-gray-300 mt-2 space-y-1">
+                      <li>New trading signals</li>
+                      <li>Trade executions (entries & exits)</li>
+                      <li>Take profit & stop loss triggers</li>
+                      <li>Bot status changes</li>
+                      <li>Important alerts & warnings</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Additional Tips */}
+            <div className="bg-yellow-900/20 border border-yellow-700/50 p-4 rounded-lg">
+              <h4 className="text-yellow-400 font-semibold mb-2">💡 Pro Tips</h4>
+              <ul className="text-gray-300 space-y-2 text-sm">
+                <li>• Make sure to enable notifications in your Telegram app settings</li>
+                <li>• You can mute/unmute the bot anytime from Telegram settings</li>
+                <li>• Each bot sends its notifications separately, so you can manage them individually</li>
+                <li>• Check your Profile settings if you're not receiving notifications</li>
+              </ul>
+            </div>
+          </div>
+        )
       default:
         return null
     }
@@ -1094,6 +1210,21 @@ export default function BotDetailPage() {
               >
                 <Cog6ToothIcon className="h-5 w-5 inline-block mr-2" />
                 Settings
+              </button>
+            )}
+            
+            {/* Show Notifications tab only for bot developer */}
+            {bot.developer_id === user?.id && (
+              <button
+                onClick={() => setActiveTab('notifications')}
+                className={`whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === 'notifications'
+                    ? 'border-purple-500 text-purple-400'
+                    : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <BellIcon className="h-5 w-5 inline-block mr-2" />
+                Notifications
               </button>
             )}
             

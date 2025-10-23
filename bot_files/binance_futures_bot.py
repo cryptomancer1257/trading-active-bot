@@ -1624,7 +1624,7 @@ class BinanceFuturesBot(CustomBot):
 
         # Giới hạn mặc định theo TF (có thể lớn hơn 20 để vẽ chỉ báo đẹp hơn)
         timeframe_limits = {
-            "30m": 200, "1h": 168, "4h": 42,
+            "30m": 200, "1h": 200, "4h": 42,
             "1m": 1000, "3m": 1000, "5m": 500, "15m": 500,
             "2h": 84, "6h": 28, "8h": 21, "12h": 14,
             "1d": 30, "3d": 30, "1w": 52, "1M": 12

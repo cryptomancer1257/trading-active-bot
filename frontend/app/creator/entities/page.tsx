@@ -179,9 +179,10 @@ export default function MyEntitiesPage() {
                       {getStatusBadge(bot.status)}
                     </div>
                   </div>
-                  <div className="text-right">
+                  {/* Price/Month hidden but keep default value */}
+                  <div className="text-right" style={{ display: 'none' }}>
                     <div className="text-sm text-gray-400">Price/Month</div>
-                    <div className="text-lg font-bold text-purple-400">{bot.price_per_month} ICP</div>
+                    <div className="text-lg font-bold text-purple-400">{bot.price_per_month || 0} ICP</div>
                   </div>
                 </div>
 

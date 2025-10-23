@@ -458,10 +458,10 @@ export default function HomePage() {
                     <span className="text-yellow-400">∞ Unlimited (Low Quality)</span>
                   </td>
                   <td className="py-4 px-6 text-center bg-gradient-to-br from-purple-900/10 to-pink-900/10">
-                    <span className="text-purple-400 font-semibold">720 trades</span>
+                    <span className="text-purple-400 font-semibold">720 Analysis + trades</span>
                   </td>
                   <td className="py-4 px-6 text-center bg-gradient-to-br from-yellow-900/10 to-orange-900/10">
-                    <span className="text-yellow-400 font-semibold">7,200 trades</span>
+                    <span className="text-yellow-400 font-semibold">7,200 Analysis + trades</span>
                   </td>
                 </tr>
 
