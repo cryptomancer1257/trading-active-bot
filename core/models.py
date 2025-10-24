@@ -974,6 +974,8 @@ class Transaction(Base):
     
     # Order details
     order_id = Column(String(100), nullable=True)
+    sl_order_ids = Column(JSON, nullable=True)  # Stop Loss order IDs (array)
+    tp_order_ids = Column(JSON, nullable=True)  # Take Profit order IDs (array)
     confidence = Column(Float, nullable=True)  # LLM confidence score
     reason = Column(Text, nullable=True)  # Trade reason
     status = Column(String(20), default='PENDING')  # PENDING, EXECUTED, OPEN, CLOSED, STOPPED_OUT, FAILED

@@ -350,6 +350,24 @@ class PositionSyncService:
             logger.info(f"   Realized P&L: ${realized_pnl:.2f} ({realized_pnl_pct:+.2f}%)")
             logger.info(f"   Duration: {duration_minutes} minutes")
             
+            # 🧹 Cancel remaining SL/TP orders
+            try:
+                from services.order_cleanup_service import OrderCleanupService
+                cleanup_service = OrderCleanupService(self.db)
+                cleanup_result = cleanup_service.cancel_position_orders(
+                    transaction=transaction,
+                    exchange_client=exchange_client,
+                    force_cancel_all=False  # Try specific orders first
+                )
+                
+                if cleanup_result.get('success'):
+                    logger.info(f"🧹 Cleanup: {cleanup_result['cancelled_count']} orders cancelled")
+                else:
+                    logger.warning(f"⚠️ Order cleanup had issues: {cleanup_result.get('error', 'Unknown')}")
+            except Exception as e:
+                logger.error(f"❌ Failed to cleanup orders: {e}")
+                # Don't fail the transaction close if cleanup fails
+            
             # Trigger performance metrics update
             try:
                 from core.tasks import update_bot_performance_metrics

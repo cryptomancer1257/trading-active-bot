@@ -139,11 +139,13 @@ class PositionMonitor:
         transaction: models.Transaction,
         exit_price: float,
         exit_reason: str,
-        current_time: datetime
+        current_time: datetime,
+        exchange_client = None
     ):
         """
         Update transaction when position is closed
         Calculate final P&L and metrics
+        Also cancels any remaining SL/TP orders
         """
         # Calculate P&L
         pnl_data = self.calculate_pnl(
@@ -178,6 +180,27 @@ class PositionMonitor:
         self.db.commit()
         
         logger.info(f"✅ Transaction {transaction.id} closed: {exit_reason}, P&L: ${pnl_data['pnl_usd']:.2f}")
+        
+        # 🧹 Cancel remaining SL/TP orders
+        if exchange_client:
+            try:
+                from services.order_cleanup_service import OrderCleanupService
+                cleanup_service = OrderCleanupService(self.db)
+                cleanup_result = cleanup_service.cancel_position_orders(
+                    transaction=transaction,
+                    exchange_client=exchange_client,
+                    force_cancel_all=False  # Try specific orders first
+                )
+                
+                if cleanup_result.get('success'):
+                    logger.info(f"🧹 Cleanup: {cleanup_result['cancelled_count']} orders cancelled")
+                else:
+                    logger.warning(f"⚠️ Order cleanup had issues: {cleanup_result.get('error', 'Unknown')}")
+            except Exception as e:
+                logger.error(f"❌ Failed to cleanup orders: {e}")
+                # Don't fail the transaction close if cleanup fails
+        else:
+            logger.warning(f"⚠️ No exchange_client provided, skipping order cleanup")
         
         return transaction
     
@@ -245,7 +268,8 @@ class PositionMonitor:
                                 transaction=transaction,
                                 exit_price=float(order_info.get('avgPrice', transaction.entry_price)),
                                 exit_reason='MANUAL',  # Assume manual close
-                                current_time=datetime.now()
+                                current_time=datetime.now(),
+                                exchange_client=self.futures_client
                             )
                             results['positions_closed'] += 1
                         continue
@@ -267,7 +291,8 @@ class PositionMonitor:
                             transaction=transaction,
                             exit_price=current_price,
                             exit_reason=hit_reason,
-                            current_time=datetime.now()
+                            current_time=datetime.now(),
+                            exchange_client=self.futures_client
                         )
                         results['positions_closed'] += 1
                         

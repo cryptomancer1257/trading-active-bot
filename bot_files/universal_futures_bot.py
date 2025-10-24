@@ -907,10 +907,36 @@ class UniversalFuturesBot(CustomBot):
                 updated_at=datetime.now()
             )
             
+            # Extract and save SL/TP order IDs
+            sl_order_ids = []
+            tp_order_ids = []
+            
+            # Get SL order ID
+            if trade_result.get('stop_loss') and trade_result['stop_loss'].get('order_id'):
+                sl_order_id = trade_result['stop_loss']['order_id']
+                if sl_order_id and sl_order_id != 'N/A' and sl_order_id != '':
+                    sl_order_ids.append(str(sl_order_id))
+            
+            # Get TP order IDs
+            if trade_result.get('take_profit') and trade_result['take_profit'].get('order_ids'):
+                tp_ids = trade_result['take_profit']['order_ids']
+                if isinstance(tp_ids, list):
+                    for tp_id in tp_ids:
+                        if tp_id and tp_id != 'N/A' and tp_id != '' and tp_id is not None:
+                            tp_order_ids.append(str(tp_id))
+                elif tp_ids and tp_ids != 'N/A' and tp_ids != '':
+                    tp_order_ids.append(str(tp_ids))
+            
+            # Save order IDs to transaction
+            transaction.sl_order_ids = sl_order_ids if sl_order_ids else None
+            transaction.tp_order_ids = tp_order_ids if tp_order_ids else None
+            
             # Log what we're about to save
             logger.info(f"💾 Saving transaction to database:")
             logger.info(f"   order_id from trade_result: '{trade_result.get('main_order_id')}'")
             logger.info(f"   order_id in transaction object: '{transaction.order_id}'")
+            logger.info(f"   SL order IDs: {sl_order_ids}")
+            logger.info(f"   TP order IDs: {tp_order_ids}")
             
             # Add to database
             db.add(transaction)
@@ -920,6 +946,7 @@ class UniversalFuturesBot(CustomBot):
             logger.info(f"✅ Transaction saved to database with ID: {transaction.id} (Status: OPEN)")
             logger.info(f"   Position: {position_side}, Entry: ${entry_price:.2f}, RR: {risk_reward_ratio or 'N/A'}")
             logger.info(f"   Order ID in DB: '{transaction.order_id}'")
+            logger.info(f"   SL/TP Orders tracked: {len(sl_order_ids)} SL, {len(tp_order_ids)} TP")
             
         except Exception as e:
             logger.error(f"❌ Failed to save transaction to database: {e}")
