@@ -283,36 +283,120 @@ class BybitFuturesIntegration(BaseFuturesExchange):
             }
             
             logger.info(f"📊 Bybit market order params (minimal): {params}")
-            result = self._make_request("POST", "/v5/order/create", params, signed=True)
+            
+            # Retry logic for price validation errors (error 30208)
+            max_retries = 3
+            retry_delay = 2  # seconds
+            result = None
+            
+            for attempt in range(max_retries):
+                try:
+                    result = self._make_request("POST", "/v5/order/create", params, signed=True)
+                    # Success - break out of retry loop
+                    break
+                    
+                except Exception as e:
+                    error_str = str(e)
+                    
+                    # Check if it's a price validation error (30208)
+                    if "30208" in error_str or "price is higher than the maximum" in error_str.lower():
+                        if attempt < max_retries - 1:
+                            logger.warning(f"⚠️ Bybit price validation failed (attempt {attempt + 1}/{max_retries})")
+                            logger.warning(f"   Error: {error_str}")
+                            logger.warning(f"   Retrying in {retry_delay}s...")
+                            import time
+                            time.sleep(retry_delay)
+                            continue
+                        else:
+                            # Last attempt failed
+                            logger.error(f"❌ All {max_retries} attempts failed with price validation error")
+                            raise
+                    else:
+                        # Different error - don't retry
+                        raise
+            
+            if result is None:
+                raise Exception("Failed to create market order after retries")
             
             # Log full response for debugging
             logger.info(f"📋 Bybit order response: {result}")
             logger.info(f"📋 Response keys: {list(result.keys())}")
             
             order_id = result.get('orderId', '')
+            order_link_id = result.get('orderLinkId', '')
+            
+            # Bybit market orders often don't return orderId in create response
+            # Need to query order history to get the actual orderId
             if not order_id or order_id == '':
-                logger.error(f"❌ CRITICAL: Bybit did NOT return orderId!")
-                logger.error(f"   Full response: {result}")
-                logger.error(f"   This will cause position sync to FAIL!")
-                # Try alternative fields
-                order_id = result.get('orderLinkId', '') or result.get('order_id', '') or result.get('id', '')
-                if order_id:
-                    logger.warning(f"⚠️ Using alternative order ID field: {order_id}")
-                else:
-                    logger.error(f"❌ NO order ID found in ANY field!")
+                logger.warning(f"⚠️ Bybit create response missing orderId, querying order history...")
+                
+                # Wait briefly for order to be processed
+                import time
+                time.sleep(0.3)
+                
+                # Try to get orderId from recent order history
+                try:
+                    # Query recent orders (last 1 minute)
+                    import time as time_module
+                    end_time = int(time_module.time() * 1000)
+                    start_time = end_time - 60000  # Last 1 minute
+                    
+                    history_params = {
+                        'category': 'linear',
+                        'symbol': symbol,
+                        'startTime': start_time,
+                        'endTime': end_time,
+                        'limit': 10
+                    }
+                    
+                    history_result = self._make_request("GET", "/v5/order/history", history_params, signed=True)
+                    orders_list = history_result.get('list', [])
+                    
+                    logger.info(f"📋 Found {len(orders_list)} recent orders")
+                    
+                    # Find our order by matching symbol, side, qty, and recent timestamp
+                    for order in orders_list:
+                        if (order.get('symbol') == symbol and 
+                            order.get('side') == params['side'] and
+                            order.get('qty') == rounded_quantity and
+                            order.get('orderType') == 'Market'):
+                            
+                            order_id = order.get('orderId', '')
+                            if order_id:
+                                logger.info(f"✅ Found orderId from history: {order_id}")
+                                break
+                    
+                    # If still no orderId, try orderLinkId as fallback
+                    if not order_id and order_link_id:
+                        logger.warning(f"⚠️ Using orderLinkId as fallback: {order_link_id}")
+                        order_id = order_link_id
+                    
+                except Exception as query_err:
+                    logger.error(f"❌ Failed to query order history: {query_err}")
+                    # Use orderLinkId as last resort
+                    if order_link_id:
+                        logger.warning(f"⚠️ Using orderLinkId as fallback: {order_link_id}")
+                        order_id = order_link_id
+            
+            # Final validation
+            if not order_id or order_id == '':
+                logger.error(f"❌ CRITICAL: Could not obtain orderId from Bybit!")
+                logger.error(f"   Create response: {result}")
+                logger.error(f"   This will cause position tracking to FAIL!")
+                order_id = 'MISSING_ORDER_ID'
             else:
-                logger.info(f"✅ Bybit order created with ID: {order_id}")
+                logger.info(f"✅ Bybit market order created with ID: {order_id}")
             
             return FuturesOrderInfo(
-                order_id=order_id if order_id else 'MISSING_ORDER_ID',
-                client_order_id=result.get('orderLinkId', ''),
+                order_id=order_id,
+                client_order_id=order_link_id,
                 symbol=symbol,
                 side=side,
                 type='MARKET',
                 quantity=rounded_quantity,
                 price='0',
-                status='PENDING',
-                executed_qty='0'
+                status='FILLED',  # Market orders fill immediately
+                executed_qty=rounded_quantity
             )
         except Exception as e:
             logger.error(f"Failed to create market order: {e}")
@@ -397,11 +481,64 @@ class BybitFuturesIntegration(BaseFuturesExchange):
             raise
     
     def get_open_orders(self, symbol: str) -> List[Dict[str, Any]]:
-        """Get all open orders for symbol"""
+        """Get all open orders for symbol (including conditional orders)
+        
+        Bybit V5 API:
+        - Regular orders: orderFilter='Order' (default)
+        - Conditional orders (SL/TP): orderFilter='StopOrder'
+        """
         try:
-            params = {'category': 'linear', 'symbol': symbol}
-            result = self._make_request("GET", "/v5/order/realtime", params, signed=True)
-            return result.get('list', [])
+            all_orders = []
+            
+            # Method 1: Get regular orders (orderFilter='Order')
+            try:
+                params = {
+                    'category': 'linear',
+                    'symbol': symbol,
+                    'orderFilter': 'Order',  # Regular orders only
+                    'limit': 50
+                }
+                result = self._make_request("GET", "/v5/order/realtime", params, signed=True)
+                regular_orders = result.get('list', [])
+                all_orders.extend(regular_orders)
+                logger.info(f"📋 Bybit regular orders: {len(regular_orders)}")
+            except Exception as reg_err:
+                logger.warning(f"⚠️ Failed to get regular orders: {reg_err}")
+            
+            # Method 2: Get conditional orders (orderFilter='StopOrder')
+            # This includes Stop Loss and Take Profit orders
+            try:
+                params = {
+                    'category': 'linear',
+                    'symbol': symbol,
+                    'orderFilter': 'StopOrder',  # Conditional orders (SL/TP)
+                    'limit': 50
+                }
+                conditional_result = self._make_request("GET", "/v5/order/realtime", params, signed=True)
+                conditional_orders = conditional_result.get('list', [])
+                all_orders.extend(conditional_orders)
+                logger.info(f"📋 Bybit conditional orders (SL/TP): {len(conditional_orders)}")
+            except Exception as cond_err:
+                logger.warning(f"⚠️ Failed to get conditional orders: {cond_err}")
+            
+            # Method 3: Fallback - try without orderFilter (gets all)
+            if len(all_orders) == 0:
+                try:
+                    params = {
+                        'category': 'linear',
+                        'symbol': symbol,
+                        'limit': 50
+                    }
+                    fallback_result = self._make_request("GET", "/v5/order/realtime", params, signed=True)
+                    fallback_orders = fallback_result.get('list', [])
+                    all_orders.extend(fallback_orders)
+                    logger.info(f"📋 Bybit fallback orders: {len(fallback_orders)}")
+                except Exception as fallback_err:
+                    logger.warning(f"⚠️ Fallback also failed: {fallback_err}")
+            
+            logger.info(f"📋 Total Bybit open orders for {symbol}: {len(all_orders)}")
+            return all_orders
+            
         except Exception as e:
             logger.error(f"Failed to get open orders: {e}")
             return []
