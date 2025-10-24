@@ -1312,8 +1312,13 @@ class BinanceFuturesRPABot(CustomBot):
             print("=" * 50)
 
             account_info = self.futures_client.get_account_info()
-            available_balance = float(account_info.get('availableBalance', 0))
-            total_wallet_balance = float(account_info.get('totalWalletBalance', 0))
+            
+            # Handle empty string or None values from API
+            available_balance_raw = account_info.get('availableBalance', 0)
+            total_wallet_balance_raw = account_info.get('totalWalletBalance', 0)
+            
+            available_balance = float(available_balance_raw) if available_balance_raw not in [None, ''] else 0.0
+            total_wallet_balance = float(total_wallet_balance_raw) if total_wallet_balance_raw not in [None, ''] else 0.0
 
             mode = "🧪 TESTNET" if self.testnet else "🔴 LIVE"
             print(f"{mode} Account Balance:")

@@ -134,6 +134,8 @@ def get_user_profile(db: Session, user_id: int):
         developer_name=user.developer_name,
         developer_bio=user.developer_bio,
         developer_website=user.developer_website,
+        telegram_username=user.telegram_username,
+        discord_username=user.discord_username,
         created_at=user.created_at,
         updated_at=user.updated_at,
         total_subscriptions=total_subscriptions,

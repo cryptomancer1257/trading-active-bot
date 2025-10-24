@@ -73,12 +73,29 @@ class BinanceFuturesIntegration(BaseFuturesExchange):
             if hasattr(e, "response") and e.response is not None:
                 try:
                     data = e.response.json()
-                    if data.get("code") == -1021:
+                    error_code = data.get("code")
+                    error_msg = data.get("msg", "Unknown error")
+                    
+                    # Log detailed error
+                    logger.error(f"❌ Binance API Error:")
+                    logger.error(f"   Code: {error_code}")
+                    logger.error(f"   Message: {error_msg}")
+                    logger.error(f"   Endpoint: {endpoint}")
+                    logger.error(f"   Method: {method}")
+                    logger.error(f"   Params: {params}")
+                    
+                    if error_code == -1021:
                         logger.warning("⏱️ Timestamp error (-1021), resyncing...")
                         self._sync_server_time()
                         return self._make_request(method, endpoint, params, signed, recv_window)
-                except Exception:
+                    
+                    # Raise with detailed error message
+                    raise Exception(f"Binance API error {error_code}: {error_msg}")
+                except ValueError:
+                    # Response is not JSON
+                    logger.error(f"Binance API error (non-JSON): {e.response.text[:200]}")
                     pass
+            
             logger.error(f"Binance API request failed: {e}")
             raise Exception(f"Binance API request failed: {e}")
     

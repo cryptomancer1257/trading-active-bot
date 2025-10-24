@@ -183,36 +183,47 @@ class UniversalFuturesBot(CustomBot):
             raise
         
         # Try to get mainnet client for data crawling
-        try:
-            db_credentials_mainnet = get_bot_api_keys(
-                user_principal_id=user_principal_id,
-                exchange=self.exchange_name,
-                is_testnet=False,
-                subscription_id=subscription_id
-            )
-            
-            if db_credentials_mainnet:
-                self.futures_client_mainnet = create_futures_exchange(
-                    exchange_name=self.exchange_name,
-                    api_key=db_credentials_mainnet['api_key'],
-                    api_secret=db_credentials_mainnet['api_secret'],
-                    passphrase=db_credentials_mainnet.get('passphrase', ''),
-                    testnet=False
+        # Only if we're in testnet mode (so we have separate mainnet for data)
+        self.futures_client_mainnet = None
+        if self.testnet:
+            try:
+                db_credentials_mainnet = get_bot_api_keys(
+                    user_principal_id=user_principal_id,
+                    exchange=self.exchange_name,
+                    is_testnet=False,
+                    subscription_id=subscription_id
                 )
-                logger.info("✅ Mainnet client initialized for data crawling")
-            else:
-                # Create public mainnet client for data
-                logger.warning("⚠️ No mainnet credentials, creating public client for data")
-                self.futures_client_mainnet = create_futures_exchange(
-                    exchange_name=self.exchange_name,
-                    api_key="",
-                    api_secret="",
-                    testnet=False
-                )
-                logger.info("✅ Public mainnet client created for accurate market data")
-        except Exception as e:
-            logger.warning(f"Could not initialize mainnet client: {e}")
-            self.futures_client_mainnet = None
+                
+                if db_credentials_mainnet:
+                    self.futures_client_mainnet = create_futures_exchange(
+                        exchange_name=self.exchange_name,
+                        api_key=db_credentials_mainnet['api_key'],
+                        api_secret=db_credentials_mainnet['api_secret'],
+                        passphrase=db_credentials_mainnet.get('passphrase', ''),
+                        testnet=False
+                    )
+                    logger.info("✅ Mainnet client initialized for data crawling")
+                else:
+                    # Create public mainnet client for data (no auth needed for market data)
+                    logger.warning("⚠️ No mainnet credentials, using public client for data")
+                    try:
+                        self.futures_client_mainnet = create_futures_exchange(
+                            exchange_name=self.exchange_name,
+                            api_key="",
+                            api_secret="",
+                            passphrase="",
+                            testnet=False
+                        )
+                        logger.info("✅ Public mainnet client created for market data")
+                    except:
+                        logger.warning("⚠️ Could not create public mainnet client")
+                        self.futures_client_mainnet = None
+            except Exception as e:
+                logger.warning(f"Could not initialize mainnet client: {e}")
+                self.futures_client_mainnet = None
+        else:
+            # Already on mainnet, no need for separate client
+            logger.info("ℹ️ Using mainnet mode, no separate data client needed")
         
         # Initialize LLM service
         self.llm_service = None
@@ -342,11 +353,18 @@ class UniversalFuturesBot(CustomBot):
         try:
             logger.info(f"\n💼 CHECKING {self.exchange_name} ACCOUNT STATUS...")
             logger.info("=" * 50)
+            logger.info(f"🔍 DEBUG: Using futures_client with testnet={self.testnet}")
+            logger.info(f"🔍 DEBUG: Client base_URL={getattr(self.futures_client, 'base_url', 'N/A')}")
             
             # Get account info from exchange
             account_info = self.futures_client.get_account_info()
-            available_balance = float(account_info.get('availableBalance', 0))
-            total_wallet_balance = float(account_info.get('totalWalletBalance', 0))
+            
+            # Handle empty string or None values from API
+            available_balance_raw = account_info.get('availableBalance', 0)
+            total_wallet_balance_raw = account_info.get('totalWalletBalance', 0)
+            
+            available_balance = float(available_balance_raw) if available_balance_raw not in [None, ''] else 0.0
+            total_wallet_balance = float(total_wallet_balance_raw) if total_wallet_balance_raw not in [None, ''] else 0.0
             
             mode = "🧪 TESTNET" if self.testnet else "🔴 LIVE"
             logger.info(f"{mode} Account Balance:")
@@ -538,7 +556,8 @@ class UniversalFuturesBot(CustomBot):
             precision_info = self.futures_client.get_symbol_precision(symbol)
             min_qty = precision_info.get('minQty', 0.001)
             step_size = float(precision_info.get('stepSize', '0.001'))
-            min_notional = precision_info.get('minNotional', 5)
+            # Binance Futures minimum notional is $20 (increased from $5 in 2023)
+            min_notional = precision_info.get('minNotional', 20)  # Default to $20 for Binance Futures
             
             # Calculate position size with realtime price (use leverage_to_use from risk config)
             position_value = available_balance * optimal_position_size_pct * leverage_to_use
@@ -549,14 +568,36 @@ class UniversalFuturesBot(CustomBot):
             
             # Check if quantity meets exchange minimum
             notional_value = quantity * actual_entry_price
+            
+            # DEBUG: Log values before check
+            logger.info(f"🔍 Minimum Check:")
+            logger.info(f"   Quantity: {quantity}")
+            logger.info(f"   Notional Value: ${notional_value:.2f}")
+            logger.info(f"   Min Quantity: {min_qty}")
+            logger.info(f"   Min Notional: ${min_notional}")
+            logger.info(f"   Check: quantity < min_qty = {quantity < min_qty}")
+            logger.info(f"   Check: notional < min_notional = {notional_value < min_notional}")
+            
             if quantity < min_qty or notional_value < min_notional:
                 logger.warning(f"⚠️ Calculated quantity {quantity} below minimum requirements:")
+                logger.warning(f"   Calculated Notional: ${notional_value:.2f}")
                 logger.warning(f"   Min Quantity: {min_qty}, Min Notional: ${min_notional}")
                 
-                # Use exchange minimum instead
-                quantity = max(min_qty, min_notional / actual_entry_price)
-                quantity = round(quantity / step_size) * step_size
+                # Calculate minimum quantity needed to meet notional requirement
+                # Add 5% buffer to ensure we're above minimum
+                min_qty_for_notional = (min_notional * 1.05) / actual_entry_price
+                
+                # Use the larger of min_qty or min_qty_for_notional
+                quantity = max(min_qty, min_qty_for_notional)
+                
+                # Round UP to proper precision (use ceil to ensure we stay above minimum)
+                import math
+                quantity = math.ceil(quantity / step_size) * step_size
                 notional_value = quantity * actual_entry_price
+                
+                logger.info(f"✅ Adjusted to minimum:")
+                logger.info(f"   Quantity: {quantity}")
+                logger.info(f"   Notional: ${notional_value:.2f}")
                 
                 # Check if account has enough balance for minimum order
                 required_balance = notional_value / leverage_to_use
@@ -1099,13 +1140,24 @@ class UniversalFuturesBot(CustomBot):
         actual_timeframes = config_timeframes if config_timeframes else self.timeframes
         
         # Use mainnet for data, fallback to testnet
+        # If we have a separate mainnet client (when bot is in testnet mode), use it for accurate data
+        # Otherwise, use the main client (which could be mainnet or testnet based on bot config)
         CLIENT = self.futures_client_mainnet if self.futures_client_mainnet else self.futures_client
         if not CLIENT:
             logger.error("❌ No futures client available")
             return {'timeframes': {}, 'error': 'No futures client initialized'}
         
-        client_type = "MAINNET" if self.futures_client_mainnet else "TESTNET (fallback)"
-        logger.info(f"📊 Data crawling using {client_type} client on {self.exchange_name}")
+        # Determine which client we're using
+        if self.futures_client_mainnet:
+            client_type = "MAINNET (separate client for accurate data)"
+        elif self.testnet:
+            client_type = "TESTNET (bot in testnet mode)"
+        else:
+            client_type = "MAINNET (bot in mainnet mode)"
+        
+        logger.info(f"📊 Data crawling using {client_type} on {self.exchange_name}")
+        logger.info(f"📊 Client base URL: {getattr(CLIENT, 'base_url', 'N/A')}")
+        logger.info(f"📊 Bot testnet setting: {self.testnet}")
         logger.info(f"📊 Crawling pair: {actual_trading_pair} (config={subscription_config.get('trading_pair') if subscription_config else None}, self={self.trading_pair})")
         logger.info(f"📊 Crawling timeframes: {actual_timeframes} (config={subscription_config.get('timeframes') if subscription_config else None}, self={self.timeframes})")
         

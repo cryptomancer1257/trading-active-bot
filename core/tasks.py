@@ -44,6 +44,7 @@ def format_notification_message(
     timeframe=None,
     trading_pair=None,
     risk_reward_ratio=None,
+    is_testnet=True,
 ):
     """
     Format notification message for all channels (Telegram, Discord, Email)
@@ -70,10 +71,14 @@ def format_notification_message(
             total_wallet_str = f"${total_wallet:,.2f}"
         else:
             total_wallet_str = "N/A"
+        
+        # Dynamic environment label based on is_testnet parameter
+        env_label = "TESTNET" if is_testnet else "MAINNET"
+        env_icon = "🧪" if is_testnet else "🔴"
             
         msg = (
             f"🌐 {bot_name}\n"
-            f"TESTNET Account Balance:\n"
+            f"{env_icon} {env_label} Account Balance:\n"
             f" 💰 Available: {available_str} USDT\n"
             f" 💎 Total Wallet: {total_wallet_str} USDT\n"
         )
@@ -1204,10 +1209,23 @@ def run_bot_logic(self, subscription_id: int):
                 bot.exchange_client = exchange
             
             # Create subscription config
+            # IMPORTANT: Combine primary_timeframe with extra timeframes
+            primary_timeframe = subscription.bot.timeframe
+            extra_timeframes = subscription.bot.timeframes or []
+            
+            # Ensure primary_timeframe is included in timeframes list
+            if primary_timeframe:
+                # Combine and deduplicate
+                all_timeframes = [primary_timeframe] + [tf for tf in extra_timeframes if tf != primary_timeframe]
+            else:
+                all_timeframes = extra_timeframes if extra_timeframes else ['1h']
+            
+            logger.info(f"🕐 Timeframes: Primary={primary_timeframe}, Extra={extra_timeframes}, Combined={all_timeframes}")
+            
             subscription_config = {
                 'subscription_id': subscription_id,
-                'timeframe': subscription.bot.timeframe,  # Legacy single timeframe
-                'timeframes': subscription.bot.timeframes or [subscription.bot.timeframe],  # Multi-timeframe support
+                'timeframe': primary_timeframe,  # Legacy single timeframe
+                'timeframes': all_timeframes,  # Multi-timeframe support (primary + extra)
                 'trading_pair': trading_pair,
                 'is_testnet': use_testnet,
                 'exchange_type': exchange_type.value,
@@ -1539,6 +1557,7 @@ def run_bot_logic(self, subscription_id: int):
                                 stop_loss=stop_loss_val,
                                 take_profit=take_profit_val,
                                 trading_pair=trading_pair,
+                                is_testnet=getattr(subscription, 'is_testnet', True),
                             )
                         if telegram_chat_id:
                             send_telegram_notification.delay(telegram_chat_id, message)
@@ -1776,10 +1795,23 @@ def run_bot_rpa_logic(self, subscription_id: int):
                 bot.exchange_client = exchange
             
             # Create subscription config
+            # IMPORTANT: Combine primary_timeframe with extra timeframes
+            primary_timeframe = subscription.bot.timeframe
+            extra_timeframes = subscription.bot.timeframes or []
+            
+            # Ensure primary_timeframe is included in timeframes list
+            if primary_timeframe:
+                # Combine and deduplicate
+                all_timeframes = [primary_timeframe] + [tf for tf in extra_timeframes if tf != primary_timeframe]
+            else:
+                all_timeframes = extra_timeframes if extra_timeframes else ['1h']
+            
+            logger.info(f"🕐 Timeframes: Primary={primary_timeframe}, Extra={extra_timeframes}, Combined={all_timeframes}")
+            
             subscription_config = {
                 'subscription_id': subscription_id,
-                'timeframe': subscription.bot.timeframe,  # Legacy single timeframe
-                'timeframes': subscription.bot.timeframes or [subscription.bot.timeframe],  # Multi-timeframe support
+                'timeframe': primary_timeframe,  # Legacy single timeframe
+                'timeframes': all_timeframes,  # Multi-timeframe support (primary + extra)
                 'trading_pair': trading_pair,
                 'is_testnet': use_testnet,
                 'exchange_type': exchange_type.value,
@@ -1933,6 +1965,7 @@ def run_bot_rpa_logic(self, subscription_id: int):
                             stop_loss=stop_loss_val,
                             take_profit=take_profit_val,
                             trading_pair=trading_pair,
+                            is_testnet=getattr(subscription, 'is_testnet', True),
                         )
                         if telegram_chat_id:
                             send_telegram_notification.delay(telegram_chat_id, message)
