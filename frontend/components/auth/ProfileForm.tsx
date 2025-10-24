@@ -11,7 +11,7 @@ import { UserIcon, CogIcon } from '@heroicons/react/24/outline'
 const profileSchema = z.object({
   developer_name: z.string().optional(),
   developer_bio: z.string().optional(),
-  developer_website: z.string().url('Website không hợp lệ').optional().or(z.literal('')),
+  developer_website: z.string().url('Invalid website URL').optional().or(z.literal('')),
   telegram_username: z.string().optional(),
   discord_username: z.string().optional(),
 })
@@ -56,10 +56,10 @@ export default function ProfileForm() {
             <UserIcon className="h-8 w-8 text-gray-400" />
             <div>
               <h3 className="text-lg leading-6 font-medium text-gray-900">
-                Thông tin cá nhân
+                Personal Information
               </h3>
               <p className="mt-1 text-sm text-gray-500">
-                Cập nhật thông tin hồ sơ của bạn
+                Update your profile information
               </p>
             </div>
           </div>
@@ -82,7 +82,7 @@ export default function ProfileForm() {
 
             <div>
               <label className="block text-sm font-medium text-gray-700">
-                Vai trò
+                Role
               </label>
               <div className="mt-1">
                 <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
@@ -92,31 +92,31 @@ export default function ProfileForm() {
                     ? 'bg-blue-100 text-blue-800'
                     : 'bg-gray-100 text-gray-800'
                 }`}>
-                  {user.role === UserRole.ADMIN && 'Quản trị viên'}
-                  {user.role === UserRole.DEVELOPER && 'Nhà phát triển'}
-                  {user.role === UserRole.USER && 'Người dùng'}
+                  {user.role === UserRole.ADMIN && 'Administrator'}
+                  {user.role === UserRole.DEVELOPER && 'Developer'}
+                  {user.role === UserRole.USER && 'User'}
                 </span>
               </div>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700">
-                Ngày tham gia
+                Join Date
               </label>
               <div className="mt-1 text-sm text-gray-900">
-                {new Date(user.created_at).toLocaleDateString('vi-VN')}
+                {new Date(user.created_at).toLocaleDateString('en-US')}
               </div>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700">
-                Trạng thái
+                Status
               </label>
               <div className="mt-1">
                 <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                   user.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
                 }`}>
-                  {user.is_active ? 'Hoạt động' : 'Tạm khóa'}
+                  {user.is_active ? 'Active' : 'Suspended'}
                 </span>
               </div>
             </div>
@@ -129,21 +129,21 @@ export default function ProfileForm() {
                 <div className="flex items-center space-x-3 mb-4">
                   <CogIcon className="h-6 w-6 text-gray-400" />
                   <h4 className="text-base font-medium text-gray-900">
-                    Thông tin nhà phát triển
+                    Developer Information
                   </h4>
                 </div>
 
                 <div className="grid grid-cols-1 gap-6">
                   <div>
                     <label htmlFor="developer_name" className="form-label">
-                      Tên hiển thị
+                      Display Name
                     </label>
                     <input
                       {...register('developer_name')}
                       type="text"
                       id="developer_name"
                       className="form-input"
-                      placeholder="Nhập tên hiển thị của bạn"
+                      placeholder="Enter your display name"
                     />
                     {errors.developer_name && (
                       <p className="form-error">{errors.developer_name.message}</p>
@@ -152,14 +152,14 @@ export default function ProfileForm() {
 
                   <div>
                     <label htmlFor="developer_bio" className="form-label">
-                      Giới thiệu bản thân
+                      About Yourself
                     </label>
                     <textarea
                       {...register('developer_bio')}
                       id="developer_bio"
                       rows={4}
                       className="form-input"
-                      placeholder="Mô tả về bản thân, kinh nghiệm và chuyên môn của bạn..."
+                      placeholder="Describe yourself, your experience and expertise..."
                     />
                     {errors.developer_bio && (
                       <p className="form-error">{errors.developer_bio.message}</p>
@@ -200,7 +200,7 @@ export default function ProfileForm() {
                         />
                       </div>
                       <p className="mt-1 text-sm text-gray-500">
-                        Để nhận thông báo từ bot (không bao gồm @)
+                        To receive notifications from bot (exclude @)
                       </p>
                       {errors.telegram_username && (
                         <p className="form-error">{errors.telegram_username.message}</p>
@@ -219,7 +219,7 @@ export default function ProfileForm() {
                         placeholder="username#1234"
                       />
                       <p className="mt-1 text-sm text-gray-500">
-                        Để nhận thông báo từ bot
+                        To receive notifications from bot
                       </p>
                       {errors.discord_username && (
                         <p className="form-error">{errors.discord_username.message}</p>
@@ -238,10 +238,10 @@ export default function ProfileForm() {
                   {isLoading ? (
                     <>
                       <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                      Đang lưu...
+                      Saving...
                     </>
                   ) : (
-                    'Lưu thay đổi'
+                    'Save Changes'
                   )}
                 </button>
               </div>
@@ -252,32 +252,32 @@ export default function ProfileForm() {
           {user.role === UserRole.DEVELOPER && (
             <div className="border-t border-gray-200 pt-6 mt-8">
               <h4 className="text-base font-medium text-gray-900 mb-4">
-                Thống kê
+                Statistics
               </h4>
               <div className="grid grid-cols-2 gap-6 sm:grid-cols-4">
                 <div className="text-center">
                   <div className="text-2xl font-bold text-primary-600">
                     {user.total_developed_bots || 0}
                   </div>
-                  <div className="text-sm text-gray-500">Bot đã tạo</div>
+                  <div className="text-sm text-gray-500">Bots Created</div>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-bold text-success-600">
                     {user.approved_bots || 0}
                   </div>
-                  <div className="text-sm text-gray-500">Bot đã duyệt</div>
+                  <div className="text-sm text-gray-500">Bots Approved</div>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-bold text-blue-600">
                     {user.total_subscriptions || 0}
                   </div>
-                  <div className="text-sm text-gray-500">Tổng đăng ký</div>
+                  <div className="text-sm text-gray-500">Total Subscriptions</div>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-bold text-green-600">
                     {user.active_subscriptions || 0}
                   </div>
-                  <div className="text-sm text-gray-500">Đang hoạt động</div>
+                  <div className="text-sm text-gray-500">Active</div>
                 </div>
               </div>
             </div>
