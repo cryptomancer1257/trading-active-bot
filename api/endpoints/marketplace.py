@@ -296,8 +296,9 @@ async def create_marketplace_subscription_v2(
         else:
             logger.info(f"Marketplace subscription {subscription.id} has expired (ended at {subscription.expires_at})")
         
-        # Return response
-        return schemas.MarketplaceSubscriptionResponse(
+        # Return response with subscription_id in header for easy canister parsing
+        from fastapi import Response
+        response_data = schemas.MarketplaceSubscriptionResponse(
             subscription_id=subscription.id,
             user_principal_id=subscription.user_principal_id,
             bot_id=subscription.bot_id,
@@ -307,6 +308,27 @@ async def create_marketplace_subscription_v2(
             started_at=subscription.started_at,
             expires_at=subscription.expires_at
         )
+        
+        # Add subscription_id to response header for canister to easily extract
+        # This avoids complex JSON parsing in Motoko
+        from starlette.responses import JSONResponse
+        
+        # Convert Pydantic model to dict with datetime serialization
+        response_dict = response_data.dict()
+        # Convert datetime to ISO format strings for JSON serialization
+        if response_dict.get('started_at'):
+            response_dict['started_at'] = response_dict['started_at'].isoformat() if hasattr(response_dict['started_at'], 'isoformat') else str(response_dict['started_at'])
+        if response_dict.get('expires_at'):
+            response_dict['expires_at'] = response_dict['expires_at'].isoformat() if hasattr(response_dict['expires_at'], 'isoformat') else str(response_dict['expires_at'])
+        
+        response = JSONResponse(
+            content=response_dict,
+            status_code=201,
+            headers={
+                "X-Subscription-Id": str(subscription.id)
+            }
+        )
+        return response
         
     except HTTPException:
         raise

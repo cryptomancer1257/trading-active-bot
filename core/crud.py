@@ -1689,9 +1689,105 @@ def get_bot_performance_metrics(db: Session, bot_id: int, days: int = 30):
     pass
 
 def get_subscription_performance_metrics(db: Session, subscription_id: int, days: int = 30):
-    # This would calculate performance metrics for a specific subscription
-    # Implementation depends on your specific requirements
-    pass
+    """
+    Calculate performance metrics for a specific subscription
+    Returns: profit, trades count, win rate, drawdown
+    """
+    from datetime import datetime, timedelta
+    from sqlalchemy import func, case
+    
+    # Get subscription to verify it exists
+    subscription = db.query(models.Subscription).filter(
+        models.Subscription.id == subscription_id
+    ).first()
+    
+    if not subscription:
+        return None
+    
+    # Calculate date range
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=days)
+    
+    # Get all transactions for this subscription
+    transactions = db.query(models.Transaction).filter(
+        models.Transaction.subscription_id == subscription_id,
+        models.Transaction.created_at >= start_date
+    ).all()
+    
+    # Calculate metrics
+    total_pnl = 0.0
+    realized_pnl = 0.0
+    unrealized_pnl = 0.0
+    winning_trades = 0
+    losing_trades = 0
+    closed_trades = 0
+    open_trades = 0
+    
+    # Track max balance and current balance for drawdown
+    balances = []
+    
+    for tx in transactions:
+        if tx.status == 'CLOSED':
+            closed_trades += 1
+            realized = float(tx.realized_pnl or 0)
+            realized_pnl += realized
+            total_pnl += realized
+            
+            if realized > 0:
+                winning_trades += 1
+            elif realized < 0:
+                losing_trades += 1
+        else:  # OPEN
+            open_trades += 1
+            unrealized = float(tx.unrealized_pnl or 0)
+            unrealized_pnl += unrealized
+            total_pnl += unrealized
+    
+    # Calculate win rate (only from closed trades)
+    win_rate = (winning_trades / closed_trades * 100) if closed_trades > 0 else 0.0
+    
+    # Calculate drawdown
+    # Drawdown = (Peak - Trough) / Peak * 100
+    # For now, use a simple calculation based on worst loss
+    # TODO: Implement proper drawdown calculation with balance history
+    max_loss = 0.0
+    cumulative_pnl = 0.0
+    peak_pnl = 0.0
+    max_drawdown = 0.0
+    
+    sorted_transactions = sorted(transactions, key=lambda x: x.created_at)
+    for tx in sorted_transactions:
+        if tx.status == 'CLOSED':
+            pnl = float(tx.realized_pnl or 0)
+            cumulative_pnl += pnl
+            
+            if cumulative_pnl > peak_pnl:
+                peak_pnl = cumulative_pnl
+            
+            current_drawdown = ((peak_pnl - cumulative_pnl) / peak_pnl * 100) if peak_pnl > 0 else 0
+            if current_drawdown > max_drawdown:
+                max_drawdown = current_drawdown
+    
+    total_trades = closed_trades + open_trades
+    
+    return {
+        'subscription_id': subscription_id,
+        'bot_name': subscription.bot.name if subscription.bot else 'Unknown',
+        'period_days': days,
+        'metrics': {
+            'total_profit': round(total_pnl, 2),
+            'realized_profit': round(realized_pnl, 2),
+            'unrealized_profit': round(unrealized_pnl, 2),
+            'total_trades': total_trades,
+            'closed_trades': closed_trades,
+            'open_trades': open_trades,
+            'winning_trades': winning_trades,
+            'losing_trades': losing_trades,
+            'win_rate': round(win_rate, 2),
+            'drawdown': round(max_drawdown, 2)
+        },
+        'timestamp': datetime.now().isoformat()
+    }
 
 def log_bot_action(db: Session, subscription_id: int, action: str, details: str = None, 
                   price: float = None, quantity: float = None, balance: float = None,

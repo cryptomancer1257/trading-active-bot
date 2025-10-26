@@ -7,10 +7,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # file: api/endpoints/subscriptions.py
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Header
 from fastapi.security import HTTPBearer
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Union
 import logging
 
 from core import crud, models, schemas, security
@@ -759,6 +759,118 @@ def get_subscription_performance(
         raise HTTPException(status_code=403, detail="Not enough permissions")
     
     return crud.get_subscription_performance_metrics(db, subscription_id=subscription_id, days=days)
+
+@router.post("/performance/summary")
+def get_all_subscriptions_performance(
+    days: int = 30,
+    user_principal_id: str = Query(..., description="ICP principal ID of user"),
+    network_filter: Optional[str] = Query(None, description="Filter by network: 'mainnet' or 'testnet'"),
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    db: Session = Depends(get_db)
+):
+    """
+    Get aggregated performance metrics for all active subscriptions
+    Returns individual subscription metrics + total summary
+    
+    Note: Uses POST method to work with canister proxy (studioMarketplacePost)
+    
+    Authentication: Requires bot API key via X-API-Key header
+    Called by canister proxy with bot's API key
+    
+    Parameters:
+    - user_principal_id: ICP principal ID to get subscriptions for
+    - days: Number of days to calculate metrics for (default 30)
+    - network_filter: Optional filter by 'mainnet' or 'testnet'
+    """
+    from datetime import datetime
+    
+    # Validate API key (bot API key from canister)
+    if not x_api_key:
+        raise HTTPException(
+            status_code=401,
+            detail="X-API-Key header required"
+        )
+    
+    # Verify API key belongs to a valid bot (same as marketplace subscription endpoint)
+    bot_registration = crud.get_bot_registration_by_api_key(db, x_api_key)
+    if not bot_registration:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid bot API key - authentication failed"
+        )
+    
+    # Get the actual bot details
+    bot = crud.get_bot_by_id(db, bot_registration.bot_id)
+    if not bot:
+        raise HTTPException(
+            status_code=404,
+            detail="Bot not found"
+        )
+
+    # Get all active subscriptions for user
+    query = db.query(models.Subscription).filter(
+        models.Subscription.user_principal_id == user_principal_id,
+        models.Subscription.status == models.SubscriptionStatus.ACTIVE
+    )
+    
+    # Apply network filter if provided
+    if network_filter:
+        is_testnet = (network_filter.lower() == 'testnet')
+        query = query.filter(models.Subscription.is_testnet == is_testnet)
+    
+    active_subscriptions = query.all()
+    
+    # Calculate performance for each subscription
+    subscriptions_performance = []
+    total_profit = 0.0
+    total_trades = 0
+    total_winning_trades = 0
+    total_closed_trades = 0
+    
+    for subscription in active_subscriptions:
+        perf = crud.get_subscription_performance_metrics(
+            db, 
+            subscription_id=subscription.id,
+            days=days
+        )
+        
+        if perf and perf.get('metrics'):
+            metrics = perf['metrics']
+            subscriptions_performance.append({
+                'subscription_id': subscription.id,
+                'bot_id': subscription.bot_id,
+                'bot_name': perf.get('bot_name', 'Unknown'),
+                'trading_pair': subscription.trading_pair or 'BTC/USDT',
+                'is_testnet': subscription.is_testnet,
+                'profit': metrics.get('total_profit', 0),
+                'trades': metrics.get('total_trades', 0),
+                'win_rate': metrics.get('win_rate', 0),
+                'drawdown': metrics.get('drawdown', 0),
+                'winning_trades': metrics.get('winning_trades', 0),
+                'closed_trades': metrics.get('closed_trades', 0)
+            })
+            
+            # Aggregate totals
+            total_profit += metrics.get('total_profit', 0)
+            total_trades += metrics.get('total_trades', 0)
+            total_winning_trades += metrics.get('winning_trades', 0)
+            total_closed_trades += metrics.get('closed_trades', 0)
+    
+    # Calculate overall win rate
+    overall_win_rate = (total_winning_trades / total_closed_trades * 100) if total_closed_trades > 0 else 0.0
+    
+    return {
+        'subscriptions': subscriptions_performance,
+        'summary': {
+            'total_profit': round(total_profit, 2),
+            'total_trades': total_trades,
+            'overall_win_rate': round(overall_win_rate, 2),
+            'active_subscriptions': len(active_subscriptions)
+        },
+        'period_days': days,
+        'network_filter': network_filter,
+        'timestamp': datetime.now().isoformat()
+    }
 
 @router.get("/{subscription_id}/logs", response_model=List[schemas.PerformanceLogInDB])
 def get_subscription_logs(
