@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useQuotaUsage } from '@/hooks/useQuota'
 import { usePlanPricing } from '@/hooks/usePlanPricing'
 import { usePlan } from '@/hooks/usePlan'
+import { useFeatureFlags } from '@/hooks/useFeatureFlags'
 import QuotaTopUpModal from './QuotaTopUpModal'
 import QuotaUnavailableCard from './QuotaUnavailableCard'
 import QuotaExhaustedCard from './QuotaExhaustedCard'
@@ -18,6 +19,7 @@ export default function QuotaUsageCard({ className = '', autoTriggerOnExhausted 
   const { data: quotaUsage, isLoading, error } = useQuotaUsage()
   const { currentPlan } = usePlan()  // NEW: Get current plan info
   const { getPrice } = usePlanPricing()
+  const { isPlanPackageEnabled } = useFeatureFlags()  // Check if feature is enabled
 
   // Auto-trigger popup when quota is exhausted
   useEffect(() => {
@@ -25,6 +27,11 @@ export default function QuotaUsageCard({ className = '', autoTriggerOnExhausted 
       setShowTopUpModal(true)
     }
   }, [quotaUsage?.remaining, quotaUsage?.can_purchase, autoTriggerOnExhausted])
+  
+  // If feature is disabled, don't render anything (AFTER all hooks)
+  if (!isPlanPackageEnabled) {
+    return null
+  }
 
   if (isLoading) {
     return (

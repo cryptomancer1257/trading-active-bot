@@ -6,6 +6,7 @@ import { useAuthGuard } from '@/hooks/useAuthGuard'
 import { UserRole } from '@/lib/types'
 import { api } from '@/lib/api'
 import { usePlan } from '@/hooks/usePlan'
+import { useFeatureFlags } from '@/hooks/useFeatureFlags'
 import { 
   DocumentTextIcon, 
   ArrowLeftIcon,
@@ -42,23 +43,26 @@ export default function StrategyDetailsPage() {
   const params = useParams()
   const strategyId = params?.id as string
   const { currentPlan, isFree } = usePlan()
+  const { isPlanPackageEnabled } = useFeatureFlags()
   
   const [strategy, setStrategy] = useState<StrategyTemplate | null>(null)
   const [loading, setLoading] = useState(true)
   const [copied, setCopied] = useState(false)
 
-  // Plan limits
-  // If plan is not loaded yet or user is free, treat as free plan
-  const isFreePlan = !currentPlan || isFree
+  // Plan limits - only apply if plan package feature is enabled
+  // If feature is disabled, don't apply any limits (treat as Pro plan)
+  // If feature is enabled and plan is not loaded yet or user is free, treat as free plan
+  const isFreePlan = isPlanPackageEnabled && (!currentPlan || isFree)
   const FREE_STRATEGY_LIMIT = 5
   
   // Debug
   console.log('🔍 Strategy Details Debug:', {
     strategyId,
+    isPlanPackageEnabled,
     currentPlan,
     isFree,
     isFreePlan,
-    isLocked: isFree && parseInt(strategyId) > FREE_STRATEGY_LIMIT
+    isLocked: isFreePlan && parseInt(strategyId) > FREE_STRATEGY_LIMIT
   })
 
   // Fetch strategy details from API

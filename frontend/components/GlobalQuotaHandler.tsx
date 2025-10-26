@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import QuotaTopUpModal from './QuotaTopUpModal'
 import { toast } from 'react-hot-toast'
+import { useFeatureFlags } from '@/hooks/useFeatureFlags'
 
 /**
  * Global handler for quota exceeded events
@@ -11,6 +12,7 @@ import { toast } from 'react-hot-toast'
  */
 export default function GlobalQuotaHandler() {
   const [showTopUpModal, setShowTopUpModal] = useState(false)
+  const { isPlanPackageEnabled } = useFeatureFlags()
 
   useEffect(() => {
     const handleQuotaExceeded = (event: any) => {
@@ -38,6 +40,11 @@ export default function GlobalQuotaHandler() {
       window.removeEventListener('quota-exceeded', handleQuotaExceeded)
     }
   }, [])
+  
+  // If feature is disabled, don't render anything (AFTER all hooks)
+  if (!isPlanPackageEnabled) {
+    return null
+  }
 
   return (
     <QuotaTopUpModal 
