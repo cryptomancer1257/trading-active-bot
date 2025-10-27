@@ -182,48 +182,11 @@ class UniversalFuturesBot(CustomBot):
             logger.error(f"Failed to initialize {self.exchange_name} client: {e}")
             raise
         
-        # Try to get mainnet client for data crawling
-        # Only if we're in testnet mode (so we have separate mainnet for data)
+        # No longer need separate mainnet client for data crawling
+        # Data crawling now uses same environment as trading (testnet or mainnet)
+        # This ensures consistent behavior and accurate testing on testnet
         self.futures_client_mainnet = None
-        if self.testnet:
-            try:
-                db_credentials_mainnet = get_bot_api_keys(
-                    user_principal_id=user_principal_id,
-                    exchange=self.exchange_name,
-                    is_testnet=False,
-                    subscription_id=subscription_id
-                )
-                
-                if db_credentials_mainnet:
-                    self.futures_client_mainnet = create_futures_exchange(
-                        exchange_name=self.exchange_name,
-                        api_key=db_credentials_mainnet['api_key'],
-                        api_secret=db_credentials_mainnet['api_secret'],
-                        passphrase=db_credentials_mainnet.get('passphrase', ''),
-                        testnet=False
-                    )
-                    logger.info("✅ Mainnet client initialized for data crawling")
-                else:
-                    # Create public mainnet client for data (no auth needed for market data)
-                    logger.warning("⚠️ No mainnet credentials, using public client for data")
-                    try:
-                        self.futures_client_mainnet = create_futures_exchange(
-                            exchange_name=self.exchange_name,
-                            api_key="",
-                            api_secret="",
-                            passphrase="",
-                            testnet=False
-                        )
-                        logger.info("✅ Public mainnet client created for market data")
-                    except:
-                        logger.warning("⚠️ Could not create public mainnet client")
-                        self.futures_client_mainnet = None
-            except Exception as e:
-                logger.warning(f"Could not initialize mainnet client: {e}")
-                self.futures_client_mainnet = None
-        else:
-            # Already on mainnet, no need for separate client
-            logger.info("ℹ️ Using mainnet mode, no separate data client needed")
+        logger.info(f"ℹ️ Using {'TESTNET' if self.testnet else 'MAINNET'} mode for both trading and data crawling")
         
         # Initialize LLM service
         self.llm_service = None
@@ -1139,21 +1102,18 @@ class UniversalFuturesBot(CustomBot):
         actual_trading_pair = config_trading_pair.replace('/', '') if config_trading_pair else self.trading_pair.replace('/', '')
         actual_timeframes = config_timeframes if config_timeframes else self.timeframes
         
-        # Use mainnet for data, fallback to testnet
-        # If we have a separate mainnet client (when bot is in testnet mode), use it for accurate data
-        # Otherwise, use the main client (which could be mainnet or testnet based on bot config)
-        CLIENT = self.futures_client_mainnet if self.futures_client_mainnet else self.futures_client
+        # Use the correct client based on subscription's is_testnet setting
+        # Data crawling should match the trading environment (testnet vs mainnet)
+        CLIENT = self.futures_client
         if not CLIENT:
             logger.error("❌ No futures client available")
             return {'timeframes': {}, 'error': 'No futures client initialized'}
         
         # Determine which client we're using
-        if self.futures_client_mainnet:
-            client_type = "MAINNET (separate client for accurate data)"
-        elif self.testnet:
-            client_type = "TESTNET (bot in testnet mode)"
+        if self.testnet:
+            client_type = "TESTNET (subscription is_testnet=True)"
         else:
-            client_type = "MAINNET (bot in mainnet mode)"
+            client_type = "MAINNET (subscription is_testnet=False)"
         
         logger.info(f"📊 Data crawling using {client_type} on {self.exchange_name}")
         logger.info(f"📊 Client base URL: {getattr(CLIENT, 'base_url', 'N/A')}")

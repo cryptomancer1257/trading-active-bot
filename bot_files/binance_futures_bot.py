@@ -1636,16 +1636,17 @@ class BinanceFuturesBot(CustomBot):
         # SYMBOL = self.trading_pair
         self.trading_pair = self.trading_pair.replace('/', '')
         # ALWAYS use mainnet client for data crawling (accurate volume & real-time data)
-        # Fallback to testnet ONLY if mainnet unavailable (trial users)
-        CLIENT = self.futures_client_mainnet if self.futures_client_mainnet else self.futures_client
+        # Use the correct client based on subscription's is_testnet setting
+        # Data crawling should match the trading environment (testnet vs mainnet)
+        CLIENT = self.futures_client
         if not CLIENT:
-            logger.error("❌ No futures client available (neither mainnet nor testnet)")
+            logger.error("❌ No futures client available")
             return {
                 'timeframes': {},
                 'error': 'No futures client initialized'
             }
         
-        client_type = "MAINNET" if self.futures_client_mainnet else "TESTNET (fallback)"
+        client_type = "TESTNET (subscription is_testnet=True)" if self.testnet else "MAINNET (subscription is_testnet=False)"
         logger.info(f"📊 Data crawling using {client_type} client for accurate volume & real-time data")
 
         timeframes_data = {}

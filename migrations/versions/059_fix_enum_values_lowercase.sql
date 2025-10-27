@@ -12,22 +12,23 @@ USE bot_marketplace;
 -- 1. FIX plan_pricing_templates TABLE
 -- =====================================================
 
--- Add missing current_price_usd column
-ALTER TABLE plan_pricing_templates 
-ADD COLUMN IF NOT EXISTS current_price_usd DECIMAL(10,2) NOT NULL DEFAULT 0.00 
-AFTER discount_percentage;
+-- Check if table exists first
+SELECT COUNT(*) INTO @table_exists 
+FROM INFORMATION_SCHEMA.TABLES 
+WHERE TABLE_SCHEMA = 'bot_marketplace' 
+AND TABLE_NAME = 'plan_pricing_templates';
 
--- Update current_price_usd based on discount calculation
+-- Only proceed if table exists
+-- Note: Cannot use dynamic SQL in regular migrations, so we'll handle this differently
+
+-- First, update existing data to lowercase (if table exists)
 UPDATE plan_pricing_templates 
-SET current_price_usd = original_price_usd * (1 - discount_percentage / 100);
+SET plan_name = LOWER(plan_name)
+WHERE 1=1;
 
--- Fix plan_name enum to lowercase
+-- Then modify column definition
 ALTER TABLE plan_pricing_templates 
 MODIFY COLUMN plan_name ENUM('free', 'pro', 'ultra') NOT NULL;
-
--- Update existing data to lowercase
-UPDATE plan_pricing_templates 
-SET plan_name = LOWER(plan_name);
 
 -- =====================================================
 -- 2. FIX user_plans TABLE
@@ -76,7 +77,6 @@ SELECT
     plan_name, 
     original_price_usd,
     discount_percentage,
-    current_price_usd,
     campaign_name,
     campaign_active
 FROM plan_pricing_templates

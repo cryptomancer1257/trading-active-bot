@@ -55,8 +55,8 @@ export default function HomePage() {
     planPackageError
   })
   
-  // Always show plan UI for now (remove feature flag dependency)
-  const shouldShowPlanUI = true
+  // Show plan UI only if feature flag is enabled
+  const shouldShowPlanUI = isPlanPackageEnabled
   
   // Fetch real-time stats from API
   const { data: statsData, isLoading } = useQuery({
@@ -253,8 +253,8 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* Quota Usage Section - Only show for authenticated users */}
-      {currentPlan && (
+      {/* Quota Usage Section - Only show for authenticated users AND if plan package is enabled */}
+      {currentPlan && shouldShowPlanUI && (
         <div className="py-8 bg-dark-800/20 backdrop-blur-sm">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

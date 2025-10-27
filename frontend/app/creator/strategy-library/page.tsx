@@ -6,6 +6,7 @@ import { useAuthGuard } from '@/hooks/useAuthGuard'
 import { UserRole } from '@/lib/types'
 import { api } from '@/lib/api'
 import { usePlan } from '@/hooks/usePlan'
+import { useFeatureFlags } from '@/hooks/useFeatureFlags'
 import { 
   DocumentTextIcon, 
   ArrowLeftIcon,
@@ -41,6 +42,7 @@ export default function StrategyLibraryPage() {
   
   const router = useRouter()
   const { currentPlan, isFree } = usePlan()
+  const { isPlanPackageEnabled } = useFeatureFlags()
   const [strategies, setStrategies] = useState<StrategyTemplate[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
@@ -48,13 +50,15 @@ export default function StrategyLibraryPage() {
   const [selectedTimeframe, setSelectedTimeframe] = useState('all')
   const [showFilters, setShowFilters] = useState(false)
 
-  // Plan limits
-  // If plan is not loaded yet or user is free, treat as free plan
-  const isFreePlan = !currentPlan || isFree
+  // Plan limits - only apply if plan package feature is enabled
+  // If feature is disabled, don't apply any limits (treat as Pro plan)
+  // If feature is enabled and plan is not loaded yet or user is free, treat as free plan
+  const isFreePlan = isPlanPackageEnabled && (!currentPlan || isFree)
   const FREE_STRATEGY_LIMIT = 5
   
   // Debug plan
   console.log('🔍 Strategy Library Debug:', {
+    isPlanPackageEnabled,
     currentPlan,
     planName: currentPlan?.plan_name,
     isFree,

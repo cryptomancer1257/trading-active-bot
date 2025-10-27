@@ -370,6 +370,7 @@ def get_bot_performance_public(
         'bot_id': bot_id,
         'bot_name': bot.name,
         'period_days': days,
+        'exchange_type': bot.exchange_type.value if bot.exchange_type else 'BINANCE',  # Add exchange info
         'summary': {
             'total_subscriptions': total_subscriptions,
             'active_subscriptions': active_subscriptions,
