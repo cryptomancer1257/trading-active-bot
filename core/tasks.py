@@ -2547,6 +2547,38 @@ def run_futures_bot_trading(self, user_principal_id: str = None, config: Dict[st
                 account_status = bot.check_account_status()
                 logger.info(f"💰 Account Status: {account_status}")
                 
+                # 🚨 CRITICAL: Check minimum balance before proceeding
+                if account_status:
+                    available_balance = account_status.get('available_balance', 0)
+                    MIN_BALANCE_THRESHOLD = 10.0  # $10 minimum
+                    
+                    if available_balance < MIN_BALANCE_THRESHOLD:
+                        logger.error("=" * 80)
+                        logger.error(f"❌ INSUFFICIENT BALANCE: ${available_balance:.2f} USDT")
+                        logger.error(f"   Minimum required: ${MIN_BALANCE_THRESHOLD:.2f} USDT")
+                        logger.error(f"   Cannot proceed with trading or LLM analysis")
+                        logger.error("=" * 80)
+                        return {
+                            'status': 'error',
+                            'message': f'Insufficient balance: ${available_balance:.2f} USDT (min ${MIN_BALANCE_THRESHOLD:.2f})',
+                            'signal': {
+                                'action': 'HOLD',
+                                'reason': f'Insufficient balance: ${available_balance:.2f} USDT'
+                            }
+                        }
+                    
+                    logger.info(f"✅ Balance check passed (${available_balance:.2f} >= ${MIN_BALANCE_THRESHOLD:.2f})")
+                else:
+                    logger.error("❌ Failed to get account status - cannot verify balance")
+                    return {
+                        'status': 'error',
+                        'message': 'Failed to check account status',
+                        'signal': {
+                            'action': 'HOLD',
+                            'reason': 'Failed to check account status'
+                        }
+                    }
+                
                 # Crawl multi-timeframe data
                 multi_timeframe_data = bot.crawl_data()
                 if not multi_timeframe_data.get("timeframes"):
@@ -3139,7 +3171,33 @@ async def run_advanced_futures_workflow(bot, subscription_id: int, subscription_
             # Active trading bots need account balance check
             account_status = bot.check_account_status()
             if account_status:
-                logger.info(f"Account Balance: ${account_status.get('available_balance', 0):.2f}")
+                available_balance = account_status.get('available_balance', 0)
+                logger.info(f"Account Balance: ${available_balance:.2f}")
+                
+                # 🚨 CRITICAL: Check minimum balance before proceeding
+                MIN_BALANCE_THRESHOLD = 10.0  # $10 minimum
+                if available_balance < MIN_BALANCE_THRESHOLD:
+                    logger.error("=" * 80)
+                    logger.error(f"❌ INSUFFICIENT BALANCE: ${available_balance:.2f} USDT")
+                    logger.error(f"   Minimum required: ${MIN_BALANCE_THRESHOLD:.2f} USDT")
+                    logger.error(f"   Cannot proceed with trading or LLM analysis")
+                    logger.error("=" * 80)
+                    from bots.bot_sdk.Action import Action
+                    return Action(
+                        action="HOLD", 
+                        value=0.0, 
+                        reason=f"Insufficient balance: ${available_balance:.2f} USDT (min ${MIN_BALANCE_THRESHOLD:.2f})"
+                    ), account_status, None
+                
+                logger.info(f"✅ Balance check passed (${available_balance:.2f} >= ${MIN_BALANCE_THRESHOLD:.2f})")
+            else:
+                logger.error("❌ Failed to get account status - cannot verify balance")
+                from bots.bot_sdk.Action import Action
+                return Action(
+                    action="HOLD",
+                    value=0.0,
+                    reason="Failed to check account status"
+                ), None, None
         
         # 2. Crawl multi-timeframe data (instead of single timeframe)
         logger.info("📊 Step 2: Crawling multi-timeframe data...")
@@ -3422,7 +3480,33 @@ async def run_advanced_futures_rpa_workflow(bot, subscription_id: int, subscript
             # Active trading bots need account balance check
             account_status = bot.check_account_status()
             if account_status:
-                logger.info(f"Account Balance: ${account_status.get('available_balance', 0):.2f}")
+                available_balance = account_status.get('available_balance', 0)
+                logger.info(f"Account Balance: ${available_balance:.2f}")
+                
+                # 🚨 CRITICAL: Check minimum balance before proceeding
+                MIN_BALANCE_THRESHOLD = 10.0  # $10 minimum
+                if available_balance < MIN_BALANCE_THRESHOLD:
+                    logger.error("=" * 80)
+                    logger.error(f"❌ INSUFFICIENT BALANCE: ${available_balance:.2f} USDT")
+                    logger.error(f"   Minimum required: ${MIN_BALANCE_THRESHOLD:.2f} USDT")
+                    logger.error(f"   Cannot proceed with trading or LLM analysis")
+                    logger.error("=" * 80)
+                    from bots.bot_sdk.Action import Action
+                    return Action(
+                        action="HOLD",
+                        value=0.0,
+                        reason=f"Insufficient balance: ${available_balance:.2f} USDT (min ${MIN_BALANCE_THRESHOLD:.2f})"
+                    ), account_status, None
+                
+                logger.info(f"✅ Balance check passed (${available_balance:.2f} >= ${MIN_BALANCE_THRESHOLD:.2f})")
+            else:
+                logger.error("❌ Failed to get account status - cannot verify balance")
+                from bots.bot_sdk.Action import Action
+                return Action(
+                    action="HOLD",
+                    value=0.0,
+                    reason="Failed to check account status"
+                ), None, None
         
         # 2. Capture multi-timeframe data using RPA
         logger.info("📊 Step 2: Capturing multi-timeframe data with RPA...")
