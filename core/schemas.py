@@ -1618,3 +1618,69 @@ class FeatureFlagResponse(FeatureFlagInDB):
 class FeatureFlagsListResponse(BaseModel):
     flags: List[FeatureFlagInDB]
     total: int
+
+
+# =====================================================
+# AIRDROP SCHEMAS
+# =====================================================
+
+class AirdropTaskResponse(BaseModel):
+    task_id: str
+    task_name: str
+    task_description: Optional[str] = None
+    category: str
+    points: int
+    verification_method: str
+
+class AirdropClaimRequest(BaseModel):
+    task_id: str
+    verification_data: Optional[Dict[str, Any]] = None
+
+class AirdropClaimResponse(BaseModel):
+    task_id: str
+    points_earned: int
+    tokens_earned: int
+    verification_status: str
+    claimed_at: datetime
+
+class VerificationResult(BaseModel):
+    verified: bool
+    points: int
+    proof: Optional[str] = None
+    error: Optional[str] = None
+
+class DiscordVerification(BaseModel):
+    discord_id: str
+    username: Optional[str] = None
+
+class TelegramVerificationRequest(BaseModel):
+    code: str
+
+class ContentSubmission(BaseModel):
+    content_type: str  # ARTICLE, VIDEO, TUTORIAL, GUIDE
+    content_url: str
+    title: str
+    description: Optional[str] = None
+
+class BotTemplateSubmissionRequest(BaseModel):
+    github_repo: str
+    template_name: str
+    description: Optional[str] = None
+
+class ReferralCodeResponse(BaseModel):
+    code: str
+
+class AirdropStats(BaseModel):
+    total_participants: int
+    total_points_awarded: int
+    total_tokens_awarded: int
+    verified_claims: int
+    pending_claims: int
+
+class UserAirdropStatus(BaseModel):
+    principal_id: str
+    total_points: int
+    total_tokens: int
+    total_claims: int
+    pending_claims: int
+    claims: List[AirdropClaimResponse]

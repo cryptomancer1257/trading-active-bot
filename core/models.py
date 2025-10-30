@@ -1457,3 +1457,307 @@ class RefreshToken(Base):
         Index('idx_refresh_tokens_expires_at', 'expires_at'),
         Index('idx_refresh_tokens_is_revoked', 'is_revoked'),
     )
+
+
+# =====================================================
+# AIRDROP SYSTEM MODELS
+# =====================================================
+
+class AirdropTask(Base):
+    """Airdrop task definitions"""
+    __tablename__ = "airdrop_tasks"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    task_id = Column(String(100), unique=True, nullable=False, index=True)
+    task_name = Column(String(255), nullable=False)
+    task_description = Column(Text, nullable=True)
+    category = Column(String(50), nullable=False)  # PLATFORM_USAGE, COMMUNITY_ENGAGEMENT, SNS_PARTICIPATION, DEVELOPER_CONTRIBUTIONS
+    points = Column(Integer, nullable=False)
+    max_claims = Column(Integer, nullable=True)  # NULL = unlimited
+    is_active = Column(Boolean, default=True)
+    verification_method = Column(String(50), nullable=False)  # AUTO, MANUAL, SEMI_AUTO
+    verification_data = Column(JSON, nullable=True)  # Additional verification config
+    
+    # Timestamps
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    
+    # Relationships
+    claims = relationship("AirdropClaim", back_populates="task")
+    
+    # Indexes
+    __table_args__ = (
+        Index('idx_airdrop_tasks_task_id', 'task_id'),
+        Index('idx_airdrop_tasks_category', 'category'),
+        Index('idx_airdrop_tasks_is_active', 'is_active'),
+    )
+
+
+class AirdropClaim(Base):
+    """Individual airdrop claims by users"""
+    __tablename__ = "airdrop_claims"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    principal_id = Column(String(255), nullable=False, index=True)
+    task_id = Column(String(100), ForeignKey("airdrop_tasks.task_id"), nullable=False)
+    
+    # Claim details
+    points_earned = Column(Integer, nullable=False)
+    tokens_earned = Column(BigInteger, nullable=False)  # In e8s (smallest unit)
+    verification_status = Column(String(20), default='PENDING')  # PENDING, VERIFIED, REJECTED
+    verification_data = Column(JSON, nullable=True)  # Proof/verification details
+    
+    # Anti-sybil measures
+    ip_address = Column(String(45), nullable=True)
+    user_agent = Column(String(500), nullable=True)
+    
+    # Timestamps
+    claimed_at = Column(DateTime, server_default=func.now())
+    verified_at = Column(DateTime, nullable=True)
+    rejected_at = Column(DateTime, nullable=True)
+    rejection_reason = Column(Text, nullable=True)
+    
+    # Relationships
+    task = relationship("AirdropTask", back_populates="claims")
+    
+    # Indexes
+    __table_args__ = (
+        Index('idx_airdrop_claims_principal_id', 'principal_id'),
+        Index('idx_airdrop_claims_task_id', 'task_id'),
+        Index('idx_airdrop_claims_status', 'verification_status'),
+        Index('idx_airdrop_claims_claimed_at', 'claimed_at'),
+        Index('idx_airdrop_claims_ip_address', 'ip_address'),
+    )
+
+
+class UserActivity(Base):
+    """User activity tracking for daily streak verification"""
+    __tablename__ = "user_activity"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    principal_id = Column(String(255), nullable=False, index=True)
+    activity_type = Column(String(50), nullable=False)  # LOGIN, BOT_CREATE, TRADE, etc.
+    activity_date = Column(DateTime, nullable=False, index=True)
+    activity_metadata = Column(JSON, nullable=True)  # Renamed from 'metadata' to avoid SQLAlchemy conflict
+    
+    # Timestamps
+    created_at = Column(DateTime, server_default=func.now())
+    
+    # Indexes
+    __table_args__ = (
+        Index('idx_user_activity_principal_date', 'principal_id', 'activity_date'),
+        Index('idx_user_activity_type', 'activity_type'),
+    )
+
+
+class ReferralCode(Base):
+    """Referral codes for airdrop referrals"""
+    __tablename__ = "referral_codes"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    referrer_principal = Column(String(255), nullable=False, index=True)
+    code = Column(String(50), unique=True, nullable=False, index=True)
+    is_active = Column(Boolean, default=True)
+    
+    # Timestamps
+    created_at = Column(DateTime, server_default=func.now())
+    
+    # Relationships
+    referrals = relationship("AirdropReferral", back_populates="referral_code")
+    
+    # Indexes
+    __table_args__ = (
+        Index('idx_referral_codes_referrer', 'referrer_principal'),
+        Index('idx_referral_codes_code', 'code'),
+    )
+
+
+class AirdropReferral(Base):
+    """Referral tracking for airdrop"""
+    __tablename__ = "airdrop_referrals"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    referrer_principal = Column(String(255), nullable=False, index=True)
+    referee_principal = Column(String(255), nullable=False, index=True)
+    referral_code_id = Column(Integer, ForeignKey("referral_codes.id"), nullable=False)
+    referral_code_value = Column(String(50), nullable=False)  # Renamed to avoid conflict
+    
+    # Status
+    referrer_points_awarded = Column(Boolean, default=False)
+    referee_completed_first_task = Column(Boolean, default=False)
+    
+    # Timestamps
+    created_at = Column(DateTime, server_default=func.now())
+    
+    # Relationships
+    referral_code = relationship("ReferralCode", back_populates="referrals")
+    
+    # Indexes
+    __table_args__ = (
+        Index('idx_airdrop_referrals_referrer', 'referrer_principal'),
+        Index('idx_airdrop_referrals_referee', 'referee_principal'),
+        Index('idx_airdrop_referrals_code', 'referral_code_value'),
+    )
+
+
+class StrategyTemplateSubmission(Base):
+    """Strategy templates submitted by traders"""
+    __tablename__ = "strategy_template_submissions"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    principal_id = Column(String(255), nullable=False, index=True)
+    bot_id = Column(Integer, ForeignKey("bots.id"), nullable=False)
+    
+    # Template info
+    strategy_name = Column(String(255), nullable=False)
+    description = Column(Text)
+    strategy_config = Column(JSON, nullable=False)
+    
+    # Performance metrics
+    performance_metrics = Column(JSON)
+    
+    # Verification
+    checks_passed = Column(Boolean, default=False)
+    status = Column(String(50), default='pending_review')  # pending_review, approved, rejected
+    rejection_reason = Column(Text)
+    
+    # Stats
+    adoption_count = Column(Integer, default=0)
+    
+    # Timestamps
+    submitted_at = Column(DateTime, server_default=func.now())
+    reviewed_at = Column(DateTime)
+    approved_by = Column(Integer, ForeignKey("users.id"))
+    
+    # Indexes
+    __table_args__ = (
+        Index('idx_strategy_submissions_principal', 'principal_id'),
+        Index('idx_strategy_submissions_status', 'status'),
+        Index('idx_strategy_submissions_bot', 'bot_id'),
+    )
+
+
+class StrategyAdoption(Base):
+    """Track when strategies are adopted by other traders"""
+    __tablename__ = "strategy_adoptions"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    template_id = Column(Integer, ForeignKey("strategy_template_submissions.id"), nullable=False)
+    creator_principal = Column(String(255), nullable=False, index=True)
+    adopter_principal = Column(String(255), nullable=False, index=True)
+    adopter_bot_id = Column(Integer, ForeignKey("bots.id"), nullable=False)
+    
+    # Timestamps
+    adopted_at = Column(DateTime, server_default=func.now())
+    
+    # Indexes
+    __table_args__ = (
+        Index('idx_strategy_adoptions_template', 'template_id'),
+        Index('idx_strategy_adoptions_creator', 'creator_principal'),
+        Index('idx_strategy_adoptions_adopter', 'adopter_principal'),
+    )
+
+
+class TelegramVerification(Base):
+    """Telegram verification codes"""
+    __tablename__ = "telegram_verifications"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    telegram_id = Column(String(100), nullable=False, index=True)
+    code = Column(String(20), unique=True, nullable=False, index=True)
+    principal_id = Column(String(255), nullable=True, index=True)
+    used = Column(Boolean, default=False)
+    expires_at = Column(DateTime, nullable=False)
+    
+    # Timestamps
+    created_at = Column(DateTime, server_default=func.now())
+    used_at = Column(DateTime, nullable=True)
+    
+    # Indexes
+    __table_args__ = (
+        Index('idx_telegram_verifications_code', 'code'),
+        Index('idx_telegram_verifications_telegram_id', 'telegram_id'),
+        Index('idx_telegram_verifications_expires_at', 'expires_at'),
+    )
+
+
+class AirdropContentSubmission(Base):
+    """Content submissions for airdrop verification"""
+    __tablename__ = "airdrop_content_submissions"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    principal_id = Column(String(255), nullable=False, index=True)
+    content_type = Column(String(50), nullable=False)  # ARTICLE, VIDEO, TUTORIAL, GUIDE
+    content_url = Column(String(500), nullable=False)
+    title = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    
+    # Review status
+    status = Column(String(20), default='PENDING')  # PENDING, APPROVED, REJECTED
+    points_awarded = Column(Integer, nullable=True)
+    rejection_reason = Column(Text, nullable=True)
+    reviewed_by = Column(String(255), nullable=True)  # Admin principal
+    reviewed_at = Column(DateTime, nullable=True)
+    
+    # Timestamps
+    submitted_at = Column(DateTime, server_default=func.now())
+    
+    # Indexes
+    __table_args__ = (
+        Index('idx_content_submissions_principal', 'principal_id'),
+        Index('idx_content_submissions_status', 'status'),
+        Index('idx_content_submissions_type', 'content_type'),
+    )
+
+
+class BotTemplateSubmission(Base):
+    """Bot template submissions for airdrop"""
+    __tablename__ = "bot_template_submissions"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    principal_id = Column(String(255), nullable=False, index=True)
+    github_repo = Column(String(500), nullable=False)
+    template_name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    
+    # GitHub verification checks
+    checks_passed = Column(JSON, nullable=True)  # {"has_readme": true, "has_tests": false, ...}
+    
+    # Review status
+    status = Column(String(20), default='PENDING')  # PENDING, APPROVED, REJECTED
+    points_awarded = Column(Integer, nullable=True)
+    rejection_reason = Column(Text, nullable=True)
+    reviewed_by = Column(String(255), nullable=True)  # Admin principal
+    reviewed_at = Column(DateTime, nullable=True)
+    
+    # Timestamps
+    submitted_at = Column(DateTime, server_default=func.now())
+    
+    # Indexes
+    __table_args__ = (
+        Index('idx_template_submissions_principal', 'principal_id'),
+        Index('idx_template_submissions_status', 'status'),
+        Index('idx_template_submissions_github_repo', 'github_repo'),
+    )
+
+
+class AirdropConfig(Base):
+    """Airdrop configuration settings"""
+    __tablename__ = "airdrop_config"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    config_key = Column(String(100), unique=True, nullable=False, index=True)
+    config_value = Column(Text, nullable=False)
+    config_type = Column(String(20), default='STRING')  # STRING, INTEGER, BOOLEAN, JSON
+    description = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=True)
+    
+    # Timestamps
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    
+    # Indexes
+    __table_args__ = (
+        Index('idx_airdrop_config_key', 'config_key'),
+        Index('idx_airdrop_config_active', 'is_active'),
+    )

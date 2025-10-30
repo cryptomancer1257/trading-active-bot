@@ -9,6 +9,7 @@ passlib[bcrypt]==1.7.4
 bcrypt==4.2.0
 cryptography>=3.4.8
 python-multipart==0.0.6
+slowapi==0.1.9
 
 # Background Tasks
 celery==5.3.4
