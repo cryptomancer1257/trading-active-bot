@@ -19,10 +19,11 @@ import BotPromptsTab from '@/components/BotPromptsTab'
 import RiskManagementTab from '@/components/RiskManagementTab'
 import BotAnalytics from '@/components/BotAnalytics'
 import BotSubscriptions from '@/components/BotSubscriptions'
+import IndicatorsConfig, { IndicatorsConfigData } from '@/components/bots/IndicatorsConfig'
 import toast from 'react-hot-toast'
 import config from '@/lib/config'
 import { useAuth } from '@/contexts/AuthContext'
-import { useGetBot } from '@/hooks/useBots'
+import { useGetBot, useUpdateBot } from '@/hooks/useBots'
 import PreTrialValidationModal from '@/components/PreTrialValidationModal'
 import UpgradeModal from '@/components/UpgradeModal'
 import { usePlan } from '@/hooks/usePlan'
@@ -80,7 +81,7 @@ interface BotLog {
   signal_data?: any
 }
 
-type TabType = 'overview' | 'strategies' | 'risk-management' | 'settings' | 'notifications' | 'analytics' | 'subscriptions'
+type TabType = 'overview' | 'strategies' | 'risk-management' | 'indicators' | 'settings' | 'notifications' | 'analytics' | 'subscriptions'
 
 export default function BotDetailPage() {
   const router = useRouter()
@@ -111,6 +112,10 @@ export default function BotDetailPage() {
   })
   const [botLogs, setBotLogs] = useState<BotLog[]>([])
   const [isLoadingLogs, setIsLoadingLogs] = useState(false)
+  
+  // Indicators config state
+  const [indicatorsConfig, setIndicatorsConfig] = useState<IndicatorsConfigData | null>(null)
+  const [isSavingIndicators, setIsSavingIndicators] = useState(false)
   
   // Pre-trial validation state
   const [showValidationModal, setShowValidationModal] = useState(false)
@@ -146,6 +151,7 @@ export default function BotDetailPage() {
 
   // Fetch real bot data from API
   const { data: bot, isLoading: isBotLoading, error: botError } = useGetBot(botId)
+  const updateBot = useUpdateBot()
 
   // Update trading pair when bot loads
   useEffect(() => {
@@ -201,6 +207,52 @@ export default function BotDetailPage() {
       return () => clearInterval(interval)
     }
   }, [bot?.id, fetchBotLogs])
+
+  // Load indicators config from bot
+  useEffect(() => {
+    if (bot && bot.strategy_config) {
+      const config = typeof bot.strategy_config === 'string' 
+        ? JSON.parse(bot.strategy_config) 
+        : bot.strategy_config
+      if (config.indicators_config) {
+        setIndicatorsConfig(config.indicators_config)
+      }
+    }
+  }, [bot])
+
+  // Handle save indicators config
+  const handleSaveIndicators = async () => {
+    if (!bot || !indicatorsConfig) return
+
+    setIsSavingIndicators(true)
+    try {
+      // Get current config
+      const currentConfig = typeof bot.strategy_config === 'string' 
+        ? JSON.parse(bot.strategy_config) 
+        : (bot.strategy_config || {})
+      
+      // Update with new indicators config
+      const updatedConfig = {
+        ...currentConfig,
+        indicators_config: indicatorsConfig
+      }
+
+      // Save to backend using updateBot hook (same as edit bot)
+      await updateBot.mutateAsync({
+        botId: bot.id,
+        data: {
+          strategy_config: updatedConfig
+        }
+      })
+
+      toast.success('✅ Indicators configuration saved successfully!')
+    } catch (error) {
+      console.error('Failed to save indicators config:', error)
+      toast.error('Failed to save indicators configuration')
+    } finally {
+      setIsSavingIndicators(false)
+    }
+  }
 
   // Show loading state AFTER all hooks
   if (isBotLoading) {
@@ -997,6 +1049,77 @@ export default function BotDetailPage() {
         return <BotPromptsTab botId={bot.id} />
       case 'risk-management':
         return <RiskManagementTab botId={bot.id} />
+      case 'indicators':
+        return (
+          <div className="space-y-6">
+            <div className="flex justify-between items-center">
+              <div>
+                <h2 className="text-2xl font-bold text-white">Technical Indicators Configuration</h2>
+                <p className="text-gray-300 mt-2">
+                  Configure which technical indicators to calculate and send to LLM for market analysis
+                </p>
+              </div>
+              <button
+                onClick={handleSaveIndicators}
+                disabled={isSavingIndicators || !indicatorsConfig}
+                className="inline-flex items-center px-6 py-3 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+              >
+                {isSavingIndicators ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    Save Configuration
+                  </>
+                )}
+              </button>
+            </div>
+
+            <IndicatorsConfig
+              value={indicatorsConfig || {
+                enabled_categories: {
+                  trend: true,
+                  momentum: true,
+                  volatility: true,
+                  volume: true,
+                  levels: false,
+                  advanced: false,
+                },
+                enabled_indicators: {
+                  sma: [20, 50],
+                  ema: [12, 26],
+                  adx: true,
+                  supertrend: true,
+                  rsi: true,
+                  macd: true,
+                  stochastic: true,
+                  atr: true,
+                  bollinger_bands: true,
+                  obv: true,
+                  cmf: true,
+                  mfi: true,
+                },
+                indicator_periods: {
+                  rsi_period: 14,
+                  macd_fast: 12,
+                  macd_slow: 26,
+                  macd_signal: 9,
+                  atr_period: 14,
+                  bollinger_period: 20,
+                  bollinger_std: 2.0,
+                  stochastic_k: 14,
+                  stochastic_d: 3,
+                },
+              }}
+              onChange={setIndicatorsConfig}
+            />
+          </div>
+        )
       case 'analytics':
         // Check if current user is the bot owner
         const isOwner = user?.id === bot.developer_id
@@ -1195,6 +1318,21 @@ export default function BotDetailPage() {
               >
                 <ExclamationTriangleIcon className="h-5 w-5 inline-block mr-2" />
                 Risk Management
+              </button>
+            )}
+            
+            {/* Show Indicators tab only for bot developer */}
+            {bot.developer_id === user?.id && (
+              <button
+                onClick={() => setActiveTab('indicators')}
+                className={`whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === 'indicators'
+                    ? 'border-purple-500 text-purple-400'
+                    : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <ChartBarIcon className="h-5 w-5 inline-block mr-2" />
+                Indicators
               </button>
             )}
             

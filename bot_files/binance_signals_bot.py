@@ -969,10 +969,15 @@ DATA SOURCE: Binance Public API (Real-time market data, no user credentials requ
                     timeframes_data[timeframe] = self._create_synthetic_ohlcv(current_price, 50)
             
             # Get LLM response using correct method
+            # Extract indicators analysis from multi_timeframe data
+            indicators_analysis = analysis.get('multi_timeframe', {})
+            
             llm_response = await self.llm_service.analyze_market(
                 symbol=analysis.get('symbol', self.trading_pair),
                 timeframes_data=timeframes_data,
-                model=self.llm_model
+                indicators_analysis=indicators_analysis,  # ✅ Pass indicators to LLM
+                model=self.llm_model,
+                bot_id=self.bot_id if hasattr(self, 'bot_id') else None
             )
             
             # Extract ONLY recommendation from LLM response

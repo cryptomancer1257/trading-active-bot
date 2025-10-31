@@ -474,17 +474,49 @@ class BinanceTradingBot(CustomBot):
                 logger.error("LLM service not available")
                 return Action(action="HOLD", value=0.0, reason="LLM service unavailable")
             
+            # Analyze data to get indicators
+            analysis = self.analyze_data(historical_data)
+            if 'error' in analysis:
+                logger.error(f"Analysis error: {analysis['error']}")
+                return Action(action="HOLD", value=0.0, reason=f"Analysis error: {analysis['error']}")
+            
             # Convert data to LLM format
             timeframes_data = self._convert_data_to_llm_format(historical_data)
             if not timeframes_data:
                 return Action(action="HOLD", value=0.0, reason="Failed to format data for LLM")
+            
+            # Prepare indicators analysis - use same indicators for all timeframes
+            # since this bot only has one real timeframe
+            indicators_analysis = {}
+            for timeframe in timeframes_data.keys():
+                indicators_analysis[timeframe] = {
+                    'indicators': {
+                        'rsi': analysis.get('rsi', 50),
+                        'macd': {
+                            'macd': analysis.get('macd', 0),
+                            'signal': analysis.get('macd_signal', 0),
+                            'histogram': analysis.get('macd_histogram', 0)
+                        },
+                        'ma_fast': analysis.get('ma_fast', 0),
+                        'ma_slow': analysis.get('ma_slow', 0),
+                        'bollinger_bands': {
+                            'upper': analysis.get('bb_upper', 0),
+                            'middle': analysis.get('bb_middle', 0),
+                            'lower': analysis.get('bb_lower', 0)
+                        }
+                    },
+                    'current_price': analysis.get('current_price', 0),
+                    'volume_ratio': analysis.get('volume_ratio', 1.0)
+                }
             
             # Get LLM analysis
             symbol = self.trading_pair  # e.g., "BTC/USDT"
             llm_analysis = await self.llm_service.analyze_market(
                 symbol=symbol,
                 timeframes_data=timeframes_data,
-                model=self.llm_model
+                indicators_analysis=indicators_analysis,  # ✅ Pass indicators to LLM
+                model=self.llm_model,
+                bot_id=self.bot_id if hasattr(self, 'bot_id') else None
             )
             
             if "error" in llm_analysis:

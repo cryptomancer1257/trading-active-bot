@@ -308,6 +308,7 @@ export default function MyBotsList() {
                           setShowDeleteModal(true)
                         }}
                         className="p-2 text-red-400 hover:text-red-600 rounded-md hover:bg-red-50"
+                        title="Delete Bot"
                       >
                         <TrashIcon className="h-5 w-5" />
                       </button>

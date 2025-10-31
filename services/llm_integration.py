@@ -402,8 +402,241 @@ class LLMIntegrationService:
         except Exception as e:
             logger.error(f"Failed to log LLM usage: {e}")
     
-    def _get_analysis_prompt(self, bot_id: int = None, timeframes: list = None) -> str:
-        """Get dynamic trading analysis prompt from bot's attached prompt template"""
+    def _format_final_prompt(self, strategy_prompt: str, market_data: Dict[str, Any]) -> str:
+        """
+        Format final prompt with clear separation between strategy instructions and market data
+        
+        Args:
+            strategy_prompt: User's trading strategy + data guide
+            market_data: Actual market data to analyze
+            
+        Returns:
+            Well-structured prompt with visual separators
+        """
+        return f"""{strategy_prompt}
+
+╔══════════════════════════════════════════════════════════════════╗
+║ 📈 MARKET DATA TO ANALYZE                                        ║
+╚══════════════════════════════════════════════════════════════════╝
+
+{json.dumps(market_data, indent=2)}
+
+═══════════════════════════════════════════════════════════════════
+⚡ INSTRUCTIONS RECAP:
+1. Extract indicators from data["indicators"][timeframe] (use directly)
+2. Analyze OHLCV patterns from data["timeframes"][timeframe]
+3. Apply YOUR STRATEGY rules above
+4. Return STRICT JSON format only
+═══════════════════════════════════════════════════════════════════
+"""
+    
+    def _generate_data_structure_guide(self, timeframes: list, indicators_analysis: Dict[str, Dict[str, Any]] = None) -> str:
+        """
+        Generate dynamic data structure guide based on available indicators
+        
+        Args:
+            timeframes: List of timeframes
+            indicators_analysis: Indicators data to detect available indicators
+        """
+        formatted_timeframes = ", ".join([tf.upper() for tf in timeframes])
+        
+        # Detect available indicators DYNAMICALLY from actual data
+        available_indicators = []
+        indicator_categories = {
+            'momentum': [],
+            'trend': [],
+            'volatility': [],
+            'volume': [],
+            'levels': []
+        }
+        
+        if indicators_analysis:
+            # Check first timeframe for available indicators
+            first_tf = list(indicators_analysis.keys())[0] if indicators_analysis else None
+            if first_tf:
+                # Check for nested 'indicators' key (from bot's multi_timeframe structure)
+                if 'indicators' in indicators_analysis[first_tf]:
+                    ind_data = indicators_analysis[first_tf]['indicators']
+                else:
+                    # Direct structure (from market_data after prepare_market_data)
+                    ind_data = indicators_analysis[first_tf]
+                
+                # Map of indicator patterns to their display names and categories
+                indicator_mapping = {
+                    # Momentum indicators
+                    'rsi': ('RSI (Relative Strength Index)', 'momentum'),
+                    'stochastic': ('Stochastic Oscillator', 'momentum'),
+                    'williams': ('Williams %R', 'momentum'),
+                    'cci': ('Commodity Channel Index (CCI)', 'momentum'),
+                    'roc': ('Rate of Change (ROC)', 'momentum'),
+                    'mfi': ('Money Flow Index (MFI)', 'momentum'),
+                    
+                    # Trend indicators
+                    'macd': ('MACD (line, signal, histogram)', 'trend'),
+                    'sma': ('Moving Averages (SMA)', 'trend'),
+                    'ema': ('Exponential Moving Averages (EMA)', 'trend'),
+                    'adx': ('Average Directional Index (ADX)', 'trend'),
+                    'supertrend': ('Supertrend', 'trend'),
+                    'ichimoku': ('Ichimoku Cloud', 'trend'),
+                    
+                    # Volatility indicators
+                    'atr': ('ATR (Average True Range)', 'volatility'),
+                    'bollinger': ('Bollinger Bands (upper, middle, lower)', 'volatility'),
+                    'bb_': ('Bollinger Bands', 'volatility'),
+                    'keltner': ('Keltner Channels', 'volatility'),
+                    'donchian': ('Donchian Channels', 'volatility'),
+                    
+                    # Volume indicators
+                    'volume': ('Volume Analysis', 'volume'),
+                    'obv': ('On-Balance Volume (OBV)', 'volume'),
+                    'cmf': ('Chaikin Money Flow (CMF)', 'volume'),
+                    'vwma': ('Volume Weighted MA (VWMA)', 'volume'),
+                    
+                    # Support/Resistance levels
+                    'pivot': ('Pivot Points', 'levels'),
+                    'fibonacci': ('Fibonacci Levels', 'levels'),
+                    'parabolic': ('Parabolic SAR', 'levels'),
+                }
+                
+                # Detect all indicators by scanning keys
+                detected = set()  # Track what we've already added
+                for key in ind_data.keys():
+                    key_lower = key.lower()
+                    
+                    # Skip meta fields
+                    if key_lower in ['current_price', 'timestamp', 'trend_bullish', 
+                                      'rsi_oversold', 'rsi_overbought', 'macd_bullish',
+                                      'volatility']:
+                        continue
+                    
+                    # Try to match with known patterns
+                    matched = False
+                    for pattern, (display_name, category) in indicator_mapping.items():
+                        if pattern in key_lower and display_name not in detected:
+                            indicator_categories[category].append(display_name)
+                            detected.add(display_name)
+                            matched = True
+                            break
+                    
+                    # If no match, add as generic indicator (for user's custom indicators)
+                    if not matched and key not in ['current_price', 'timestamp']:
+                        generic_name = f"{key.replace('_', ' ').title()}"
+                        if generic_name not in detected:
+                            indicator_categories['momentum'].append(generic_name)
+                            detected.add(generic_name)
+                
+                # Build categorized list
+                for category, indicators in indicator_categories.items():
+                    if indicators:
+                        # Remove duplicates and sort
+                        indicators = sorted(list(set(indicators)))
+                        available_indicators.extend(indicators)
+                
+                # Log detected indicators
+                total_detected = len(available_indicators)
+                logger.info(f"📊 Detected {total_detected} indicator types in data")
+                if available_indicators:
+                    logger.info(f"   Available: {', '.join([ind.split('(')[0].strip() for ind in available_indicators[:5]])}{'...' if total_detected > 5 else ''}")
+        
+        indicators_list = "\n   - ".join(available_indicators) if available_indicators else "Will be calculated from OHLCV data"
+        
+        # Generate dynamic access examples based on actual indicators
+        access_examples = []
+        if indicators_analysis and first_tf:
+            # Get actual indicator keys
+            if 'indicators' in indicators_analysis[first_tf]:
+                ind_data = indicators_analysis[first_tf]['indicators']
+            else:
+                ind_data = indicators_analysis[first_tf]
+            
+            # Generate examples for first few indicators (max 5)
+            example_keys = [k for k in ind_data.keys() if k not in 
+                           ['current_price', 'timestamp', 'trend_bullish', 
+                            'rsi_oversold', 'rsi_overbought', 'macd_bullish', 'volatility']][:5]
+            
+            for key in example_keys:
+                access_examples.append(f'       {key} = data["indicators"]["1h"]["{key}"]')
+        
+        # Fallback examples if no indicators detected
+        if not access_examples:
+            access_examples = [
+                '       rsi = data["indicators"]["1h"]["rsi"]',
+                '       macd = data["indicators"]["1h"]["macd"]',
+                '       sma_20 = data["indicators"]["1h"]["sma_20"]'
+            ]
+        
+        examples_text = "\n".join(access_examples)
+        
+        guide = f"""
+╔══════════════════════════════════════════════════════════════════╗
+║ 📊 DATA STRUCTURE GUIDE                                          ║
+╚══════════════════════════════════════════════════════════════════╝
+
+1. **OHLCV HISTORICAL DATA** (timeframes: {formatted_timeframes})
+   - Raw candlestick data: open, high, low, close, volume, timestamp
+   - Use for: Price patterns, trends, support/resistance levels, candlestick patterns
+   
+2. **PRE-CALCULATED TECHNICAL INDICATORS**{":" if available_indicators else " (if available):"}
+   - {indicators_list}
+
+⚡ CRITICAL INSTRUCTIONS:
+   • Check data["indicators"] first - if present, USE THOSE VALUES DIRECTLY
+   • If indicators not in data, calculate them from OHLCV historical data
+   • ALWAYS combine OHLCV price action analysis WITH indicator signals
+   • Multi-timeframe analysis: Check ALL timeframes for confluence
+
+───────────────────────────────────────────────────────────────────
+🎯 HOW TO USE THE DATA:
+
+STEP 1: CHECK FOR PRE-CALCULATED INDICATORS
+   if "indicators" in data:
+       # ✅ Use pre-calculated values directly (NO nested 'indicators' key)
+       # Access pattern: data["indicators"][timeframe][indicator_name]
+       
+       # Examples based on YOUR available indicators:
+{examples_text}
+   else:
+       # Calculate from OHLCV data in data["timeframes"][timeframe]
+
+STEP 2: ANALYZE PRICE ACTION FROM OHLCV
+   • Recent candle patterns (last 5-10 candles)
+   • Trend direction (higher highs/lows or lower highs/lows)
+   • Support/resistance levels (swing highs/lows)
+   • Volume confirmation (compare current vs average)
+
+STEP 3: COMBINE BOTH DATA SOURCES FOR BETTER DECISIONS
+   A. Momentum Confirmation:
+      • RSI from indicators + Price trend from OHLCV
+      • MACD crossover from indicators + Volume spike confirmation
+   
+   B. Entry/Exit Optimization:
+      • Support/Resistance from OHLCV + RSI levels
+      • Breakout from OHLCV + Volume ratio > 1.1x average
+   
+   C. Risk Management:
+      • ATR from indicators = Volatility assessment
+      • Recent candle patterns = Stop loss placement
+
+⚠️ IMPORTANT CHECKS:
+   ✓ Volume confirmation: Current volume vs volume_ratio in indicators
+   ✓ Multi-timeframe alignment: Check both 1H and 2H signals agree
+   ✓ RSI range: Avoid extreme zones (>75 or <25)
+   ✓ Trend confirmation: Price above/below SMAs
+
+═══════════════════════════════════════════════════════════════════
+"""
+        return guide
+    
+    def _get_analysis_prompt(self, bot_id: int = None, timeframes: list = None, 
+                            indicators_analysis: Dict[str, Dict[str, Any]] = None) -> str:
+        """
+        Get dynamic trading analysis prompt from bot's attached prompt template
+        
+        Args:
+            bot_id: Bot ID to get custom prompt
+            timeframes: List of timeframes being analyzed
+            indicators_analysis: Available indicators data for dynamic guide generation
+        """
         # Default timeframes if not provided - Optimized 3 timeframes
         if not timeframes:
             timeframes = ["30M", "1H", "4H"]
@@ -412,6 +645,9 @@ class LLMIntegrationService:
         formatted_timeframes = ", ".join([tf.upper() for tf in timeframes])
         
         logger.info(f"🔍 _get_analysis_prompt called with bot_id={bot_id}, timeframes={timeframes}")
+        
+        # Generate dynamic data structure guide
+        data_guide = self._generate_data_structure_guide(timeframes, indicators_analysis)
         
         # If bot_id is provided, try to get prompt from bot's attached prompt
         if bot_id:
@@ -461,6 +697,14 @@ class LLMIntegrationService:
                         # Replace variables in the prompt
                         for key, value in variables.items():
                             bot_prompt = bot_prompt.replace(f'{{{key}}}', value)
+                        
+                        # Prepend data structure guide and add clear strategy header
+                        strategy_header = """
+╔══════════════════════════════════════════════════════════════════╗
+║ 🎯 YOUR TRADING STRATEGY                                         ║
+╚══════════════════════════════════════════════════════════════════╝
+"""
+                        bot_prompt = data_guide + "\n" + strategy_header + "\n" + bot_prompt
                         
                         # Append mandatory output format (different for SIGNALS_FUTURES)
                         if is_signals_futures:
@@ -525,6 +769,7 @@ class LLMIntegrationService:
         
         # Fallback to default prompt if no bot_id or error
         logger.warning(f"⚠️  Using DEFAULT prompt (bot_id={bot_id})")
+        # Default prompt already has data guide built-in
         return self._get_default_analysis_prompt(timeframes)
     
     def _get_default_analysis_prompt(self, timeframes: list) -> str:
@@ -532,120 +777,168 @@ class LLMIntegrationService:
         # Format timeframes for display
         formatted_timeframes = ", ".join([tf.upper() for tf in timeframes])
         
-        return f"""You are a professional crypto futures trading analyst.
-I will provide you OHLCV data for multiple timeframes ({formatted_timeframes}) in JSON format.
+        return f"""You are a professional cryptocurrency trading engine. Analyze market data to make autonomous BUY/SELL/HOLD decisions.
 
-Based on this data, please:
+═══════════════════════════════════════════════════════════════════
+📊 DATA PROVIDED TO YOU:
+═══════════════════════════════════════════════════════════════════
 
-You are a professional crypto futures trading engine. Analyze OHLCV data across multiple timeframes and make autonomous BUY/SELL/HOLD decisions based on strict technical analysis criteria. 
-CRITICAL REQUIREMENTS:
- - ONLY output valid JSON - no explanatory text outside JSON
- - STRICT volume confirmation - if volume fails, return HOLD immediately
- - Conservative approach - only trade high-probability setups
- - Risk management mandatory - all trades must have proper SL/TP
- - Multi-timeframe confluence - require agreement across timeframes
+1. **OHLCV HISTORICAL DATA** (timeframes: {formatted_timeframes})
+   - Raw candlestick data: open, high, low, close, volume, timestamp
+   - Use for: Price patterns, trends, support/resistance levels
+   
+2. **PRE-CALCULATED TECHNICAL INDICATORS** (if available)
+   - RSI (Relative Strength Index)
+   - MACD (line, signal, histogram)
+   - Moving Averages (SMA, EMA)
+   - Bollinger Bands (upper, middle, lower)
+   - Volume analysis, trend signals
+   
+⚡ IMPORTANT: If indicators are provided, USE THEM DIRECTLY. If not provided, calculate from OHLCV data.
 
-ANALYSIS WORKFLOW (STRICT ORDER):
-STEP 1: VOLUME VALIDATION (MANDATORY FIRST CHECK)
-    CALCULATE: Current volume vs Average of last 20 candles
-    REQUIREMENTS:
-    - BUY/SELL: Current volume ≥ 110% of 20-period average
-    - HOLD: Current volume < 110% of 20-period average
-    IF volume fails → STOP analysis → Return HOLD immediately
+═══════════════════════════════════════════════════════════════════
+🎯 ANALYSIS WORKFLOW (STRICT ORDER):
+═══════════════════════════════════════════════════════════════════
 
-STEP 2: MULTI-TIMEFRAME TREND CONFIRMATION
-    CALCULATE: MA5, MA10, MA20 for each timeframe
-    BULLISH TREND: MA5 > MA10 > MA20 (all timeframes agree)
-    BEARISH TREND: MA5 < MA10 < MA20 (all timeframes agree)
-    SIDEWAYS: Mixed signals across timeframes
-    REQUIREMENTS:
-    - BUY: At least 2/3 timeframes show bullish alignment
-    - SELL: At least 2/3 timeframes show bearish alignment
-    - HOLD: Conflicting trends or sideways action
-STEP 3: MOMENTUM ANALYSIS
-    RSI(14):
-    - BUY Zone: 40-65 (avoid overbought >70)
-    - SELL Zone: 35-60 (avoid oversold <30)
-    - EXCLUDE: RSI >75 or <25 (extreme zones)
-    
-    MACD:
-    - BUY: MACD line > Signal line AND both trending up
-    - SELL: MACD line < Signal line AND both trending down
-    - PRIORITY: Recent crossover within 1-3 candles
-STEP 4: SUPPORT/RESISTANCE VALIDATION
-    BOLLINGER BANDS:
-    - BUY: Price bounces from Lower BB OR breaks above Middle BB with volume
-    - SELL: Price bounces from Upper BB OR breaks below Middle BB with volume
-    - AVOID: Price in middle third of BB range (no clear signal)
-    
-    KEY LEVELS:
-    - IDENTIFY: Recent swing highs/lows within 20 candles
-    - CONFIRM: Price at or near significant support/resistance
-STEP 5: FIBONACCI CONFLUENCE (BONUS)
-    IF clear trend exists:
-    - IDENTIFY: Recent swing high to swing low (or vice versa)
-    - PRIORITY ZONES: 0.382, 0.5, 0.618 retracement levels
-    - BONUS POINTS: Entry price within ±0.5% of Fibonacci level
-    - SKIP: If no clear Fibonacci structure
-EXCLUSION CRITERIA (AUTO-HOLD):
-    Volume insufficient (< 110% average)
-    Extreme RSI (>75 or <25)
-    Conflicting timeframes (no 2/3 agreement)
-    Sideways consolidation (price within 1.5% range for 10+ candles)
-    Recent false breakout (failed breakout within 5 candles)
-    Low volatility (ATR < 0.8% of current price)
-CONFIDENCE SCORING:
-    90-100%: 5+ indicators agree + volume spike (>150%) + clear trend
-    75-89%:  4 indicators agree + good volume (>130%) + trend confirmation
-    60-74%:  3 indicators agree + adequate volume + some trend signals
-    55-59%:  2 indicators agree + minimum volume + weak signals
-    <55%:    HOLD - insufficient setup quality
-STOP-LOSS CALCULATION:
-    BUY Stops:
-        1. Below recent swing low (last 10 candles), OR
-        2. Below Lower Bollinger Band, OR  
-        3. 2-3% below entry (whichever is closer)
-    SELL Stops:
-        1. Above recent swing high (last 10 candles), OR
-        2. Above Upper Bollinger Band, OR
-        3. 2-3% above entry (whichever is closer)
-TAKE-PROFIT TARGETS:
-    BUY Targets:
-        1. Next resistance level, OR
-        2. Upper Bollinger Band, OR
-        3. 1.5x stop-loss distance minimum
-    
-    SELL Targets:
-        1. Next support level, OR
-        2. Lower Bollinger Band, OR
-        3. 1.5x stop-loss distance minimum
-    MINIMUM R:R RATIO: 1.5:1 (prefer 2:1+)
-OUTPUT FORMAT (STRICT JSON SCHEMA):
+STEP 1: DATA INTEGRATION & VOLUME VALIDATION ⚠️ MANDATORY FIRST
+────────────────────────────────────────────────────────────────
+✓ Check if indicators are provided in data["indicators"] 
+✓ If yes → Use pre-calculated values directly
+✓ If no → Calculate from OHLCV historical data
+✓ Volume Check: Current volume MUST be ≥ 110% of 20-period average
+  → If volume fails: IMMEDIATELY return HOLD (no further analysis)
+
+STEP 2: MULTI-TIMEFRAME TREND CONFIRMATION 📈
+────────────────────────────────────────────────────────────────
+Analyze EACH timeframe:
+  A. Price Action from OHLCV:
+     • Higher highs + higher lows = Uptrend
+     • Lower highs + lower lows = Downtrend
+     • Recent candle patterns (engulfing, doji, hammers)
+  
+  B. Moving Average Alignment (from indicators OR calculate):
+     • BULLISH: MA5 > MA10 > MA20 (golden cross)
+     • BEARISH: MA5 < MA10 < MA20 (death cross)
+     • Current price position vs MAs
+  
+  C. Consensus Rule:
+     • BUY: At least 2/3 timeframes show bullish alignment
+     • SELL: At least 2/3 timeframes show bearish alignment
+     • HOLD: Conflicting trends or sideways action
+
+STEP 3: MOMENTUM & OSCILLATORS ANALYSIS 🎢
+────────────────────────────────────────────────────────────────
+Use indicators data if available, otherwise calculate:
+
+  RSI (14-period):
+  ✓ BUY Zone: 40-65 (healthy bullish momentum)
+  ✓ SELL Zone: 35-60 (healthy bearish momentum)  
+  ✓ AVOID: RSI >75 (extreme overbought) or <25 (extreme oversold)
+  ✓ Divergences: Price vs RSI divergence = strong signal
+
+  MACD:
+  ✓ BUY: MACD > Signal line + histogram expanding upward
+  ✓ SELL: MACD < Signal line + histogram expanding downward
+  ✓ PRIORITY: Recent crossovers within 1-3 candles
+  ✓ Zero-line crossovers = momentum shift confirmation
+
+STEP 4: SUPPORT/RESISTANCE & PRICE LEVELS 🎯
+────────────────────────────────────────────────────────────────
+Combine OHLCV patterns with indicator levels:
+
+  From OHLCV Historical Data:
+  • Identify recent swing highs/lows (last 20 candles)
+  • Find consolidation zones (price clustering)
+  • Detect breakouts or fakeouts
+  
+  From Bollinger Bands (indicators):
+  • BUY: Price bounces from Lower BB OR breaks Middle BB upward with volume
+  • SELL: Price bounces from Upper BB OR breaks Middle BB downward with volume
+  • AVOID: Price in middle 33% of BB range (no clear signal)
+  
+  Key Levels Validation:
+  ✓ Price must be at/near significant support (for BUY) or resistance (for SELL)
+  ✓ Previous level touches increase significance (2+ touches better)
+
+STEP 5: FIBONACCI & ADVANCED PATTERNS (BONUS) 🌟
+────────────────────────────────────────────────────────────────
+If clear trend exists in OHLCV data:
+  • Identify swing high to swing low (or vice versa)
+  • PRIORITY ZONES: 0.382, 0.5, 0.618 retracement levels
+  • BONUS POINTS: Entry within ±0.5% of Fib level
+  • Combine with support/resistance for confluence
+
+STEP 6: FINAL SIGNAL GENERATION 🎲
+────────────────────────────────────────────────────────────────
+Combine ALL analysis above:
+  
+  Signal Strength Matrix:
+  ┌─────────────────────────────────────────────────────────┐
+  │ STRONG BUY:  4+ bullish signals + volume confirmation  │
+  │ MODERATE BUY: 3 bullish signals + adequate volume      │
+  │ WEAK BUY:    2 bullish signals + minimum volume        │
+  │ HOLD:        Mixed signals OR failed volume check      │
+  │ WEAK SELL:   2 bearish signals + minimum volume        │
+  │ MODERATE SELL: 3 bearish signals + adequate volume     │
+  │ STRONG SELL: 4+ bearish signals + volume confirmation  │
+  └─────────────────────────────────────────────────────────┘
+
+═══════════════════════════════════════════════════════════════════
+🚫 EXCLUSION CRITERIA (AUTOMATIC HOLD):
+═══════════════════════════════════════════════════════════════════
+• Volume insufficient (< 110% of average)
+• Extreme RSI (>75 or <25) without clear reversal pattern
+• Conflicting timeframes (no 2/3 agreement)
+• Sideways consolidation (price within 1.5% range for 10+ candles)
+• Recent false breakout (failed breakout within 5 candles)
+• Low volatility (ATR < 0.8% of current price)
+
+═══════════════════════════════════════════════════════════════════
+📊 CONFIDENCE SCORING:
+═══════════════════════════════════════════════════════════════════
+90-100%: 5+ indicators agree + volume spike (>150%) + clear trend + price at key level
+75-89%:  4 indicators agree + good volume (>130%) + trend confirmation + pattern support
+60-74%:  3 indicators agree + adequate volume (>110%) + some trend signals
+55-59%:  2 indicators agree + minimum volume + weak signals
+<55%:    HOLD - insufficient setup quality
+
+═══════════════════════════════════════════════════════════════════
+📤 OUTPUT FORMAT (STRICT JSON SCHEMA):
+═══════════════════════════════════════════════════════════════════
 {{
   "recommendation": {{
     "action": "BUY" | "SELL" | "HOLD",
-    "entry_price": "<string | null>",
-    "strategy": "<MA, MACD, RSI, BollingerBands, Fibonacci_Retracement hoặc kết hợp>",
+    "entry_price": "<string or null>",
+    "strategy": "<MA, MACD, RSI, BollingerBands, Fibonacci_Retracement or combination>",
     "confidence": "<number 0-100>",
-    "reasoning": "<ngắn gọn 1-2 câu giải thích tại sao>"
+    "reasoning": "<brief 1-2 sentences explaining why>"
   }}
 }}
 
-NOTE: Stop Loss and Take Profit are automatically calculated from Risk Config (developer-configured parameters), not from LLM.
 OUTPUT RULES:
-    HOLD actions: All price fields = null
-    Decimal precision: 1 decimal place for all prices
-    No text outside JSON: Pure JSON response only
-    Confidence < 55%: Force action = "HOLD"
-FINAL VALIDATION CHECKLIST:
-    ✓ Volume > 110% average?
-    ✓ 2/3 timeframes agree on trend?
-    ✓ RSI in valid range (not extreme)?
-    ✓ Clear support/resistance level?
-    ✓ Risk:Reward ≥ 1.5:1?
-    ✓ Confidence ≥ 55%?
-    IF any ✗ → HOLD
-DỮ LIỆU:"""
+• ONLY valid JSON - no text outside JSON structure
+• HOLD actions: entry_price = null
+• Confidence < 55%: FORCE action = "HOLD"
+• No explanatory text, no markdown, pure JSON only
+
+NOTE: Stop Loss and Take Profit are calculated by Risk Management System (not by LLM).
+
+═══════════════════════════════════════════════════════════════════
+✅ FINAL VALIDATION CHECKLIST:
+═══════════════════════════════════════════════════════════════════
+Before outputting BUY/SELL:
+  ✓ Volume > 110% average?
+  ✓ 2/3 timeframes agree on trend?
+  ✓ RSI in valid range (not extreme)?
+  ✓ Clear support/resistance level nearby?
+  ✓ Confidence ≥ 55%?
+  ✓ No conflicting signals from indicators?
+  
+IF ANY CHECKBOX FAILS → Return HOLD
+
+═══════════════════════════════════════════════════════════════════
+📥 MARKET DATA:
+═══════════════════════════════════════════════════════════════════"""
     
     def _get_capital_management_prompt(self, bot_id: int = None) -> str:
         """Get dynamic capital management prompt from bot's attached risk management prompt template"""
@@ -769,9 +1062,15 @@ Please respond in JSON format:
   }
 }"""
     
-    def prepare_market_data(self, symbol: str, timeframes_data: Dict[str, List[Dict]]) -> Dict[str, Any]:
+    def prepare_market_data(self, symbol: str, timeframes_data: Dict[str, List[Dict]], 
+                           indicators_analysis: Dict[str, Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Prepare market data for LLM analysis
+        
+        Args:
+            symbol: Trading symbol
+            timeframes_data: Raw OHLCV data
+            indicators_analysis: Calculated indicators for each timeframe
         """
         try:
             formatted_data = {
@@ -780,6 +1079,24 @@ Please respond in JSON format:
                 "timeframes": timeframes_data
             }
             
+            # Add indicators if available
+            if indicators_analysis:
+                formatted_data["indicators"] = {}
+                indicators_count = 0
+                for timeframe, indicators in indicators_analysis.items():
+                    # Clean indicators data - remove historical_data to reduce size
+                    cleaned_indicators = {k: v for k, v in indicators.items() if k != 'historical_data'}
+                    formatted_data["indicators"][timeframe] = cleaned_indicators
+                    
+                    # Count indicator types
+                    if 'indicators' in indicators:
+                        indicators_count += len(indicators['indicators'])
+                
+                logger.info(f"📊 Added pre-calculated indicators for {len(indicators_analysis)} timeframes to LLM prompt")
+                logger.info(f"   → Indicators attached: RSI, MACD, Moving Averages, Bollinger Bands, Volume analysis")
+                logger.info(f"   → LLM will USE these indicators directly (no re-calculation needed)")
+            else:
+                logger.warning(f"⚠️  No indicators provided - LLM will calculate from OHLCV data")
             return formatted_data
             
         except Exception as e:
@@ -1077,13 +1394,15 @@ Need help? Contact support or upgrade your plan.
         
         start_time = time.time()
         try:
-            # Extract timeframes from market_data
+            # Extract timeframes and indicators from market_data
             timeframes = list(market_data.get("timeframes", {}).keys())
+            indicators_from_data = market_data.get("indicators", None)
             
-            # Generate dynamic prompt based on actual timeframes and bot_id
-            dynamic_prompt = self._get_analysis_prompt(bot_id, timeframes)
+            # Generate dynamic prompt based on actual timeframes, bot_id, and available indicators
+            strategy_prompt = self._get_analysis_prompt(bot_id, timeframes, indicators_from_data)
             
-            prompt = f"{dynamic_prompt}\n\nMarket Data:\n{json.dumps(market_data, indent=2)}"
+            # Format final prompt with clear sections
+            prompt = self._format_final_prompt(strategy_prompt, market_data)
             
             response = await asyncio.to_thread(
                 self.openai_client.chat.completions.create,
@@ -1150,13 +1469,15 @@ Need help? Contact support or upgrade your plan.
         
         start_time = time.time()
         try:
-            # Extract timeframes from market_data
+            # Extract timeframes and indicators from market_data
             timeframes = list(market_data.get("timeframes", {}).keys())
+            indicators_from_data = market_data.get("indicators", None)
             
-            # Generate dynamic prompt based on actual timeframes and bot_id
-            dynamic_prompt = self._get_analysis_prompt(bot_id, timeframes)
+            # Generate dynamic prompt based on actual timeframes, bot_id, and available indicators
+            strategy_prompt = self._get_analysis_prompt(bot_id, timeframes, indicators_from_data)
             
-            prompt = f"{dynamic_prompt}\n\nMarket Data:\n{json.dumps(market_data, indent=2)}"
+            # Format final prompt with clear sections
+            prompt = self._format_final_prompt(strategy_prompt, market_data)
             
             response = await asyncio.to_thread(
                 self.claude_client.messages.create,
@@ -1221,13 +1542,15 @@ Need help? Contact support or upgrade your plan.
         
         start_time = time.time()
         try:
-            # Extract timeframes from market_data
+            # Extract timeframes and indicators from market_data
             timeframes = list(market_data.get("timeframes", {}).keys())
+            indicators_from_data = market_data.get("indicators", None)
             
-            # Generate dynamic prompt based on actual timeframes and bot_id
-            dynamic_prompt = self._get_analysis_prompt(bot_id, timeframes)
+            # Generate dynamic prompt based on actual timeframes, bot_id, and available indicators
+            strategy_prompt = self._get_analysis_prompt(bot_id, timeframes, indicators_from_data)
             
-            prompt = f"{dynamic_prompt}\n\nMarket Data:\n{json.dumps(market_data, indent=2)}"
+            # Format final prompt with clear sections
+            prompt = self._format_final_prompt(strategy_prompt, market_data)
             
             response = await asyncio.to_thread(
                 self.gemini_client.generate_content,
@@ -1307,6 +1630,7 @@ Need help? Contact support or upgrade your plan.
             }
     
     async def analyze_market(self, symbol: str, timeframes_data: Dict[str, List[Dict]], 
+                           indicators_analysis: Dict[str, Dict[str, Any]] = None,
                            model: str = "openai", bot_id: int = None) -> Dict[str, Any]:
         """
         Main method to analyze market data with specified LLM
@@ -1314,7 +1638,9 @@ Need help? Contact support or upgrade your plan.
         Args:
             symbol: Trading symbol (e.g., "BTC/USDT")
             timeframes_data: OHLCV data for different timeframes
+            indicators_analysis: Calculated technical indicators for each timeframe
             model: LLM to use ("openai", "claude", "gemini")
+            bot_id: Bot ID for quota tracking
             
         Returns:
             Complete trading analysis with Fibonacci
@@ -1326,8 +1652,8 @@ Need help? Contact support or upgrade your plan.
             if cached_analysis:
                 return cached_analysis
             
-            # Prepare market data
-            market_data = self.prepare_market_data(symbol, timeframes_data)
+            # Prepare market data with indicators
+            market_data = self.prepare_market_data(symbol, timeframes_data, indicators_analysis)
             
             if not market_data:
                 return {"error": "Failed to prepare market data"}

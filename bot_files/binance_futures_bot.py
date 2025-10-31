@@ -984,10 +984,40 @@ class BinanceFuturesBot(CustomBot):
                 logger.error("LLM service not available")
                 return Action(action="HOLD", value=0.0, reason="LLM service unavailable")
             
+            # Analyze data to get indicators
+            analysis = self.analyze_futures_data(historical_data)
+            if 'error' in analysis:
+                logger.error(f"Analysis error: {analysis['error']}")
+                return Action(action="HOLD", value=0.0, reason=f"Analysis error: {analysis['error']}")
+            
             # Convert data to LLM format
             timeframes_data = self._convert_data_to_llm_format(historical_data)
             if not timeframes_data:
                 return Action(action="HOLD", value=0.0, reason="Failed to format data for LLM")
+            
+            # Prepare indicators analysis - use same indicators for all timeframes
+            # since this bot only has one real timeframe
+            indicators_analysis = {}
+            for timeframe in timeframes_data.keys():
+                indicators_analysis[timeframe] = {
+                    'indicators': {
+                        'rsi': analysis.get('rsi', 50),
+                        'macd': {
+                            'macd': analysis.get('macd', 0),
+                            'signal': analysis.get('macd_signal', 0),
+                            'histogram': analysis.get('macd_histogram', 0)
+                        },
+                        'ma_fast': analysis.get('ma_fast', 0),
+                        'ma_slow': analysis.get('ma_slow', 0),
+                        'bollinger_bands': {
+                            'upper': analysis.get('bb_upper', 0),
+                            'middle': analysis.get('bb_middle', 0),
+                            'lower': analysis.get('bb_lower', 0)
+                        }
+                    },
+                    'current_price': analysis.get('current_price', 0),
+                    'volume_ratio': analysis.get('volume_ratio', 1.0)
+                }
             
             # Get LLM analysis with futures context
             self.trading_pair = self.trading_pair.replace('/', '')
@@ -995,6 +1025,7 @@ class BinanceFuturesBot(CustomBot):
             llm_analysis = await self.llm_service.analyze_market(
                 symbol=symbol,
                 timeframes_data=timeframes_data,
+                indicators_analysis=indicators_analysis,  # ✅ Pass indicators to LLM
                 model=self.llm_model,
                 bot_id=self.bot_id  # Pass bot_id for custom prompt
             )
@@ -1944,8 +1975,12 @@ class BinanceFuturesBot(CustomBot):
                             new_loop = asyncio.new_event_loop()
                             asyncio.set_event_loop(new_loop)
                             try:
+                                # Pass both raw data and indicators analysis
                                 return new_loop.run_until_complete(
-                                    self._generate_llm_signal_from_multi_timeframes(analysis['timeframes_data'])
+                                    self._generate_llm_signal_from_multi_timeframes(
+                                        analysis['timeframes_data'],
+                                        analysis.get('multi_timeframe', {})  # Pass indicators data
+                                    )
                                 )
                             except Exception as e:
                                 logger.error(f"LLM signal generation error: {e}")
@@ -2060,8 +2095,9 @@ class BinanceFuturesBot(CustomBot):
             logger.error(f"Error generating multi-timeframe signal: {e}")
             return Action(action="HOLD", value=0.0, reason=f"Signal generation error: {e}")
     
-    async def _generate_llm_signal_from_multi_timeframes(self, timeframes_data: Dict[str, List[Dict]]) -> Action:
-        """Generate signal using LLM with multi-timeframe data"""
+    async def _generate_llm_signal_from_multi_timeframes(self, timeframes_data: Dict[str, List[Dict]], 
+                                                         indicators_analysis: Dict[str, Dict[str, Any]] = None) -> Action:
+        """Generate signal using LLM with multi-timeframe data and indicators"""
         try:
             if not self.llm_service:
                 logger.error("LLM service not available")
@@ -2089,12 +2125,13 @@ class BinanceFuturesBot(CustomBot):
                     
                     cleaned_timeframes_data[timeframe] = cleaned_data
             
-            # Get LLM analysis
+            # Get LLM analysis with indicators data
             self.trading_pair = self.trading_pair.replace('/', '')
             symbol = self.trading_pair
             llm_analysis = await self.llm_service.analyze_market(
                 symbol=symbol,
                 timeframes_data=cleaned_timeframes_data,
+                indicators_analysis=indicators_analysis,  # ✅ Pass indicators to LLM
                 model=self.llm_model,
                 bot_id=self.bot_id  # Pass bot_id for custom prompt
             )

@@ -767,8 +767,9 @@ class UniversalFuturesSignalsBot(CustomBot):
             logger.error(f"Error generating signal: {e}")
             return Action(action="HOLD", value=0.0, reason=f"Signal error: {e}")
     
-    async def _generate_llm_signal_from_multi_timeframes(self, timeframes_data: Dict[str, List[Dict]]) -> Action:
-        """Generate signal using LLM with multi-timeframe data"""
+    async def _generate_llm_signal_from_multi_timeframes(self, timeframes_data: Dict[str, List[Dict]], 
+                                                         indicators_analysis: Dict[str, Dict[str, Any]] = None) -> Action:
+        """Generate signal using LLM with multi-timeframe data and indicators"""
         try:
             if not self.llm_service:
                 return Action(action="HOLD", value=0.0, reason="LLM service unavailable")
@@ -798,11 +799,12 @@ class UniversalFuturesSignalsBot(CustomBot):
                     
                     cleaned_timeframes_data[timeframe] = cleaned_data
             
-            # Get LLM analysis
+            # Get LLM analysis with indicators data
             self.trading_pair = self.trading_pair.replace('/', '')
             llm_analysis = await self.llm_service.analyze_market(
                 symbol=self.trading_pair,
                 timeframes_data=cleaned_timeframes_data,
+                indicators_analysis=indicators_analysis,  # ✅ Pass indicators to LLM
                 model=self.llm_model,
                 bot_id=self.bot_id
             )
@@ -967,8 +969,12 @@ class UniversalFuturesSignalsBot(CustomBot):
                             new_loop = asyncio.new_event_loop()
                             asyncio.set_event_loop(new_loop)
                             try:
+                                # Pass both raw data and indicators analysis
                                 return new_loop.run_until_complete(
-                                    self._generate_llm_signal_from_multi_timeframes(analysis['timeframes_data'])
+                                    self._generate_llm_signal_from_multi_timeframes(
+                                        analysis['timeframes_data'],
+                                        analysis.get('multi_timeframe', {})  # Pass indicators data
+                                    )
                                 )
                             except Exception as e:
                                 logger.error(f"LLM signal error: {e}")

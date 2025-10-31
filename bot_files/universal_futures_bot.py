@@ -41,6 +41,7 @@ from services.exchange_integrations import (
 
 # Services
 from services.llm_integration import create_llm_service
+from services.indicator_service import AdvancedIndicators
 from bot_files.capital_management import CapitalManagement, RiskMetrics, PositionSizeRecommendation
 from core.api_key_manager import get_bot_api_keys
 
@@ -135,6 +136,24 @@ class UniversalFuturesBot(CustomBot):
         self.rsi_period = config.get('rsi_period', 14)
         self.rsi_oversold = config.get('rsi_oversold', 30)
         self.rsi_overbought = config.get('rsi_overbought', 70)
+        
+        # Load indicators config from strategy_config or config
+        self.indicators_config = None
+        strategy_config = config.get('strategy_config', {})
+        if isinstance(strategy_config, str):
+            try:
+                strategy_config = json.loads(strategy_config)
+            except:
+                strategy_config = {}
+        
+        self.indicators_config = strategy_config.get('indicators_config')
+        if self.indicators_config:
+            logger.info(f"✅ Loaded indicators config with {len(self.indicators_config.get('enabled_indicators', {}))} indicators")
+        else:
+            logger.info("ℹ️ No indicators config found, will use default technical analysis")
+        
+        # Initialize Advanced Indicators service
+        self.indicator_service = AdvancedIndicators()
         
         # Redis for distributed locking
         self.redis_client = None
@@ -1214,8 +1233,29 @@ class UniversalFuturesBot(CustomBot):
     # ==================== ANALYSIS ====================
     
     def _calculate_futures_analysis(self, data: pd.DataFrame, historical_data: List[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Calculate technical analysis for futures trading"""
+        """
+        Calculate technical analysis for futures trading
+        Uses AdvancedIndicators service if indicators_config is available
+        """
         try:
+            # Use AdvancedIndicators service if config is available
+            if self.indicators_config and self.indicator_service:
+                logger.info("📊 Using configured indicators from AdvancedIndicators service")
+                analysis = self.indicator_service.calculate_selected_indicators(data, self.indicators_config)
+                
+                # Add historical data if provided
+                if historical_data:
+                    analysis['historical_data'] = historical_data
+                
+                # Add current price if not in result
+                if 'current_price' not in analysis:
+                    analysis['current_price'] = float(data['close'].iloc[-1])
+                
+                return analysis
+            
+            # Fallback to basic technical analysis if no config
+            logger.info("📊 Using default technical analysis (no indicators config)")
+            
             # RSI
             def calculate_rsi(prices: pd.Series, period: int = 14) -> float:
                 delta = prices.diff()
@@ -1389,8 +1429,15 @@ class UniversalFuturesBot(CustomBot):
             logger.error(f"Error generating signal: {e}")
             return Action(action="HOLD", value=0.0, reason=f"Signal error: {e}")
     
-    async def _generate_llm_signal_from_multi_timeframes(self, timeframes_data: Dict[str, List[Dict]]) -> Action:
-        """Generate signal using LLM with multi-timeframe data"""
+    async def _generate_llm_signal_from_multi_timeframes(self, timeframes_data: Dict[str, List[Dict]], 
+                                                         indicators_analysis: Dict[str, Dict[str, Any]] = None) -> Action:
+        """
+        Generate signal using LLM with multi-timeframe data and indicators
+        
+        Args:
+            timeframes_data: Raw OHLCV data for each timeframe
+            indicators_analysis: Calculated indicators for each timeframe (from _calculate_futures_analysis)
+        """
         try:
             if not self.llm_service:
                 return Action(action="HOLD", value=0.0, reason="LLM service unavailable")
@@ -1420,11 +1467,12 @@ class UniversalFuturesBot(CustomBot):
                     
                     cleaned_timeframes_data[timeframe] = cleaned_data
             
-            # Get LLM analysis
+            # Get LLM analysis with indicators data
             self.trading_pair = self.trading_pair.replace('/', '')
             llm_analysis = await self.llm_service.analyze_market(
                 symbol=self.trading_pair,
                 timeframes_data=cleaned_timeframes_data,
+                indicators_analysis=indicators_analysis,  # Pass indicators to LLM
                 model=self.llm_model,
                 bot_id=self.bot_id
             )
@@ -1538,8 +1586,12 @@ class UniversalFuturesBot(CustomBot):
                             new_loop = asyncio.new_event_loop()
                             asyncio.set_event_loop(new_loop)
                             try:
+                                # Pass both raw data and indicators analysis
                                 return new_loop.run_until_complete(
-                                    self._generate_llm_signal_from_multi_timeframes(analysis['timeframes_data'])
+                                    self._generate_llm_signal_from_multi_timeframes(
+                                        analysis['timeframes_data'],
+                                        analysis.get('multi_timeframe', {})  # Pass indicators data
+                                    )
                                 )
                             except Exception as e:
                                 logger.error(f"LLM signal error: {e}")
