@@ -20,6 +20,7 @@ import asyncio
 from bots.bot_sdk.CustomBot import CustomBot
 from bots.bot_sdk.Action import Action
 from services.llm_integration import create_llm_service
+from services.transaction_service import TransactionService
 
 logger = logging.getLogger(__name__)
 
@@ -509,14 +510,33 @@ class BinanceTradingBot(CustomBot):
                     'volume_ratio': analysis.get('volume_ratio', 1.0)
                 }
             
-            # Get LLM analysis
+            # Fetch historical transactions for learning (if enabled)
+            historical_transactions = None
+            if hasattr(self, 'historical_learning_enabled') and self.historical_learning_enabled:
+                try:
+                    transaction_service = TransactionService()
+                    historical_transactions = transaction_service.get_recent_transactions_for_learning(
+                        bot_id=self.bot_id if hasattr(self, 'bot_id') else None,
+                        limit=getattr(self, 'historical_transaction_limit', 25),
+                        include_failed=getattr(self, 'include_failed_trades', True),
+                        mode=getattr(self, 'learning_mode', 'recent')
+                    )
+                    
+                    if historical_transactions:
+                        logger.info(f"📚 Loaded {len(historical_transactions)} historical transactions for learning")
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to fetch historical transactions: {e}")
+                    historical_transactions = None
+            
+            # Get LLM analysis with historical context
             symbol = self.trading_pair  # e.g., "BTC/USDT"
             llm_analysis = await self.llm_service.analyze_market(
                 symbol=symbol,
                 timeframes_data=timeframes_data,
                 indicators_analysis=indicators_analysis,  # ✅ Pass indicators to LLM
                 model=self.llm_model,
-                bot_id=self.bot_id if hasattr(self, 'bot_id') else None
+                bot_id=self.bot_id if hasattr(self, 'bot_id') else None,
+                historical_transactions=historical_transactions  # ✅ Pass historical learning data
             )
             
             if "error" in llm_analysis:

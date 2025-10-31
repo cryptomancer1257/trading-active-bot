@@ -333,6 +333,12 @@ class Bot(Base):
     # Prompt template
     prompt_template_id = Column(Integer, ForeignKey("prompt_templates.id"), nullable=True)
     
+    # Historical Learning Configuration
+    historical_learning_enabled = Column(Boolean, default=False)
+    historical_transaction_limit = Column(Integer, default=25)
+    include_failed_trades = Column(Boolean, default=True)
+    learning_mode = Column(String(20), default='recent')  # 'recent', 'best_performance', 'mixed'
+    
     # Audit fields
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

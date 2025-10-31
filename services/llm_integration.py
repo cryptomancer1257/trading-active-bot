@@ -402,41 +402,218 @@ class LLMIntegrationService:
         except Exception as e:
             logger.error(f"Failed to log LLM usage: {e}")
     
-    def _format_final_prompt(self, strategy_prompt: str, market_data: Dict[str, Any]) -> str:
+    def _format_final_prompt(self, strategy_prompt: str, market_data: Dict[str, Any], 
+                             historical_transactions: List[Dict] = None, bot_id: int = None) -> str:
         """
         Format final prompt with clear separation between strategy instructions and market data
         
         Args:
             strategy_prompt: User's trading strategy + data guide
             market_data: Actual market data to analyze
+            historical_transactions: Optional list of past transactions for learning
+            bot_id: Optional bot ID to determine output format (SIGNALS vs STANDARD)
             
         Returns:
-            Well-structured prompt with visual separators
+            Well-structured prompt with visual separators and historical context
         """
-        return f"""{strategy_prompt}
+        # Determine if this is a SIGNALS_FUTURES bot
+        is_signals_futures = False
+        if bot_id:
+            try:
+                from core.database import get_db
+                from core import crud
+                
+                db = next(get_db())
+                bot = crud.get_bot_by_id(db, bot_id)
+                bot_type_str = str(bot.bot_type).upper().strip() if bot and bot.bot_type else None
+                if bot_type_str and "." in bot_type_str:
+                    bot_type_str = bot_type_str.split(".")[-1]
+                
+                is_signals_futures = (bot_type_str == "SIGNALS_FUTURES")
+            except Exception as e:
+                logger.warning(f"Could not determine bot_type for bot {bot_id}: {e}")
+        
+        # Base prompt with market data
+        prompt = f"""{strategy_prompt}
 
 ╔══════════════════════════════════════════════════════════════════╗
 ║ 📈 MARKET DATA TO ANALYZE                                        ║
 ╚══════════════════════════════════════════════════════════════════╝
 
 {json.dumps(market_data, indent=2)}
-
+"""
+        
+        # Add historical transactions section if available
+        if historical_transactions and len(historical_transactions) > 0:
+            historical_section = self._format_historical_section(historical_transactions)
+            prompt += "\n" + historical_section
+        
+        # Add instructions recap
+        prompt += """
 ═══════════════════════════════════════════════════════════════════
 ⚡ INSTRUCTIONS RECAP:
 1. Extract indicators from data["indicators"][timeframe] (use directly)
-2. Analyze OHLCV patterns from data["timeframes"][timeframe]
-3. Apply YOUR STRATEGY rules above
-4. Return STRICT JSON format only
+2. Analyze OHLCV patterns from data["timeframes"][timeframe]"""
+        
+        if historical_transactions and len(historical_transactions) > 0:
+            prompt += "\n3. LEARN from historical_transactions (validate similar patterns)"
+            prompt += "\n4. Apply YOUR STRATEGY rules above"
+            prompt += "\n5. Return STRICT JSON format below"
+        else:
+            prompt += "\n3. Apply YOUR STRATEGY rules above"
+            prompt += "\n4. Return STRICT JSON format below"
+        
+        prompt += "\n═══════════════════════════════════════════════════════════════════\n"
+        
+        # Add OUTPUT FORMAT as separate section at the end
+        prompt += """
+╔══════════════════════════════════════════════════════════════════╗
+║ 📤 OUTPUT FORMAT (STRICT JSON SCHEMA)                           ║
+╚══════════════════════════════════════════════════════════════════╝
+"""
+        
+        if is_signals_futures:
+            # SIGNALS_FUTURES format with SL/TP
+            prompt += """
+{
+  "recommendation": {
+    "action": "BUY" | "SELL" | "HOLD",
+    "entry_price": "<numeric price>",
+    "stop_loss": "<numeric price>",
+    "take_profit": "<numeric price>",
+    "risk_reward": "<string like '1:2' or null>",
+    "strategy": "<MA, MACD, RSI, BollingerBands, Fibonacci_Retracement or combination>",
+    "confidence": "<0-100>",
+    "reasoning": "<DETAILED 3-5 sentences: analyze trend, entry, technical/fundamental reasons, risk management>",
+    "market_volatility": "LOW" | "MEDIUM" | "HIGH"
+  }
+}
+
+SIGNALS BOT REQUIREMENTS - CRITICAL:
+• Entry Price: Use current market price or specific level from technical analysis
+• Stop Loss: Set below entry for BUY (e.g., entry * 0.99), above for SELL (e.g., entry * 1.01)
+• Take Profit: MUST BE DIFFERENT from entry!
+  - For BUY: take_profit MUST be HIGHER than entry_price
+  - For SELL: take_profit MUST be LOWER than entry_price
+  - Example: If entry=3892, SL=3870 (risk=$22), then TP for 1:1 = 3892 + 22 = 3914
+• Risk/Reward: Calculate as (TP - Entry) / (Entry - SL) for BUY
+• Reasoning: DETAILED explanation with trend, entry rationale, risk considerations
+• Market Volatility: Assess from ATR, volume, price swings
+• RETURN ONLY VALID JSON - no text outside JSON structure
+
 ═══════════════════════════════════════════════════════════════════
 """
+        else:
+            # STANDARD format
+            prompt += """
+{
+  "recommendation": {
+    "action": "BUY" | "SELL" | "HOLD",
+    "entry_price": "<string or null>",
+    "strategy": "<MA, MACD, RSI, BollingerBands, Fibonacci_Retracement hoặc kết hợp>",
+    "confidence": "<0-100>",
+    "reasoning": "<briefly explain in 1–2 sentences why>"
+  }
+}
+
+OUTPUT RULES:
+• ONLY valid JSON - no text outside JSON structure
+• HOLD actions: entry_price = null
+• Confidence < 55%: FORCE action = "HOLD"
+• No explanatory text, no markdown, pure JSON only
+
+═══════════════════════════════════════════════════════════════════
+"""
+        
+        return prompt
     
-    def _generate_data_structure_guide(self, timeframes: list, indicators_analysis: Dict[str, Dict[str, Any]] = None) -> str:
+    def _format_historical_section(self, transactions: List[Dict]) -> str:
         """
-        Generate dynamic data structure guide based on available indicators
+        Format historical transactions for LLM learning
+        
+        Args:
+            transactions: List of formatted transactions
+            
+        Returns:
+            Formatted historical section for prompt
+        """
+        try:
+            # Calculate statistics
+            total = len(transactions)
+            wins = sum(1 for t in transactions if t['result'] == 'WIN')
+            losses = total - wins
+            win_rate = (wins / total * 100) if total > 0 else 0
+            
+            avg_win = sum(t['profit_loss_pct'] for t in transactions if t['result'] == 'WIN') / wins if wins > 0 else 0
+            avg_loss = sum(t['profit_loss_pct'] for t in transactions if t['result'] == 'LOSS') / losses if losses > 0 else 0
+            risk_reward = abs(avg_win / avg_loss) if avg_loss != 0 else 0
+            
+            section = f"""
+╔══════════════════════════════════════════════════════════════════╗
+║ 🧠 HISTORICAL TRANSACTIONS (Learn from Past Performance)        ║
+╚══════════════════════════════════════════════════════════════════╝
+
+📊 **Performance Summary** (Last {total} Trades):
+   • Win Rate: {win_rate:.1f}% ({wins} wins, {losses} losses)
+   • Avg Win: +{avg_win:.2f}%
+   • Avg Loss: {avg_loss:.2f}%
+   • Risk/Reward: {risk_reward:.2f}:1
+
+🎯 **Key Learnings**:
+   • Identify patterns from winning trades
+   • Avoid conditions that led to losses
+   • Consider market conditions when those trades were made
+   • Use this history to improve current decision
+
+📋 **Recent Transactions** (Most recent first):
+"""
+            
+            # Add transaction details (limit to top 10 for prompt brevity)
+            for i, t in enumerate(transactions[:10], 1):
+                result_emoji = "✅" if t['result'] == 'WIN' else "❌" if t['result'] == 'LOSS' else "⚖️"
+                
+                # Format indicators (take first 3 if available)
+                indicators_str = "N/A"
+                if t.get('indicators_used') and isinstance(t['indicators_used'], list):
+                    indicators_str = ', '.join(t['indicators_used'][:3])
+                elif t.get('indicators_used'):
+                    indicators_str = str(t['indicators_used'])[:50]  # Limit length
+                
+                section += f"""
+   {i}. {result_emoji} {t['side']} {t['symbol']} | {t['timeframe']}
+      • Entry: ${t['entry_price']:.2f} → Exit: ${t['exit_price']:.2f}
+      • PnL: {t['profit_loss_pct']:+.2f}% | Duration: {t.get('duration', 'N/A')}
+      • Strategy: {t.get('strategy', 'N/A')[:50]}
+      • Indicators: {indicators_str}
+"""
+            
+            if total > 10:
+                section += f"\n   ... and {total - 10} more transactions\n"
+            
+            section += """
+⚠️ **CRITICAL - Use this historical context to**:
+   1. Validate if current market conditions match past winners
+   2. Avoid repeating mistakes from losing trades
+   3. Adjust confidence based on similar past scenarios
+   4. Consider if strategy performed well in similar conditions
+   5. Look for volume, indicator, and price patterns that worked/failed
+"""
+            
+            return section
+        
+        except Exception as e:
+            logger.error(f"Error formatting historical section: {e}")
+            return ""
+    
+    def _generate_data_structure_guide(self, timeframes: list, indicators_analysis: Dict[str, Dict[str, Any]] = None, 
+                                        has_historical_data: bool = False) -> str:
+        """
+        Generate dynamic data structure guide based on available indicators and historical transactions
         
         Args:
             timeframes: List of timeframes
             indicators_analysis: Indicators data to detect available indicators
+            has_historical_data: Whether historical transactions are available
         """
         formatted_timeframes = ", ".join([tf.upper() for tf in timeframes])
         
@@ -567,6 +744,30 @@ class LLMIntegrationService:
         
         examples_text = "\n".join(access_examples)
         
+        # Add historical data section if available
+        historical_section = ""
+        historical_step = ""
+        step_adjust = ""
+        
+        if has_historical_data:
+            historical_section = """
+   
+3. **HISTORICAL TRANSACTIONS** (Past Performance Data)
+   - Win/Loss record, P&L percentages, strategy performance
+   - Use for: Learning from past mistakes, validating current strategy, pattern recognition
+   - Location: Separate section below market data"""
+            
+            historical_step = """
+
+STEP 4: LEARN FROM HISTORICAL TRANSACTIONS (if provided)
+   • Review past win/loss patterns for similar market conditions
+   • Identify what indicators/strategies worked or failed
+   • Validate if current signals match past winners or losers
+   • Adjust confidence based on historical performance
+   • Avoid repeating mistakes from losing trades"""
+   
+            step_adjust = " + Historical Learning"
+        
         guide = f"""
 ╔══════════════════════════════════════════════════════════════════╗
 ║ 📊 DATA STRUCTURE GUIDE                                          ║
@@ -577,12 +778,12 @@ class LLMIntegrationService:
    - Use for: Price patterns, trends, support/resistance levels, candlestick patterns
    
 2. **PRE-CALCULATED TECHNICAL INDICATORS**{":" if available_indicators else " (if available):"}
-   - {indicators_list}
+   - {indicators_list}{historical_section}
 
 ⚡ CRITICAL INSTRUCTIONS:
    • Check data["indicators"] first - if present, USE THOSE VALUES DIRECTLY
    • If indicators not in data, calculate them from OHLCV historical data
-   • ALWAYS combine OHLCV price action analysis WITH indicator signals
+   • ALWAYS combine OHLCV price action analysis WITH indicator signals{step_adjust}
    • Multi-timeframe analysis: Check ALL timeframes for confluence
 
 ───────────────────────────────────────────────────────────────────
@@ -615,7 +816,7 @@ STEP 3: COMBINE BOTH DATA SOURCES FOR BETTER DECISIONS
    
    C. Risk Management:
       • ATR from indicators = Volatility assessment
-      • Recent candle patterns = Stop loss placement
+      • Recent candle patterns = Stop loss placement{historical_step}
 
 ⚠️ IMPORTANT CHECKS:
    ✓ Volume confirmation: Current volume vs volume_ratio in indicators
@@ -628,7 +829,8 @@ STEP 3: COMBINE BOTH DATA SOURCES FOR BETTER DECISIONS
         return guide
     
     def _get_analysis_prompt(self, bot_id: int = None, timeframes: list = None, 
-                            indicators_analysis: Dict[str, Dict[str, Any]] = None) -> str:
+                            indicators_analysis: Dict[str, Dict[str, Any]] = None,
+                            historical_transactions: List[Dict] = None) -> str:
         """
         Get dynamic trading analysis prompt from bot's attached prompt template
         
@@ -636,6 +838,7 @@ STEP 3: COMBINE BOTH DATA SOURCES FOR BETTER DECISIONS
             bot_id: Bot ID to get custom prompt
             timeframes: List of timeframes being analyzed
             indicators_analysis: Available indicators data for dynamic guide generation
+            historical_transactions: Historical transaction data for learning
         """
         # Default timeframes if not provided - Optimized 3 timeframes
         if not timeframes:
@@ -646,8 +849,11 @@ STEP 3: COMBINE BOTH DATA SOURCES FOR BETTER DECISIONS
         
         logger.info(f"🔍 _get_analysis_prompt called with bot_id={bot_id}, timeframes={timeframes}")
         
+        # Check if historical data is available
+        has_historical_data = historical_transactions and len(historical_transactions) > 0
+        
         # Generate dynamic data structure guide
-        data_guide = self._generate_data_structure_guide(timeframes, indicators_analysis)
+        data_guide = self._generate_data_structure_guide(timeframes, indicators_analysis, has_historical_data)
         
         # If bot_id is provided, try to get prompt from bot's attached prompt
         if bot_id:
@@ -706,59 +912,8 @@ STEP 3: COMBINE BOTH DATA SOURCES FOR BETTER DECISIONS
 """
                         bot_prompt = data_guide + "\n" + strategy_header + "\n" + bot_prompt
                         
-                        # Append mandatory output format (different for SIGNALS_FUTURES)
-                        if is_signals_futures:
-                            output_format = """
-
-                                    OUTPUT FORMAT (STRICT JSON SCHEMA):
-                                    {
-                                        "recommendation": {
-                                            "action": "BUY" | "SELL" | "HOLD",
-                                            "entry_price": "<numeric price>",
-                                            "stop_loss": "<numeric price>",
-                                            "take_profit": "<numeric price>",
-                                            "risk_reward": "<string like '1:2' or null>",
-                                            "strategy": "<MA, MACD, RSI, BollingerBands, Fibonacci_Retracement or combination>",
-                                            "confidence": "<0-100>",
-                                            "reasoning": "<DETAILED 3-5 sentences: analyze the trend, entry point, technical/fundamental reasons, and risk management>",
-                                            "market_volatility": "LOW" | "MEDIUM" | "HIGH"
-                                        }
-                                    }
-                                    
-                                    SIGNALS BOT REQUIREMENTS - CRITICAL:
-                                    - **Entry Price**: Use current market price or specific level based on technical analysis
-                                    - **Stop Loss**: Set below entry for BUY (e.g., entry * 0.99), above entry for SELL (e.g., entry * 1.01)
-                                    - **Take Profit**: MUST BE DIFFERENT from entry price!
-                                      * For BUY: take_profit MUST be HIGHER than entry_price (e.g., entry + risk_amount * reward_ratio)
-                                      * For SELL: take_profit MUST be LOWER than entry_price (e.g., entry - risk_amount * reward_ratio)
-                                      * Example: If entry=3892, SL=3870 (risk=$22), then TP for 1:1 = 3892 + 22 = 3914 (NOT 3892!)
-                                    - **Risk/Reward**: Calculate as (TP - Entry) / (Entry - SL) for BUY, or (Entry - TP) / (SL - Entry) for SELL
-                                    - **Reasoning**: DETAILED explanation with trend analysis, entry rationale, and risk considerations
-                                    - **Market Volatility**: Assess current market conditions (ATR, volume, price swings)
-                                    - RETURN ONLY VALID JSON - no additional text outside the JSON object
-                                    """
-                        else:
-                            output_format = """
-
-                                    OUTPUT FORMAT (STRICT JSON SCHEMA):
-                                    {
-                                    "recommendation": {
-                                        "action": "BUY" | "SELL" | "HOLD",
-                                        "entry_price": "<string or null>",
-                                        "strategy": "<MA, MACD, RSI, BollingerBands, Fibonacci_Retracement hoặc kết hợp>",
-                                        "confidence": "<0-100>",
-                                        "reasoning": "<briefly explain in 1–2 sentences why>"
-                                    }
-                                    }
-                                    
-                                    NOTE: Stop Loss and Take Profit are automatically calculated from Risk Config (developer-configured parameters), not from LLM.
-                                    """
-                        
-                        bot_prompt = bot_prompt + output_format
-                        
-                        logger.info(f"Using dynamic prompt from bot {bot_id} (bot_type={bot_type_str}) with {'SIGNALS' if is_signals_futures else 'STANDARD'} output format")
-                        logger.info(f"📄 Final prompt length: {len(bot_prompt)} chars")
-                        logger.info(f"📄 Output format preview: {output_format[:150]}...")
+                        logger.info(f"Using dynamic prompt from bot {bot_id} (bot_type={bot_type_str}) - OUTPUT FORMAT will be added by _format_final_prompt")
+                        logger.info(f"📄 Strategy prompt length: {len(bot_prompt)} chars")
                         return bot_prompt
                         
             except Exception as e:
@@ -901,27 +1056,6 @@ Combine ALL analysis above:
 60-74%:  3 indicators agree + adequate volume (>110%) + some trend signals
 55-59%:  2 indicators agree + minimum volume + weak signals
 <55%:    HOLD - insufficient setup quality
-
-═══════════════════════════════════════════════════════════════════
-📤 OUTPUT FORMAT (STRICT JSON SCHEMA):
-═══════════════════════════════════════════════════════════════════
-{{
-  "recommendation": {{
-    "action": "BUY" | "SELL" | "HOLD",
-    "entry_price": "<string or null>",
-    "strategy": "<MA, MACD, RSI, BollingerBands, Fibonacci_Retracement or combination>",
-    "confidence": "<number 0-100>",
-    "reasoning": "<brief 1-2 sentences explaining why>"
-  }}
-}}
-
-OUTPUT RULES:
-• ONLY valid JSON - no text outside JSON structure
-• HOLD actions: entry_price = null
-• Confidence < 55%: FORCE action = "HOLD"
-• No explanatory text, no markdown, pure JSON only
-
-NOTE: Stop Loss and Take Profit are calculated by Risk Management System (not by LLM).
 
 ═══════════════════════════════════════════════════════════════════
 ✅ FINAL VALIDATION CHECKLIST:
@@ -1379,8 +1513,9 @@ Need help? Contact support or upgrade your plan.
         except Exception as e:
             logger.error(f"❌ Error decrementing quota for developer {developer_id}: {e}")
     
-    async def analyze_with_openai(self, market_data: Dict[str, Any], bot_id: int = None) -> Dict[str, Any]:
-        """Analyze market data using OpenAI"""
+    async def analyze_with_openai(self, market_data: Dict[str, Any], bot_id: int = None,
+                                  historical_transactions: List[Dict] = None) -> Dict[str, Any]:
+        """Analyze market data using OpenAI with optional historical learning"""
         if not self.openai_client:
             return {"error": "OpenAI client not available"}
         
@@ -1398,11 +1533,11 @@ Need help? Contact support or upgrade your plan.
             timeframes = list(market_data.get("timeframes", {}).keys())
             indicators_from_data = market_data.get("indicators", None)
             
-            # Generate dynamic prompt based on actual timeframes, bot_id, and available indicators
-            strategy_prompt = self._get_analysis_prompt(bot_id, timeframes, indicators_from_data)
+            # Generate dynamic prompt based on actual timeframes, bot_id, available indicators, and historical data
+            strategy_prompt = self._get_analysis_prompt(bot_id, timeframes, indicators_from_data, historical_transactions)
             
-            # Format final prompt with clear sections
-            prompt = self._format_final_prompt(strategy_prompt, market_data)
+            # Format final prompt with clear sections and historical context
+            prompt = self._format_final_prompt(strategy_prompt, market_data, historical_transactions, bot_id)
             
             response = await asyncio.to_thread(
                 self.openai_client.chat.completions.create,
@@ -1454,8 +1589,9 @@ Need help? Contact support or upgrade your plan.
             logger.error(f"OpenAI analysis error: {e}")
             return {"error": f"OpenAI analysis failed: {str(e)}"}
     
-    async def analyze_with_claude(self, market_data: Dict[str, Any], bot_id: int = None) -> Dict[str, Any]:
-        """Analyze market data using Claude"""
+    async def analyze_with_claude(self, market_data: Dict[str, Any], bot_id: int = None,
+                                  historical_transactions: List[Dict] = None) -> Dict[str, Any]:
+        """Analyze market data using Claude with optional historical learning"""
         if not self.claude_client:
             return {"error": "Claude client not available"}
         
@@ -1473,11 +1609,11 @@ Need help? Contact support or upgrade your plan.
             timeframes = list(market_data.get("timeframes", {}).keys())
             indicators_from_data = market_data.get("indicators", None)
             
-            # Generate dynamic prompt based on actual timeframes, bot_id, and available indicators
-            strategy_prompt = self._get_analysis_prompt(bot_id, timeframes, indicators_from_data)
+            # Generate dynamic prompt based on actual timeframes, bot_id, available indicators, and historical data
+            strategy_prompt = self._get_analysis_prompt(bot_id, timeframes, indicators_from_data, historical_transactions)
             
-            # Format final prompt with clear sections
-            prompt = self._format_final_prompt(strategy_prompt, market_data)
+            # Format final prompt with clear sections and historical context
+            prompt = self._format_final_prompt(strategy_prompt, market_data, historical_transactions, bot_id)
             
             response = await asyncio.to_thread(
                 self.claude_client.messages.create,
@@ -1527,8 +1663,9 @@ Need help? Contact support or upgrade your plan.
             logger.error(f"Claude analysis error: {e}")
             return {"error": f"Claude analysis failed: {str(e)}"}
     
-    async def analyze_with_gemini(self, market_data: Dict[str, Any], bot_id: int = None) -> Dict[str, Any]:
-        """Analyze market data using Gemini"""
+    async def analyze_with_gemini(self, market_data: Dict[str, Any], bot_id: int = None,
+                                  historical_transactions: List[Dict] = None) -> Dict[str, Any]:
+        """Analyze market data using Gemini with optional historical learning"""
         if not self.gemini_client:
             return {"error": "Gemini client not available"}
         
@@ -1546,11 +1683,11 @@ Need help? Contact support or upgrade your plan.
             timeframes = list(market_data.get("timeframes", {}).keys())
             indicators_from_data = market_data.get("indicators", None)
             
-            # Generate dynamic prompt based on actual timeframes, bot_id, and available indicators
-            strategy_prompt = self._get_analysis_prompt(bot_id, timeframes, indicators_from_data)
+            # Generate dynamic prompt based on actual timeframes, bot_id, available indicators, and historical data
+            strategy_prompt = self._get_analysis_prompt(bot_id, timeframes, indicators_from_data, historical_transactions)
             
-            # Format final prompt with clear sections
-            prompt = self._format_final_prompt(strategy_prompt, market_data)
+            # Format final prompt with clear sections and historical context
+            prompt = self._format_final_prompt(strategy_prompt, market_data, historical_transactions, bot_id)
             
             response = await asyncio.to_thread(
                 self.gemini_client.generate_content,
@@ -1631,7 +1768,8 @@ Need help? Contact support or upgrade your plan.
     
     async def analyze_market(self, symbol: str, timeframes_data: Dict[str, List[Dict]], 
                            indicators_analysis: Dict[str, Dict[str, Any]] = None,
-                           model: str = "openai", bot_id: int = None) -> Dict[str, Any]:
+                           model: str = "openai", bot_id: int = None,
+                           historical_transactions: List[Dict] = None) -> Dict[str, Any]:
         """
         Main method to analyze market data with specified LLM
         
@@ -1641,9 +1779,10 @@ Need help? Contact support or upgrade your plan.
             indicators_analysis: Calculated technical indicators for each timeframe
             model: LLM to use ("openai", "claude", "gemini")
             bot_id: Bot ID for quota tracking
+            historical_transactions: Optional list of past transactions for learning
             
         Returns:
-            Complete trading analysis with Fibonacci
+            Complete trading analysis with Fibonacci and historical learning
         """
         try:
             # Check cache first
@@ -1662,11 +1801,11 @@ Need help? Contact support or upgrade your plan.
             # Support both provider type ("openai") and full model name ("gpt-4o-mini")
             model_lower = model.lower()
             if model_lower == "openai" or model_lower.startswith("gpt"):
-                analysis = await self._retry_with_backoff(self.analyze_with_openai, market_data, bot_id)
+                analysis = await self._retry_with_backoff(self.analyze_with_openai, market_data, bot_id, historical_transactions)
             elif model_lower == "claude" or model_lower.startswith("claude") or model_lower == "anthropic":
-                analysis = await self._retry_with_backoff(self.analyze_with_claude, market_data, bot_id)
+                analysis = await self._retry_with_backoff(self.analyze_with_claude, market_data, bot_id, historical_transactions)
             elif model_lower == "gemini" or model_lower.startswith("gemini"):
-                analysis = await self._retry_with_backoff(self.analyze_with_gemini, market_data, bot_id)
+                analysis = await self._retry_with_backoff(self.analyze_with_gemini, market_data, bot_id, historical_transactions)
             else:
                 return {"error": f"Unsupported model: {model}"}
             

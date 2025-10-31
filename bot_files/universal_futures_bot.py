@@ -42,6 +42,7 @@ from services.exchange_integrations import (
 # Services
 from services.llm_integration import create_llm_service
 from services.indicator_service import AdvancedIndicators
+from services.transaction_service import TransactionService
 from bot_files.capital_management import CapitalManagement, RiskMetrics, PositionSizeRecommendation
 from core.api_key_manager import get_bot_api_keys
 
@@ -151,6 +152,15 @@ class UniversalFuturesBot(CustomBot):
             logger.info(f"✅ Loaded indicators config with {len(self.indicators_config.get('enabled_indicators', {}))} indicators")
         else:
             logger.info("ℹ️ No indicators config found, will use default technical analysis")
+        
+        # Historical Learning Configuration
+        self.historical_learning_enabled = config.get('historical_learning_enabled', False)
+        self.historical_transaction_limit = config.get('historical_transaction_limit', 25)
+        self.include_failed_trades = config.get('include_failed_trades', True)
+        self.learning_mode = config.get('learning_mode', 'recent')
+        
+        if self.historical_learning_enabled:
+            logger.info(f"📚 Historical Learning ENABLED: limit={self.historical_transaction_limit}, mode={self.learning_mode}")
         
         # Initialize Advanced Indicators service
         self.indicator_service = AdvancedIndicators()
@@ -1467,14 +1477,36 @@ class UniversalFuturesBot(CustomBot):
                     
                     cleaned_timeframes_data[timeframe] = cleaned_data
             
-            # Get LLM analysis with indicators data
+            # Fetch historical transactions for learning (if enabled)
+            historical_transactions = None
+            if hasattr(self, 'historical_learning_enabled') and self.historical_learning_enabled:
+                try:
+                    transaction_service = TransactionService()
+                    historical_transactions = transaction_service.get_recent_transactions_for_learning(
+                        bot_id=self.bot_id,
+                        limit=getattr(self, 'historical_transaction_limit', 25),
+                        include_failed=getattr(self, 'include_failed_trades', True),
+                        mode=getattr(self, 'learning_mode', 'recent')
+                    )
+                    
+                    if historical_transactions:
+                        logger.info(f"📚 Loaded {len(historical_transactions)} historical transactions for learning")
+                        logger.info(f"   Mode: {getattr(self, 'learning_mode', 'recent')} | Limit: {len(historical_transactions)}")
+                    else:
+                        logger.info(f"📚 Historical learning enabled but no past transactions found")
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to fetch historical transactions: {e}")
+                    historical_transactions = None
+            
+            # Get LLM analysis with indicators data and historical context
             self.trading_pair = self.trading_pair.replace('/', '')
             llm_analysis = await self.llm_service.analyze_market(
                 symbol=self.trading_pair,
                 timeframes_data=cleaned_timeframes_data,
                 indicators_analysis=indicators_analysis,  # Pass indicators to LLM
                 model=self.llm_model,
-                bot_id=self.bot_id
+                bot_id=self.bot_id,
+                historical_transactions=historical_transactions  # Pass historical learning data
             )
             
             if "error" in llm_analysis:

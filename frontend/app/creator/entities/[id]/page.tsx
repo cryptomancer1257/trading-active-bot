@@ -20,6 +20,7 @@ import RiskManagementTab from '@/components/RiskManagementTab'
 import BotAnalytics from '@/components/BotAnalytics'
 import BotSubscriptions from '@/components/BotSubscriptions'
 import IndicatorsConfig, { IndicatorsConfigData } from '@/components/bots/IndicatorsConfig'
+import HistoricalLearningConfig, { HistoricalLearningConfig as HistoricalLearningConfigType, HistoricalLearningStats } from '@/components/HistoricalLearningConfig'
 import toast from 'react-hot-toast'
 import config from '@/lib/config'
 import { useAuth } from '@/contexts/AuthContext'
@@ -116,6 +117,16 @@ export default function BotDetailPage() {
   // Indicators config state
   const [indicatorsConfig, setIndicatorsConfig] = useState<IndicatorsConfigData | null>(null)
   const [isSavingIndicators, setIsSavingIndicators] = useState(false)
+  
+  // Historical Learning state
+  const [historicalLearningConfig, setHistoricalLearningConfig] = useState<HistoricalLearningConfigType>({
+    enabled: false,
+    transaction_limit: 25,
+    include_failed_trades: true,
+    learning_mode: 'recent'
+  })
+  const [historicalStats, setHistoricalStats] = useState<HistoricalLearningStats | null>(null)
+  const [isSavingHistorical, setIsSavingHistorical] = useState(false)
   
   // Pre-trial validation state
   const [showValidationModal, setShowValidationModal] = useState(false)
@@ -253,6 +264,75 @@ export default function BotDetailPage() {
       setIsSavingIndicators(false)
     }
   }
+
+  // Handle save historical learning config
+  const handleSaveHistoricalLearning = async () => {
+    if (!bot) return
+
+    setIsSavingHistorical(true)
+    try {
+      // Update bot with historical learning config
+      await updateBot.mutateAsync({
+        botId: bot.id,
+        data: {
+          historical_learning_enabled: historicalLearningConfig.enabled,
+          historical_transaction_limit: historicalLearningConfig.transaction_limit,
+          include_failed_trades: historicalLearningConfig.include_failed_trades,
+          learning_mode: historicalLearningConfig.learning_mode
+        }
+      })
+
+      toast.success('✅ Historical learning configuration saved successfully!')
+      
+      // Fetch stats if enabled
+      if (historicalLearningConfig.enabled) {
+        fetchHistoricalStats()
+      }
+    } catch (error) {
+      console.error('Failed to save historical learning config:', error)
+      toast.error('Failed to save historical learning configuration')
+    } finally {
+      setIsSavingHistorical(false)
+    }
+  }
+
+  // Fetch historical transaction stats
+  const fetchHistoricalStats = async () => {
+    if (!bot) return
+
+    try {
+      const response = await fetch(`${config.apiUrl}/api/bots/${bot.id}/historical-stats`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      })
+
+      if (response.ok) {
+        const stats = await response.json()
+        setHistoricalStats(stats)
+      }
+    } catch (error) {
+      console.error('Failed to fetch historical stats:', error)
+    }
+  }
+
+  // Load historical learning config when bot loads
+  useEffect(() => {
+    if (bot) {
+      setHistoricalLearningConfig({
+        enabled: (bot as any).historical_learning_enabled || false,
+        transaction_limit: (bot as any).historical_transaction_limit || 25,
+        include_failed_trades: (bot as any).include_failed_trades !== false,
+        learning_mode: (bot as any).learning_mode || 'recent'
+      })
+      
+      // Fetch stats if enabled
+      if ((bot as any).historical_learning_enabled) {
+        fetchHistoricalStats()
+      }
+    }
+  }, [bot])
 
   // Show loading state AFTER all hooks
   if (isBotLoading) {
@@ -1046,7 +1126,23 @@ export default function BotDetailPage() {
           </div>
         )
       case 'strategies':
-        return <BotPromptsTab botId={bot.id} />
+        return (
+          <div className="space-y-8">
+            {/* Bot Prompts Section */}
+            <BotPromptsTab botId={bot.id} />
+            
+            {/* Historical Learning Section */}
+            <div className="border-t border-gray-700 pt-8">
+              <HistoricalLearningConfig
+                botId={bot.id}
+                value={historicalLearningConfig}
+                onChange={setHistoricalLearningConfig}
+                stats={historicalStats}
+                onSave={handleSaveHistoricalLearning}
+              />
+            </div>
+          </div>
+        )
       case 'risk-management':
         return <RiskManagementTab botId={bot.id} />
       case 'indicators':

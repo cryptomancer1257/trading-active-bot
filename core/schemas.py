@@ -355,6 +355,12 @@ class BotUpdate(BaseModel):
     enable_image_analysis: Optional[bool] = None
     enable_sentiment_analysis: Optional[bool] = None
     prompt_template_id: Optional[int] = None
+    
+    # Historical Learning Configuration
+    historical_learning_enabled: Optional[bool] = None
+    historical_transaction_limit: Optional[int] = None
+    include_failed_trades: Optional[bool] = None
+    learning_mode: Optional[str] = None
 
 class BotInDB(BotBase):
     id: int

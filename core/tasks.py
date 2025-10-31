@@ -229,7 +229,12 @@ def initialize_bot_from_local_file(subscription, local_file_path, db):
             'timeframes': execution_config.get('timeframes', ['1h']),
             'bot_type': bot_type,
             'developer_id': subscription.bot.developer_id if subscription.bot else None,  # For LLM provider selection
-            'db': db  # For LLM provider selection
+            'db': db,  # For LLM provider selection
+            # Historical Learning Configuration (from bot table)
+            'historical_learning_enabled': subscription.bot.historical_learning_enabled if subscription.bot else False,
+            'historical_transaction_limit': subscription.bot.historical_transaction_limit if subscription.bot else 25,
+            'include_failed_trades': subscription.bot.include_failed_trades if subscription.bot else True,
+            'learning_mode': subscription.bot.learning_mode if subscription.bot else 'recent'
         }
         
         # Merge bot's strategy_config (includes llm_provider preference)
@@ -395,6 +400,12 @@ def initialize_bot(subscription):
                     'developer_id': subscription.bot.developer_id if subscription.bot else None,  # For LLM provider selection
                     'db': db,  # For LLM provider selection
                     
+                    # Historical Learning Configuration (from bot table)
+                    'historical_learning_enabled': subscription.bot.historical_learning_enabled if subscription.bot else False,
+                    'historical_transaction_limit': subscription.bot.historical_transaction_limit if subscription.bot else 25,
+                    'include_failed_trades': subscription.bot.include_failed_trades if subscription.bot else True,
+                    'learning_mode': subscription.bot.learning_mode if subscription.bot else 'recent',
+                    
                     # Celery execution
                     'require_confirmation': False,  # No confirmation for Celery
                     'auto_confirm': True  # Auto-confirm trades (for Celery/automated execution)
@@ -418,7 +429,12 @@ def initialize_bot(subscription):
                     'volatility_threshold': 0.05,
                     # LLM Provider Selection (BYOK)
                     'developer_id': subscription.bot.developer_id if subscription.bot else None,
-                    'db': db
+                    'db': db,
+                    # Historical Learning Configuration (from bot table)
+                    'historical_learning_enabled': subscription.bot.historical_learning_enabled if subscription.bot else False,
+                    'historical_transaction_limit': subscription.bot.historical_transaction_limit if subscription.bot else 25,
+                    'include_failed_trades': subscription.bot.include_failed_trades if subscription.bot else True,
+                    'learning_mode': subscription.bot.learning_mode if subscription.bot else 'recent'
                 }
                 logger.info("📊 Applied STANDARD CONFIG for non-futures bot")
             

@@ -27,6 +27,7 @@ from dataclasses import dataclass
 # from bots.bot_sdk.Action import Action
 from bots.bot_sdk import CustomBot, Action
 from services.llm_integration import create_llm_service
+from services.transaction_service import TransactionService
 from bot_files.capital_management import CapitalManagement, RiskMetrics, PositionSizeRecommendation
 from core.api_key_manager import get_bot_api_keys
 
@@ -1019,7 +1020,25 @@ class BinanceFuturesBot(CustomBot):
                     'volume_ratio': analysis.get('volume_ratio', 1.0)
                 }
             
-            # Get LLM analysis with futures context
+            # Fetch historical transactions for learning (if enabled)
+            historical_transactions = None
+            if hasattr(self, 'historical_learning_enabled') and self.historical_learning_enabled:
+                try:
+                    transaction_service = TransactionService()
+                    historical_transactions = transaction_service.get_recent_transactions_for_learning(
+                        bot_id=self.bot_id,
+                        limit=getattr(self, 'historical_transaction_limit', 25),
+                        include_failed=getattr(self, 'include_failed_trades', True),
+                        mode=getattr(self, 'learning_mode', 'recent')
+                    )
+                    
+                    if historical_transactions:
+                        logger.info(f"📚 Loaded {len(historical_transactions)} historical transactions for learning")
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to fetch historical transactions: {e}")
+                    historical_transactions = None
+            
+            # Get LLM analysis with futures context and historical learning
             self.trading_pair = self.trading_pair.replace('/', '')
             symbol = self.trading_pair  # e.g., "BTCUSDT"
             llm_analysis = await self.llm_service.analyze_market(
@@ -1027,7 +1046,8 @@ class BinanceFuturesBot(CustomBot):
                 timeframes_data=timeframes_data,
                 indicators_analysis=indicators_analysis,  # ✅ Pass indicators to LLM
                 model=self.llm_model,
-                bot_id=self.bot_id  # Pass bot_id for custom prompt
+                bot_id=self.bot_id,  # Pass bot_id for custom prompt
+                historical_transactions=historical_transactions  # ✅ Pass historical learning data
             )
             
             if "error" in llm_analysis:
@@ -2125,7 +2145,25 @@ class BinanceFuturesBot(CustomBot):
                     
                     cleaned_timeframes_data[timeframe] = cleaned_data
             
-            # Get LLM analysis with indicators data
+            # Fetch historical transactions for learning (if enabled)
+            historical_transactions = None
+            if hasattr(self, 'historical_learning_enabled') and self.historical_learning_enabled:
+                try:
+                    transaction_service = TransactionService()
+                    historical_transactions = transaction_service.get_recent_transactions_for_learning(
+                        bot_id=self.bot_id,
+                        limit=getattr(self, 'historical_transaction_limit', 25),
+                        include_failed=getattr(self, 'include_failed_trades', True),
+                        mode=getattr(self, 'learning_mode', 'recent')
+                    )
+                    
+                    if historical_transactions:
+                        logger.info(f"📚 Loaded {len(historical_transactions)} historical transactions for learning")
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to fetch historical transactions: {e}")
+                    historical_transactions = None
+            
+            # Get LLM analysis with indicators data and historical learning
             self.trading_pair = self.trading_pair.replace('/', '')
             symbol = self.trading_pair
             llm_analysis = await self.llm_service.analyze_market(
@@ -2133,7 +2171,8 @@ class BinanceFuturesBot(CustomBot):
                 timeframes_data=cleaned_timeframes_data,
                 indicators_analysis=indicators_analysis,  # ✅ Pass indicators to LLM
                 model=self.llm_model,
-                bot_id=self.bot_id  # Pass bot_id for custom prompt
+                bot_id=self.bot_id,  # Pass bot_id for custom prompt
+                historical_transactions=historical_transactions  # ✅ Pass historical learning data
             )
             
             if "error" in llm_analysis:

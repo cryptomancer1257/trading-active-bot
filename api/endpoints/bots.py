@@ -250,6 +250,39 @@ def get_bot_details(bot_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Bot not found")
     return bot
 
+@router.get("/{bot_id}/historical-stats")
+def get_bot_historical_stats(
+    bot_id: int,
+    current_user: models.User = Depends(security.get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Get historical transaction statistics for bot learning (AUTH REQUIRED)"""
+    try:
+        # Verify bot ownership
+        bot = db.query(models.Bot).filter(models.Bot.id == bot_id).first()
+        if not bot:
+            raise HTTPException(status_code=404, detail="Bot not found")
+        
+        # Only bot developer can access historical stats
+        if bot.developer_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Not authorized to view bot statistics")
+        
+        # Import TransactionService
+        from services.transaction_service import TransactionService
+        
+        # Get stats
+        transaction_service = TransactionService()
+        limit = getattr(bot, 'historical_transaction_limit', 25)
+        stats = transaction_service.get_transaction_summary_stats(bot_id=bot_id, limit=limit)
+        
+        return stats
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching historical stats for bot {bot_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.get("/{bot_id}/reviews", response_model=List[schemas.BotReviewWithUser])
 def get_bot_reviews(
     bot_id: int,
