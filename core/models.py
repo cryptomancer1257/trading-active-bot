@@ -339,6 +339,10 @@ class Bot(Base):
     include_failed_trades = Column(Boolean, default=True)
     learning_mode = Column(String(20), default='recent')  # 'recent', 'best_performance', 'mixed'
     
+    # Zone Trading Configuration
+    zone_trading_enabled = Column(Boolean, default=False)
+    zone_update_frequency = Column(Integer, default=60)  # minutes, how often to recalculate zones
+    
     # Audit fields
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
@@ -1010,6 +1014,38 @@ class Transaction(Base):
         Index('idx_transactions_is_winning', 'is_winning'),
         Index('idx_transactions_bot_status', 'bot_id', 'status'),
         Index('idx_transactions_created_at', 'created_at'),
+    )
+
+class TriggerZone(Base):
+    """Trigger zones for WebSocket-based zone trading"""
+    __tablename__ = "trigger_zones"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    bot_id = Column(Integer, ForeignKey('bots.id'), nullable=False)
+    subscription_id = Column(Integer, ForeignKey('subscriptions.id'), nullable=False)
+    symbol = Column(String(20), nullable=False)
+    zone_type = Column(String(10), nullable=False)  # BUY or SELL
+    price_min = Column(DECIMAL(20, 8), nullable=False)
+    price_max = Column(DECIMAL(20, 8), nullable=False)
+    confidence = Column(Integer, nullable=False)
+    reasoning = Column(Text, nullable=True)
+    status = Column(String(20), default='active', nullable=False)  # active, triggered, expired
+    last_triggered_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    expires_at = Column(DateTime, nullable=False)  # Auto-expire after 1 hour
+    
+    # Relationships
+    bot = relationship("Bot")
+    subscription = relationship("Subscription")
+    
+    # Indexes for faster queries
+    __table_args__ = (
+        Index('idx_trigger_zones_bot_id', 'bot_id'),
+        Index('idx_trigger_zones_subscription_id', 'subscription_id'),
+        Index('idx_trigger_zones_symbol', 'symbol'),
+        Index('idx_trigger_zones_status', 'status'),
+        Index('idx_trigger_zones_bot_symbol_status', 'bot_id', 'symbol', 'status'),
+        Index('idx_trigger_zones_expires_at', 'expires_at'),
     )
 
 class ExecutionLog(Base):

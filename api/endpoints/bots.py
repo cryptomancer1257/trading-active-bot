@@ -1291,3 +1291,223 @@ async def upload_bot_image(
             status_code=500,
             detail=f"Failed to upload image: {str(e)}"
         )
+
+
+@router.get("/{bot_id}/trigger-zones", response_model=Dict[str, Any])
+def get_trigger_zones(
+    bot_id: int,
+    status: Optional[str] = Query('active', description="Filter by status: active, triggered, expired"),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """
+    Get trigger zones for a bot
+    
+    Returns all trigger zones for the specified bot, filtered by status
+    """
+    try:
+        # Verify bot exists and user has access
+        bot = crud.get_bot(db, bot_id)
+        if not bot:
+            raise HTTPException(status_code=404, detail="Bot not found")
+        
+        # Check if user has access to this bot
+        # Developer can see their own bots, users can see subscribed bots
+        if bot.developer_id != current_user.id:
+            # Check if user has active subscription
+            subscription = db.query(models.Subscription).filter(
+                models.Subscription.user_id == current_user.id,
+                models.Subscription.bot_id == bot_id,
+                models.Subscription.status == 'active'
+            ).first()
+            
+            if not subscription and not current_user.is_admin:
+                raise HTTPException(status_code=403, detail="Access denied")
+        
+        # Query trigger zones
+        from datetime import datetime
+        
+        query = db.query(models.TriggerZone).filter(
+            models.TriggerZone.bot_id == bot_id
+        )
+        
+        # Filter by status
+        if status:
+            query = query.filter(models.TriggerZone.status == status)
+        
+        # For active zones, exclude expired ones
+        if status == 'active':
+            query = query.filter(models.TriggerZone.expires_at > datetime.utcnow())
+        
+        zones = query.order_by(models.TriggerZone.created_at.desc()).limit(100).all()
+        
+        # Format response
+        zones_data = []
+        for zone in zones:
+            zones_data.append({
+                'id': zone.id,
+                'bot_id': zone.bot_id,
+                'subscription_id': zone.subscription_id,
+                'symbol': zone.symbol,
+                'zone_type': zone.zone_type,
+                'price_min': float(zone.price_min),
+                'price_max': float(zone.price_max),
+                'confidence': zone.confidence,
+                'reasoning': zone.reasoning,
+                'status': zone.status,
+                'last_triggered_at': zone.last_triggered_at.isoformat() if zone.last_triggered_at else None,
+                'created_at': zone.created_at.isoformat(),
+                'expires_at': zone.expires_at.isoformat()
+            })
+        
+        return {
+            'success': True,
+            'bot_id': bot_id,
+            'zones': zones_data,
+            'total': len(zones_data)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get trigger zones for bot {bot_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/{bot_id}/trigger-zones/{zone_id}", response_model=Dict[str, Any])
+def delete_trigger_zone(
+    bot_id: int,
+    zone_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """
+    Delete (mark as expired) a specific trigger zone
+    
+    Only the bot developer or admin can delete zones
+    """
+    try:
+        # Verify bot exists and user has access
+        bot = crud.get_bot(db, bot_id)
+        if not bot:
+            raise HTTPException(status_code=404, detail="Bot not found")
+        
+        # Only developer or admin can delete zones
+        if bot.developer_id != current_user.id and not current_user.is_admin:
+            raise HTTPException(status_code=403, detail="Only bot developer can delete zones")
+        
+        # Get the zone
+        zone = db.query(models.TriggerZone).filter(
+            models.TriggerZone.id == zone_id,
+            models.TriggerZone.bot_id == bot_id
+        ).first()
+        
+        if not zone:
+            raise HTTPException(status_code=404, detail="Trigger zone not found")
+        
+        # Mark as expired instead of deleting
+        zone.status = 'expired'
+        db.commit()
+        
+        logger.info(f"Trigger zone {zone_id} marked as expired by user {current_user.id}")
+        
+        return {
+            'success': True,
+            'message': f"Trigger zone {zone_id} marked as expired",
+            'zone_id': zone_id
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete trigger zone {zone_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{bot_id}/zone-stats", response_model=Dict[str, Any])
+def get_zone_stats(
+    bot_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """
+    Get statistics about trigger zones for a bot
+    """
+    try:
+        from datetime import datetime, timedelta
+        from sqlalchemy import func
+        
+        # Verify bot exists and user has access
+        bot = crud.get_bot(db, bot_id)
+        if not bot:
+            raise HTTPException(status_code=404, detail="Bot not found")
+        
+        # Check if user has access to this bot
+        if bot.developer_id != current_user.id:
+            subscription = db.query(models.Subscription).filter(
+                models.Subscription.user_id == current_user.id,
+                models.Subscription.bot_id == bot_id,
+                models.Subscription.status == 'active'
+            ).first()
+            
+            if not subscription and not current_user.is_admin:
+                raise HTTPException(status_code=403, detail="Access denied")
+        
+        now = datetime.utcnow()
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        # Total active zones
+        total_active = db.query(models.TriggerZone).filter(
+            models.TriggerZone.bot_id == bot_id,
+            models.TriggerZone.status == 'active',
+            models.TriggerZone.expires_at > now
+        ).count()
+        
+        # Buy vs Sell zones
+        buy_zones = db.query(models.TriggerZone).filter(
+            models.TriggerZone.bot_id == bot_id,
+            models.TriggerZone.status == 'active',
+            models.TriggerZone.zone_type == 'BUY',
+            models.TriggerZone.expires_at > now
+        ).count()
+        
+        sell_zones = db.query(models.TriggerZone).filter(
+            models.TriggerZone.bot_id == bot_id,
+            models.TriggerZone.status == 'active',
+            models.TriggerZone.zone_type == 'SELL',
+            models.TriggerZone.expires_at > now
+        ).count()
+        
+        # Triggered today
+        triggered_today = db.query(models.TriggerZone).filter(
+            models.TriggerZone.bot_id == bot_id,
+            models.TriggerZone.status == 'triggered',
+            models.TriggerZone.last_triggered_at >= today_start
+        ).count()
+        
+        # Expired today
+        expired_today = db.query(models.TriggerZone).filter(
+            models.TriggerZone.bot_id == bot_id,
+            models.TriggerZone.status == 'expired',
+            models.TriggerZone.expires_at >= today_start,
+            models.TriggerZone.expires_at < now
+        ).count()
+        
+        return {
+            'success': True,
+            'bot_id': bot_id,
+            'zone_trading_enabled': bot.zone_trading_enabled,
+            'stats': {
+                'total_active': total_active,
+                'buy_zones': buy_zones,
+                'sell_zones': sell_zones,
+                'triggered_today': triggered_today,
+                'expired_today': expired_today
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get zone stats for bot {bot_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

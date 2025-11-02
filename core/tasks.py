@@ -219,6 +219,17 @@ def initialize_bot_from_local_file(subscription, local_file_path, db):
         # Prepare config
         execution_config = subscription.execution_config or {}
         
+        # Merge bot.timeframes (array) + bot.timeframe (single, legacy)
+        bot_timeframes = []
+        if subscription.bot:
+            if subscription.bot.timeframes:  # Array field (new)
+                bot_timeframes.extend(subscription.bot.timeframes)
+            if subscription.bot.timeframe and subscription.bot.timeframe not in bot_timeframes:  # Single field (legacy)
+                bot_timeframes.append(subscription.bot.timeframe)
+        
+        # Use merged timeframes, fallback to execution_config, then default
+        final_timeframes = bot_timeframes or execution_config.get('timeframes', ['1h'])
+        
         bot_config = {
             'bot_id': bot_id,
             'subscription_id': subscription.id,
@@ -226,7 +237,7 @@ def initialize_bot_from_local_file(subscription, local_file_path, db):
             'leverage': execution_config.get('leverage', 5),
             'testnet': subscription.is_testnet if subscription.is_testnet is not None else False,
             'exchange_type': exchange_type,
-            'timeframes': execution_config.get('timeframes', ['1h']),
+            'timeframes': final_timeframes,
             'bot_type': bot_type,
             'developer_id': subscription.bot.developer_id if subscription.bot else None,  # For LLM provider selection
             'db': db,  # For LLM provider selection
@@ -367,6 +378,17 @@ def initialize_bot(subscription):
                 # Get exchange type from bot
                 exchange_type = subscription.bot.exchange_type.value if subscription.bot.exchange_type else 'BINANCE'
                 
+                # Merge bot.timeframes (array) + bot.timeframe (single, legacy)
+                bot_timeframes_s3 = []
+                if subscription.bot.timeframes:  # Array field (new)
+                    bot_timeframes_s3.extend(subscription.bot.timeframes)
+                if subscription.bot.timeframe and subscription.bot.timeframe not in bot_timeframes_s3:  # Single field (legacy)
+                    bot_timeframes_s3.append(subscription.bot.timeframe)
+                
+                # Ensure at least one timeframe
+                if not bot_timeframes_s3:
+                    bot_timeframes_s3 = ['1h']
+                
                 bot_config = {
                     'bot_id': subscription.bot.id,  # ✅ CRITICAL: Pass bot_id for custom prompt loading
                     'subscription_id': subscription.id,  # ✅ Pass subscription_id for tracking
@@ -378,9 +400,9 @@ def initialize_bot(subscription):
                     'take_profit_pct': 0.04,  # 4%
                     'position_size_pct': 0.1,  # 10% of balance
                     
-                    # 🎯 Optimized 3 timeframes for better performance
-                    'timeframes': subscription.bot.timeframes,
-                    'primary_timeframe': subscription.bot.timeframe,  # Primary timeframe for final decision
+                    # 🎯 Merged timeframes (array + single legacy field)
+                    'timeframes': bot_timeframes_s3,
+                    'primary_timeframe': subscription.bot.timeframe or bot_timeframes_s3[0],  # Primary timeframe for final decision
                     
                     'use_llm_analysis': True,  # Enable LLM analysis with full system
                     'llm_model': 'openai',  # Primary LLM model to use
@@ -4207,3 +4229,229 @@ def sync_open_positions_realtime(self):
         logger.error(traceback.format_exc())
         # Retry with backoff (30 seconds)
         raise self.retry(exc=e, countdown=30)
+
+
+@app.task(bind=True)
+def find_trigger_zones_task(self, subscription_id: int):
+    """
+    Celery task to find trigger zones for a subscription
+    
+    Process:
+    1. Load subscription and bot config
+    2. Crawl OHLCV data (reuse bot.crawl_data())
+    3. Calculate indicators (reuse bot.analyze_data())
+    4. Call llm_service.find_trigger_zones()
+    5. Save zones to database (TriggerZone model)
+    6. Mark old zones as expired
+    
+    Runs every 1 hour per subscription
+    """
+    try:
+        from core.database import SessionLocal
+        from core import models
+        from services.llm_integration import LLMIntegrationService
+        from datetime import datetime, timedelta
+        import asyncio
+        
+        logger.info(f"🎯 Finding trigger zones for subscription {subscription_id}...")
+        
+        db = SessionLocal()
+        
+        try:
+            # 1. Load subscription and bot
+            subscription = db.query(models.Subscription).filter(
+                models.Subscription.id == subscription_id,
+                models.Subscription.status == 'active'
+            ).first()
+            
+            if not subscription:
+                logger.warning(f"Subscription {subscription_id} not found or inactive")
+                return {"status": "skipped", "reason": "Subscription not active"}
+            
+            bot_db = db.query(models.Bot).filter(models.Bot.id == subscription.bot_id).first()
+            if not bot_db:
+                logger.error(f"Bot {subscription.bot_id} not found")
+                return {"status": "error", "reason": "Bot not found"}
+            
+            # Check if zone trading is enabled for this bot
+            if not getattr(bot_db, 'zone_trading_enabled', False):
+                logger.info(f"Zone trading not enabled for bot {bot_db.id}")
+                return {"status": "skipped", "reason": "Zone trading disabled"}
+            
+            logger.info(f"📊 Bot: {bot_db.name} (ID: {bot_db.id})")
+            logger.info(f"💰 Symbol: {subscription.trading_pair}")
+            
+            # 2. Initialize bot instance and crawl data
+            bot_instance = initialize_bot(subscription)
+            if not bot_instance:
+                logger.error(f"Failed to initialize bot for subscription {subscription_id}")
+                return {"status": "error", "reason": "Bot initialization failed"}
+            
+            # 3. Crawl OHLCV data
+            logger.info("📈 Crawling OHLCV data...")
+            multi_timeframe_data = bot_instance.crawl_data()
+            
+            if not multi_timeframe_data or 'error' in multi_timeframe_data:
+                logger.error(f"Failed to crawl data: {multi_timeframe_data.get('error', 'Unknown error')}")
+                return {"status": "error", "reason": "Data crawl failed"}
+            
+            # 4. Calculate indicators
+            logger.info("🔢 Calculating indicators...")
+            analysis = bot_instance.analyze_data(multi_timeframe_data)
+            
+            if not analysis or 'multi_timeframe' not in analysis:
+                logger.error("Failed to analyze data or no multi_timeframe data")
+                return {"status": "error", "reason": "Data analysis failed"}
+            
+            # Extract indicators
+            # Note: analyze_data() returns structure:
+            # {
+            #   'multi_timeframe': {'1h': {indicators}, '4h': {indicators}},
+            #   'timeframes_data': {'1h': [candles], '4h': [candles]}
+            # }
+            indicators_analysis = analysis.get('multi_timeframe', {})
+            timeframes_data = analysis.get('timeframes_data', {})
+            
+            if not indicators_analysis:
+                logger.error("No indicators found in analysis")
+                return {"status": "error", "reason": "No indicators data"}
+            
+            logger.info(f"✅ Indicators calculated for timeframes: {list(indicators_analysis.keys())}")
+            
+            # 5. Call LLM to find trigger zones
+            llm_service = LLMIntegrationService()
+            llm_model = getattr(bot_db, 'llm_provider', None) or 'openai'
+            
+            logger.info(f"🤖 Calling {llm_model} LLM to find trigger zones...")
+            
+            # Run async function in sync context
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                zone_result = loop.run_until_complete(
+                    llm_service.find_trigger_zones(
+                        symbol=subscription.trading_pair,
+                        timeframes_data=timeframes_data,
+                        indicators_analysis=indicators_analysis,
+                        bot_id=bot_db.id,
+                        model=llm_model
+                    )
+                )
+            finally:
+                loop.close()
+            
+            if 'error' in zone_result:
+                logger.error(f"LLM zone finding failed: {zone_result['error']}")
+                return {"status": "error", "reason": zone_result['error']}
+            
+            trigger_zones = zone_result.get('trigger_zones', [])
+            reasoning = zone_result.get('reasoning', '')
+            
+            logger.info(f"🎯 LLM found {len(trigger_zones)} trigger zones")
+            
+            # 6. Mark old zones as expired
+            expires_threshold = datetime.utcnow() - timedelta(hours=1)
+            expired_count = db.query(models.TriggerZone).filter(
+                models.TriggerZone.subscription_id == subscription_id,
+                models.TriggerZone.status == 'active',
+                models.TriggerZone.expires_at < datetime.utcnow()
+            ).update({'status': 'expired'})
+            
+            logger.info(f"⏰ Marked {expired_count} old zones as expired")
+            
+            # 7. Save new zones to database
+            saved_zones = []
+            expires_at = datetime.utcnow() + timedelta(hours=1)
+            
+            for zone in trigger_zones:
+                new_zone = models.TriggerZone(
+                    bot_id=bot_db.id,
+                    subscription_id=subscription_id,
+                    symbol=subscription.trading_pair,
+                    zone_type=zone['type'],
+                    price_min=zone['range'][0],
+                    price_max=zone['range'][1],
+                    confidence=zone['confidence'],
+                    reasoning=reasoning,
+                    status='active',
+                    expires_at=expires_at
+                )
+                db.add(new_zone)
+                saved_zones.append({
+                    'type': zone['type'],
+                    'range': zone['range'],
+                    'confidence': zone['confidence']
+                })
+            
+            db.commit()
+            
+            logger.info(f"✅ Saved {len(saved_zones)} new trigger zones")
+            
+            return {
+                "status": "success",
+                "subscription_id": subscription_id,
+                "bot_id": bot_db.id,
+                "zones_found": len(saved_zones),
+                "zones_expired": expired_count,
+                "zones": saved_zones,
+                "reasoning": reasoning
+            }
+            
+        finally:
+            db.close()
+            
+    except Exception as e:
+        logger.error(f"❌ Find trigger zones task failed: {e}")
+        logger.error(traceback.format_exc())
+        # Retry with backoff (10 minutes)
+        raise self.retry(exc=e, countdown=600, max_retries=3)
+
+
+@app.task(bind=True)
+def schedule_zone_finding_for_all_subscriptions(self):
+    """
+    Schedule zone finding tasks for all active subscriptions
+    This task runs every hour and dispatches individual zone finding tasks
+    """
+    try:
+        from core.database import SessionLocal
+        from core import models
+        
+        logger.info("📋 Scheduling zone finding for all active subscriptions...")
+        
+        db = SessionLocal()
+        
+        try:
+            # Query all active subscriptions with zone trading enabled
+            subscriptions = db.query(models.Subscription).join(
+                models.Bot,
+                models.Subscription.bot_id == models.Bot.id
+            ).filter(
+                models.Subscription.status == 'active',
+                models.Bot.zone_trading_enabled == True
+            ).all()
+            
+            logger.info(f"Found {len(subscriptions)} subscriptions with zone trading enabled")
+            
+            scheduled_count = 0
+            for subscription in subscriptions:
+                # Dispatch individual zone finding task
+                find_trigger_zones_task.delay(subscription.id)
+                scheduled_count += 1
+                logger.info(f"  ✓ Scheduled zone finding for subscription {subscription.id} (Bot: {subscription.bot_id})")
+            
+            logger.info(f"✅ Scheduled {scheduled_count} zone finding tasks")
+            
+            return {
+                "status": "success",
+                "subscriptions_found": len(subscriptions),
+                "tasks_scheduled": scheduled_count
+            }
+            
+        finally:
+            db.close()
+            
+    except Exception as e:
+        logger.error(f"❌ Schedule zone finding task failed: {e}")
+        logger.error(traceback.format_exc())
+        return {"status": "error", "error": str(e)}

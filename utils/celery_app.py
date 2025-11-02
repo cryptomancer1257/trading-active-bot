@@ -51,6 +51,8 @@ app.conf.update(
         'core.tasks.update_bot_performance_metrics': {'queue': 'analytics'},
         'core.tasks.update_prompt_performance_metrics': {'queue': 'analytics'},
         'core.tasks.update_risk_management_performance': {'queue': 'analytics'},
+        'core.tasks.find_trigger_zones_task': {'queue': 'zone_trading'},
+        'core.tasks.schedule_zone_finding_for_all_subscriptions': {'queue': 'zone_trading'},
         'core.tasks.test_task': {'queue': 'default'},
     },
     task_default_queue='default',
@@ -63,6 +65,7 @@ app.conf.update(
         Queue('bot_execution_signal'),
         Queue('monitoring'),
         Queue('analytics'),
+        Queue('zone_trading'),
     ),
     beat_schedule={
         'cleanup-old-logs': {
@@ -80,6 +83,10 @@ app.conf.update(
         'sync-open-positions-realtime': {
             'task': 'core.tasks.sync_open_positions_realtime',
             'schedule': 300.0,  # Run every 5 minutes for position sync
+        },
+        'find-trigger-zones': {
+            'task': 'core.tasks.schedule_zone_finding_for_all_subscriptions',
+            'schedule': 3600.0,  # Run every 1 hour to find trigger zones
         },
     },
 )

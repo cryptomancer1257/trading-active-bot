@@ -663,7 +663,7 @@ class UniversalSpotBot(CustomBot):
     
     # ==================== ANALYSIS ====================
     
-    def _calculate_spot_analysis(self, data: pd.DataFrame, historical_data: List[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def _calculate_spot_analysis(self, data: pd.DataFrame) -> Dict[str, Any]:
         """Calculate technical analysis for spot trading"""
         try:
             # RSI
@@ -686,8 +686,19 @@ class UniversalSpotBot(CustomBot):
             rsi = calculate_rsi(data['close'], self.rsi_period)
             macd, macd_signal = calculate_macd(data['close'])
             
+            # EMAs
+            ema_12 = data['close'].ewm(span=12).mean().iloc[-1]
+            ema_26 = data['close'].ewm(span=26).mean().iloc[-1]
+            
+            # SMAs
             sma_20 = data['close'].rolling(window=20).mean().iloc[-1]
             sma_50 = data['close'].rolling(window=50).mean().iloc[-1]
+            
+            # Bollinger Bands
+            bb_middle = data['close'].rolling(window=20).mean()
+            bb_std = data['close'].rolling(window=20).std()
+            bb_upper = (bb_middle + (bb_std * 2)).iloc[-1]
+            bb_lower = (bb_middle - (bb_std * 2)).iloc[-1]
             
             # ATR for volatility
             high_low = data['high'] - data['low']
@@ -697,31 +708,219 @@ class UniversalSpotBot(CustomBot):
             true_range = ranges.max(axis=1)
             atr = true_range.rolling(window=14).mean().iloc[-1]
             
+            # CMF (Chaikin Money Flow)
+            def calculate_cmf(df: pd.DataFrame, period: int = 20) -> float:
+                """Calculate Chaikin Money Flow"""
+                try:
+                    # Money Flow Multiplier
+                    mf_multiplier = ((df['close'] - df['low']) - (df['high'] - df['close'])) / (df['high'] - df['low'])
+                    mf_multiplier = mf_multiplier.fillna(0)  # Handle division by zero
+                    
+                    # Money Flow Volume
+                    mf_volume = mf_multiplier * df['volume']
+                    
+                    # CMF
+                    cmf = mf_volume.rolling(window=period).sum() / df['volume'].rolling(window=period).sum()
+                    return cmf.iloc[-1] if not cmf.empty else 0.0
+                except Exception as e:
+                    logger.warning(f"CMF calculation error: {e}")
+                    return 0.0
+            
+            cmf = calculate_cmf(data)
+            
+            # Support/Resistance Levels
+            def find_support_resistance(df: pd.DataFrame, lookback: int = 50) -> dict:
+                """Find support and resistance levels from swing highs/lows"""
+                try:
+                    recent_data = df.tail(lookback)
+                    
+                    # Find swing lows (support)
+                    supports = []
+                    for i in range(2, len(recent_data) - 2):
+                        if (recent_data['low'].iloc[i] < recent_data['low'].iloc[i-1] and 
+                            recent_data['low'].iloc[i] < recent_data['low'].iloc[i-2] and
+                            recent_data['low'].iloc[i] < recent_data['low'].iloc[i+1] and 
+                            recent_data['low'].iloc[i] < recent_data['low'].iloc[i+2]):
+                            supports.append(recent_data['low'].iloc[i])
+                    
+                    # Find swing highs (resistance)
+                    resistances = []
+                    for i in range(2, len(recent_data) - 2):
+                        if (recent_data['high'].iloc[i] > recent_data['high'].iloc[i-1] and 
+                            recent_data['high'].iloc[i] > recent_data['high'].iloc[i-2] and
+                            recent_data['high'].iloc[i] > recent_data['high'].iloc[i+1] and 
+                            recent_data['high'].iloc[i] > recent_data['high'].iloc[i+2]):
+                            resistances.append(recent_data['high'].iloc[i])
+                    
+                    # Cluster nearby levels (within 1% of each other)
+                    def cluster_levels(levels, tolerance=0.01):
+                        if not levels:
+                            return []
+                        levels = sorted(levels)
+                        clusters = []
+                        current_cluster = [levels[0]]
+                        
+                        for level in levels[1:]:
+                            if abs(level - current_cluster[-1]) / current_cluster[-1] < tolerance:
+                                current_cluster.append(level)
+                            else:
+                                clusters.append(current_cluster)
+                                current_cluster = [level]
+                        clusters.append(current_cluster)
+                        
+                        # Return average of each cluster with touch count
+                        return [{'price': round(sum(c)/len(c), 2), 
+                                'strength': 'major' if len(c) >= 5 else 'strong' if len(c) >= 3 else 'weak',
+                                'touches': len(c)} for c in clusters]
+                    
+                    support_levels = cluster_levels(supports)[-3:]  # Top 3 supports
+                    resistance_levels = cluster_levels(resistances)[-3:]  # Top 3 resistances
+                    
+                    # Calculate pivot point (average of high, low, close)
+                    pivot = round((recent_data['high'].iloc[-1] + recent_data['low'].iloc[-1] + recent_data['close'].iloc[-1]) / 3, 2)
+                    
+                    return {
+                        'support': support_levels if support_levels else [{'price': round(recent_data['low'].min(), 2), 'strength': 'weak', 'touches': 1}],
+                        'resistance': resistance_levels if resistance_levels else [{'price': round(recent_data['high'].max(), 2), 'strength': 'weak', 'touches': 1}],
+                        'pivot_point': pivot
+                    }
+                except Exception as e:
+                    logger.warning(f"Support/Resistance calculation error: {e}")
+                    current = df['close'].iloc[-1]
+                    return {
+                        'support': [{'price': round(current * 0.98, 2), 'strength': 'weak', 'touches': 1}],
+                        'resistance': [{'price': round(current * 1.02, 2), 'strength': 'weak', 'touches': 1}],
+                        'pivot_point': round(current, 2)
+                    }
+            
+            # Market Structure
+            def detect_market_structure(df: pd.DataFrame, bb_width: float, current_price: float, bb_upper: float, bb_lower: float) -> dict:
+                """Detect market phase and pattern"""
+                try:
+                    recent = df.tail(20)
+                    highs = recent['high']
+                    lows = recent['low']
+                    
+                    # Detect trend direction
+                    price_change = (recent['close'].iloc[-1] - recent['close'].iloc[0]) / recent['close'].iloc[0]
+                    
+                    # Detect phase
+                    if abs(price_change) < 0.02 and bb_width < 0.05:  # Less than 2% move and tight BB
+                        phase = "consolidation"
+                    elif abs(price_change) > 0.05:
+                        phase = "trending"
+                    else:
+                        phase = "ranging"
+                    
+                    # Detect pattern (simplified)
+                    pattern = "none"
+                    if highs.is_monotonic_decreasing and not lows.is_monotonic_decreasing:
+                        pattern = "descending_triangle"
+                    elif lows.is_monotonic_increasing and not highs.is_monotonic_increasing:
+                        pattern = "ascending_triangle"
+                    elif highs.is_monotonic_decreasing and lows.is_monotonic_decreasing:
+                        pattern = "downtrend_channel"
+                    elif highs.is_monotonic_increasing and lows.is_monotonic_increasing:
+                        pattern = "uptrend_channel"
+                    
+                    # Detect near breakout
+                    near_breakout = False
+                    breakout_direction = "uncertain"
+                    
+                    if current_price > bb_upper * 0.995:  # Within 0.5% of upper band
+                        near_breakout = True
+                        breakout_direction = "bullish"
+                    elif current_price < bb_lower * 1.005:  # Within 0.5% of lower band
+                        near_breakout = True
+                        breakout_direction = "bearish"
+                    
+                    return {
+                        'phase': phase,
+                        'pattern': pattern,
+                        'near_breakout': near_breakout,
+                        'breakout_direction': breakout_direction
+                    }
+                except Exception as e:
+                    logger.warning(f"Market structure detection error: {e}")
+                    return {
+                        'phase': 'ranging',
+                        'pattern': 'none',
+                        'near_breakout': False,
+                        'breakout_direction': 'uncertain'
+                    }
+            
+            # Trend Strength (using slope of moving averages)
+            def calculate_trend_strength(sma_20: float, sma_50: float, current_price: float) -> dict:
+                """Calculate trend strength"""
+                try:
+                    # Compare SMAs
+                    sma_diff_pct = ((sma_20 - sma_50) / sma_50) * 100
+                    
+                    # Price position relative to SMAs
+                    price_vs_sma20 = ((current_price - sma_20) / sma_20) * 100
+                    
+                    # Determine strength
+                    if abs(sma_diff_pct) < 1:
+                        strength = "weak"
+                        direction = "neutral"
+                    elif abs(sma_diff_pct) < 3:
+                        strength = "moderate"
+                        direction = "bullish" if sma_diff_pct > 0 else "bearish"
+                    else:
+                        strength = "strong"
+                        direction = "bullish" if sma_diff_pct > 0 else "bearish"
+                    
+                    return {
+                        'strength': strength,
+                        'direction': direction,
+                        'sma_divergence_pct': round(sma_diff_pct, 2),
+                        'price_vs_sma20_pct': round(price_vs_sma20, 2)
+                    }
+                except Exception as e:
+                    logger.warning(f"Trend strength calculation error: {e}")
+                    return {
+                        'strength': 'weak',
+                        'direction': 'neutral',
+                        'sma_divergence_pct': 0.0,
+                        'price_vs_sma20_pct': 0.0
+                    }
+            
+            current_price = data['close'].iloc[-1]
+            bb_width = (bb_upper - bb_lower) / bb_middle.iloc[-1]
+            
+            price_levels = find_support_resistance(data)
+            market_structure = detect_market_structure(data, bb_width, current_price, bb_upper, bb_lower)
+            trend_strength = calculate_trend_strength(sma_20, sma_50, current_price)
+            
             analysis = {
-                'current_price': float(data['close'].iloc[-1]),
-                'rsi': float(rsi),
-                'rsi_oversold': bool(rsi < self.rsi_oversold),
-                'rsi_overbought': bool(rsi > self.rsi_overbought),
-                'macd': float(macd),
-                'macd_signal': float(macd_signal),
+                'current_price': round(float(data['close'].iloc[-1]), 2),
+                'rsi': round(float(rsi), 2),
+                'macd': round(float(macd), 2),
+                'macd_signal': round(float(macd_signal), 2),
                 'macd_bullish': bool(macd > macd_signal),
-                'sma_20': float(sma_20),
-                'sma_50': float(sma_50),
+                'ema_12': round(float(ema_12), 2),
+                'ema_26': round(float(ema_26), 2),
+                'sma_20': round(float(sma_20), 2),
+                'sma_50': round(float(sma_50), 2),
+                'bb_upper': round(float(bb_upper), 2),
+                'bb_middle': round(float(bb_middle.iloc[-1]), 2),
+                'bb_lower': round(float(bb_lower), 2),
+                'atr': round(float(atr), 2),
+                'volatility': round(float(atr / data['close'].iloc[-1] * 100), 2),
+                'volume_ratio': round(float(data['volume'].iloc[-1] / data['volume'].rolling(20).mean().iloc[-1]), 2),
+                'cmf': round(float(cmf), 2),
                 'trend_bullish': bool(sma_20 > sma_50),
-                'atr': float(atr),
-                'volatility': float(atr / data['close'].iloc[-1] * 100),
-                'volume_ratio': float(data['volume'].iloc[-1] / data['volume'].rolling(20).mean().iloc[-1]),
+                'price_levels': price_levels,
+                'market_structure': market_structure,
+                'trend_strength': trend_strength,
                 'market_type': 'SPOT'
             }
-            
-            if historical_data:
-                analysis['historical_data'] = historical_data
             
             return analysis
             
         except Exception as e:
             logger.error(f"Error calculating spot analysis: {e}")
-            return {'error': str(e), 'historical_data': historical_data}
+            return {'error': str(e)}
     
     def analyze_data(self, multi_timeframe_data: Dict[str, Any]) -> Dict[str, Any]:
         """Analyze multi-timeframe historical data"""
@@ -732,16 +931,18 @@ class UniversalSpotBot(CustomBot):
             
             multi_analysis = {}
             
-            for timeframe, historical_data in timeframes_data.items():
-                if not historical_data:
+            for timeframe, ohlcv_data in timeframes_data.items():
+                if not ohlcv_data:
                     continue
                 
                 try:
-                    df = pd.DataFrame(historical_data)
+                    df = pd.DataFrame(ohlcv_data)
                     df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
                     df = df.set_index('timestamp')
                     
-                    timeframe_analysis = self._calculate_spot_analysis(df, historical_data)
+                    # Note: historical_data here is OHLCV, not transaction history
+                    # Transaction history is loaded separately when needed for LLM
+                    timeframe_analysis = self._calculate_spot_analysis(df)
                     multi_analysis[timeframe] = timeframe_analysis
                     
                     logger.info(f"Analyzed {timeframe}: Price {timeframe_analysis.get('current_price', 0):.2f}")

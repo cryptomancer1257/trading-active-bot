@@ -258,7 +258,9 @@ class LLMIntegrationService:
         request_type: str = "market_analysis",
         success: bool = True,
         error_message: str = None,
-        request_duration_ms: int = None
+        request_duration_ms: int = None,
+        bot_id: int = None,
+        task_type: str = None
     ):
         """
         Log LLM API usage to database
@@ -268,10 +270,12 @@ class LLMIntegrationService:
             model: Model name used
             input_tokens: Number of input tokens
             output_tokens: Number of output tokens
-            request_type: Type of request (market_analysis, signal_generation, etc.)
+            request_type: Type of request (market_analysis, zone_finding, etc.)
             success: Whether request succeeded
             error_message: Error message if failed
             request_duration_ms: Request duration in milliseconds
+            bot_id: Optional bot ID for reference
+            task_type: Optional task type (reserved for future use)
         """
         if not self.developer_id or not self.db:
             logger.debug("Skipping usage logging - no developer_id or db session")
@@ -402,8 +406,39 @@ class LLMIntegrationService:
         except Exception as e:
             logger.error(f"Failed to log LLM usage: {e}")
     
+    def _parse_json_response(self, content: str) -> Dict[str, Any]:
+        """
+        Parse JSON from LLM response, handling markdown code blocks
+        
+        Args:
+            content: Raw LLM response content
+            
+        Returns:
+            Parsed JSON dict or None if parsing failed
+        """
+        try:
+            # Remove markdown code blocks if present
+            json_str = content.strip()
+            if json_str.startswith("```json"):
+                json_str = json_str[7:]
+            elif json_str.startswith("```"):
+                json_str = json_str[3:]
+            if json_str.endswith("```"):
+                json_str = json_str[:-3]
+            
+            json_str = json_str.strip()
+            
+            # Parse JSON
+            parsed = json.loads(json_str)
+            return parsed
+            
+        except Exception as e:
+            logger.error(f"Failed to parse JSON response: {e}")
+            logger.debug(f"Content: {content[:500]}")
+            return None
+    
     def _format_final_prompt(self, strategy_prompt: str, market_data: Dict[str, Any], 
-                             historical_transactions: List[Dict] = None, bot_id: int = None) -> str:
+                            historical_transactions: List[Dict] = None, bot_id: int = None) -> str:
         """
         Format final prompt with clear separation between strategy instructions and market data
         
@@ -433,14 +468,21 @@ class LLMIntegrationService:
             except Exception as e:
                 logger.warning(f"Could not determine bot_type for bot {bot_id}: {e}")
         
-        # Base prompt with market data
+        # Filter market data - only send indicators (no raw OHLCV)
+        filtered_data = {
+            'symbol': market_data.get('symbol'),
+            'analysis_timestamp': market_data.get('analysis_timestamp'),
+            'indicators': market_data.get('indicators', {})
+        }
+        
+        # Base prompt with filtered market data
         prompt = f"""{strategy_prompt}
 
 ╔══════════════════════════════════════════════════════════════════╗
 ║ 📈 MARKET DATA TO ANALYZE                                        ║
 ╚══════════════════════════════════════════════════════════════════╝
 
-{json.dumps(market_data, indent=2)}
+{json.dumps(filtered_data, indent=2)}
 """
         
         # Add historical transactions section if available
@@ -452,8 +494,8 @@ class LLMIntegrationService:
         prompt += """
 ═══════════════════════════════════════════════════════════════════
 ⚡ INSTRUCTIONS RECAP:
-1. Extract indicators from data["indicators"][timeframe] (use directly)
-2. Analyze OHLCV patterns from data["timeframes"][timeframe]"""
+1. Analyze all indicators from data["indicators"][timeframe]
+2. Check support/resistance levels, market structure, trend strength"""
         
         if historical_transactions and len(historical_transactions) > 0:
             prompt += "\n3. LEARN from historical_transactions (validate similar patterns)"
@@ -510,7 +552,7 @@ SIGNALS BOT REQUIREMENTS - CRITICAL:
   "recommendation": {
     "action": "BUY" | "SELL" | "HOLD",
     "entry_price": "<string or null>",
-    "strategy": "<MA, MACD, RSI, BollingerBands, Fibonacci_Retracement hoặc kết hợp>",
+    "strategy": "<MA, MACD, RSI, BollingerBands, Fibonacci_Retracement or combination>",
     "confidence": "<0-100>",
     "reasoning": "<briefly explain in 1–2 sentences why>"
   }
@@ -773,56 +815,53 @@ STEP 4: LEARN FROM HISTORICAL TRANSACTIONS (if provided)
 ║ 📊 DATA STRUCTURE GUIDE                                          ║
 ╚══════════════════════════════════════════════════════════════════╝
 
-1. **OHLCV HISTORICAL DATA** (timeframes: {formatted_timeframes})
-   - Raw candlestick data: open, high, low, close, volume, timestamp
-   - Use for: Price patterns, trends, support/resistance levels, candlestick patterns
+1. **PRE-CALCULATED TECHNICAL INDICATORS** (timeframes: {formatted_timeframes})
+   - {indicators_list}
    
-2. **PRE-CALCULATED TECHNICAL INDICATORS**{":" if available_indicators else " (if available):"}
-   - {indicators_list}{historical_section}
+2. **ADVANCED MARKET ANALYSIS**:
+   - Support/Resistance levels (price, strength, touches)
+   - Market Structure (phase, pattern, breakout detection)
+   - Trend Strength (strength, direction, divergence %)
+   - Bollinger Bands (upper, middle, lower)
+   - Pivot Points{historical_section}
 
 ⚡ CRITICAL INSTRUCTIONS:
-   • Check data["indicators"] first - if present, USE THOSE VALUES DIRECTLY
-   • If indicators not in data, calculate them from OHLCV historical data
-   • ALWAYS combine OHLCV price action analysis WITH indicator signals{step_adjust}
-   • Multi-timeframe analysis: Check ALL timeframes for confluence
+   • ALL indicators are PRE-CALCULATED - use values directly from data["indicators"]
+   • Access pattern: data["indicators"][timeframe][indicator_name]
+   • Multi-timeframe analysis: Check ALL timeframes for confluence{step_adjust}
 
 ───────────────────────────────────────────────────────────────────
 🎯 HOW TO USE THE DATA:
 
-STEP 1: CHECK FOR PRE-CALCULATED INDICATORS
-   if "indicators" in data:
-       # ✅ Use pre-calculated values directly (NO nested 'indicators' key)
-       # Access pattern: data["indicators"][timeframe][indicator_name]
-       
-       # Examples based on YOUR available indicators:
+STEP 1: ACCESS PRE-CALCULATED INDICATORS
+   # All indicators are pre-calculated and ready to use
+   # Access pattern: data["indicators"][timeframe][indicator_name]
+   
+   # Examples based on YOUR available indicators:
 {examples_text}
-   else:
-       # Calculate from OHLCV data in data["timeframes"][timeframe]
 
-STEP 2: ANALYZE PRICE ACTION FROM OHLCV
-   • Recent candle patterns (last 5-10 candles)
-   • Trend direction (higher highs/lows or lower highs/lows)
-   • Support/resistance levels (swing highs/lows)
-   • Volume confirmation (compare current vs average)
+STEP 2: ANALYZE MARKET STRUCTURE
+   • Check price_levels: Support/resistance strength and touches
+   • Check market_structure: Phase (trending/ranging/consolidation)
+   • Check trend_strength: Direction and divergence percentage
+   • Identify patterns: triangles, channels, breakout signals
 
-STEP 3: COMBINE BOTH DATA SOURCES FOR BETTER DECISIONS
+STEP 3: COMBINE INDICATORS FOR BETTER DECISIONS
    A. Momentum Confirmation:
-      • RSI from indicators + Price trend from OHLCV
-      • MACD crossover from indicators + Volume spike confirmation
+      • RSI + MACD + CMF = Strong momentum signal
+      • Multiple oscillators agreeing = Higher confidence
    
    B. Entry/Exit Optimization:
-      • Support/Resistance from OHLCV + RSI levels
-      • Breakout from OHLCV + Volume ratio > 1.1x average
-   
-   C. Risk Management:
-      • ATR from indicators = Volatility assessment
-      • Recent candle patterns = Stop loss placement{historical_step}
+      • Price near support + RSI oversold = BUY opportunity
+      • Price near resistance + RSI overbought = SELL signal
+      • Bollinger Bands squeeze + volume spike = Breakout trade
 
 ⚠️ IMPORTANT CHECKS:
-   ✓ Volume confirmation: Current volume vs volume_ratio in indicators
-   ✓ Multi-timeframe alignment: Check both 1H and 2H signals agree
+   ✓ Volume confirmation: volume_ratio > 1.1 for entry signals
+   ✓ Multi-timeframe alignment: Check ALL timeframes agree on trend
    ✓ RSI range: Avoid extreme zones (>75 or <25)
-   ✓ Trend confirmation: Price above/below SMAs
+   ✓ Trend confirmation: trend_bullish + trend_strength direction
+   ✓ Support/Resistance: Check "major" strength levels (5+ touches)
 
 ═══════════════════════════════════════════════════════════════════
 """
@@ -938,43 +977,43 @@ STEP 3: COMBINE BOTH DATA SOURCES FOR BETTER DECISIONS
 📊 DATA PROVIDED TO YOU:
 ═══════════════════════════════════════════════════════════════════
 
-1. **OHLCV HISTORICAL DATA** (timeframes: {formatted_timeframes})
-   - Raw candlestick data: open, high, low, close, volume, timestamp
-   - Use for: Price patterns, trends, support/resistance levels
-   
-2. **PRE-CALCULATED TECHNICAL INDICATORS** (if available)
+1. **PRE-CALCULATED TECHNICAL INDICATORS** (timeframes: {formatted_timeframes})
    - RSI (Relative Strength Index)
    - MACD (line, signal, histogram)
    - Moving Averages (SMA, EMA)
    - Bollinger Bands (upper, middle, lower)
-   - Volume analysis, trend signals
+   - Volume analysis (volume_ratio, CMF)
+   - Volatility (ATR)
    
-⚡ IMPORTANT: If indicators are provided, USE THEM DIRECTLY. If not provided, calculate from OHLCV data.
+2. **ADVANCED MARKET ANALYSIS**:
+   - Support/Resistance levels (price, strength, touches)
+   - Market Structure (phase, pattern, breakout detection)
+   - Trend Strength (strength, direction, divergence %)
+   - Pivot Points
+   
+⚡ IMPORTANT: ALL indicators are PRE-CALCULATED. Use values directly from data["indicators"][timeframe].
 
 ═══════════════════════════════════════════════════════════════════
 🎯 ANALYSIS WORKFLOW (STRICT ORDER):
 ═══════════════════════════════════════════════════════════════════
 
-STEP 1: DATA INTEGRATION & VOLUME VALIDATION ⚠️ MANDATORY FIRST
+STEP 1: VOLUME VALIDATION ⚠️ MANDATORY FIRST
 ────────────────────────────────────────────────────────────────
-✓ Check if indicators are provided in data["indicators"] 
-✓ If yes → Use pre-calculated values directly
-✓ If no → Calculate from OHLCV historical data
-✓ Volume Check: Current volume MUST be ≥ 110% of 20-period average
+✓ Check volume_ratio in indicators
+✓ Volume Check: volume_ratio MUST be ≥ 1.1 (110% of average)
   → If volume fails: IMMEDIATELY return HOLD (no further analysis)
 
 STEP 2: MULTI-TIMEFRAME TREND CONFIRMATION 📈
 ────────────────────────────────────────────────────────────────
-Analyze EACH timeframe:
-  A. Price Action from OHLCV:
-     • Higher highs + higher lows = Uptrend
-     • Lower highs + lower lows = Downtrend
-     • Recent candle patterns (engulfing, doji, hammers)
+Analyze EACH timeframe using pre-calculated indicators:
+  A. Trend Direction:
+     • Check trend_bullish and trend_strength
+     • Check market_structure.phase (trending/ranging/consolidation)
   
-  B. Moving Average Alignment (from indicators OR calculate):
-     • BULLISH: MA5 > MA10 > MA20 (golden cross)
-     • BEARISH: MA5 < MA10 < MA20 (death cross)
-     • Current price position vs MAs
+  B. Moving Average Alignment:
+     • BULLISH: current_price > sma_20 > sma_50 AND ema_12 > ema_26
+     • BEARISH: current_price < sma_20 < sma_50 AND ema_12 < ema_26
+     • Check trend_strength.direction for confirmation
   
   C. Consensus Rule:
      • BUY: At least 2/3 timeframes show bullish alignment
@@ -983,7 +1022,7 @@ Analyze EACH timeframe:
 
 STEP 3: MOMENTUM & OSCILLATORS ANALYSIS 🎢
 ────────────────────────────────────────────────────────────────
-Use indicators data if available, otherwise calculate:
+Use pre-calculated indicators directly:
 
   RSI (14-period):
   ✓ BUY Zone: 40-65 (healthy bullish momentum)
@@ -1543,7 +1582,7 @@ Need help? Contact support or upgrade your plan.
                 self.openai_client.chat.completions.create,
                 model=self.openai_model,
                 messages=[
-                    {"role": "system", "content": f"You are a professional trading engine. Analyze OHLCV data for timeframes: {', '.join(timeframes)}. Focus on volume confirmation and quality entry points. Return ONLY valid JSON."},
+                    {"role": "system", "content": f"You are a professional trading engine. Analyze the following indicator schema for timeframes: {', '.join(timeframes)} to determine the current market phase and possible trigger zones for BUY or SELL entries. Return ONLY valid JSON."},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.2,
@@ -1828,6 +1867,513 @@ Need help? Contact support or upgrade your plan.
         except Exception as e:
             logger.error(f"Market analysis error: {e}")
             return {"error": f"Analysis failed: {str(e)}"}
+    
+    async def find_trigger_zones(
+        self,
+        symbol: str,
+        timeframes_data: Dict[str, List[Dict]],
+        indicators_analysis: Dict[str, Dict[str, Any]],
+        bot_id: int = None,
+        model: str = "openai"
+    ) -> Dict[str, Any]:
+        """
+        Analyze market to find optimal BUY/SELL trigger zones
+        
+        Args:
+            symbol: Trading symbol (e.g., "BTCUSDT")
+            timeframes_data: OHLCV data for different timeframes (not used, for compatibility)
+            indicators_analysis: Calculated technical indicators for each timeframe
+            bot_id: Bot ID for quota tracking
+            model: LLM to use ("openai", "claude", "gemini")
+            
+        Returns:
+            {
+                "trigger_zones": [
+                    {"type": "BUY", "range": [880000, 920000], "confidence": 82},
+                    {"type": "SELL", "range": [1450000, 1500000], "confidence": 71}
+                ],
+                "reasoning": "RSI oversold on 1H/2H, strong 4H uptrend"
+            }
+        """
+        try:
+            logger.info(f"🎯 Finding trigger zones for {symbol} using {model}")
+            
+            # Prepare filtered market data (indicators only)
+            filtered_data = {
+                'symbol': symbol,
+                'analysis_timestamp': datetime.now().isoformat(),
+                'indicators': indicators_analysis
+            }
+            
+            # Generate zone-finding prompt
+            timeframes = list(indicators_analysis.keys()) if indicators_analysis else []
+            zone_prompt = self._generate_zone_finding_prompt(timeframes)
+            
+            # Create final prompt with data
+            prompt = f"""{zone_prompt}
+
+╔══════════════════════════════════════════════════════════════════╗
+║ 📈 MARKET DATA TO ANALYZE                                        ║
+╚══════════════════════════════════════════════════════════════════╝
+
+{json.dumps(filtered_data, indent=2)}
+
+⚡ INSTRUCTIONS RECAP:
+1. Analyze all indicators across timeframes
+2. Identify strong support zones (BUY zones)
+3. Identify strong resistance zones (SELL zones)
+4. Return STRICT JSON format with trigger_zones array
+
+═══════════════════════════════════════════════════════════════════
+"""
+            
+            # Call LLM based on model type
+            model_lower = model.lower()
+            if model_lower == "openai" or model_lower.startswith("gpt"):
+                result = await self._find_zones_with_openai(prompt, bot_id)
+            elif model_lower == "claude" or model_lower.startswith("claude"):
+                result = await self._find_zones_with_claude(prompt, bot_id)
+            elif model_lower == "gemini" or model_lower.startswith("gemini"):
+                result = await self._find_zones_with_gemini(prompt, bot_id)
+            else:
+                return {"error": f"Unsupported model: {model}"}
+            
+            logger.info(f"✅ Found {len(result.get('trigger_zones', []))} trigger zones")
+            return result
+            
+        except Exception as e:
+            logger.error(f"❌ Find trigger zones error: {e}")
+            return {"error": f"Zone finding failed: {str(e)}"}
+    
+    async def confirm_zone_trade(
+        self,
+        zone: Dict[str, Any],
+        current_price: float,
+        indicators_analysis: Dict[str, Dict[str, Any]],
+        symbol: str,
+        bot_id: int = None,
+        model: str = "openai"
+    ) -> Dict[str, Any]:
+        """
+        Confirm whether to execute a trade when price enters a trigger zone
+        
+        Args:
+            zone: Trigger zone info (type, price_min, price_max, confidence, reasoning)
+            current_price: Current market price that triggered the zone
+            indicators_analysis: Pre-calculated indicators for all timeframes
+            symbol: Trading symbol
+            bot_id: Optional bot ID for custom prompts
+            model: LLM model to use
+            
+        Returns:
+            Dict with recommendation (action: BUY/SELL/HOLD, entry_price, confidence, reasoning)
+        """
+        try:
+            # Filter data - only send indicators
+            filtered_data = {
+                'symbol': symbol,
+                'current_price': current_price,
+                'analysis_timestamp': datetime.now().isoformat(),
+                'indicators': indicators_analysis,
+                'trigger_zone': zone
+            }
+            
+            # Generate zone confirmation prompt
+            prompt = self._generate_zone_confirmation_prompt(zone, current_price, filtered_data)
+            
+            # Call LLM based on model type
+            model_lower = model.lower()
+            if model_lower == "openai" or model_lower.startswith("gpt"):
+                result = await self._confirm_zone_with_openai(prompt, bot_id)
+            elif model_lower == "claude" or model_lower.startswith("claude"):
+                result = await self._confirm_zone_with_claude(prompt, bot_id)
+            elif model_lower == "gemini" or model_lower.startswith("gemini"):
+                result = await self._confirm_zone_with_gemini(prompt, bot_id)
+            else:
+                return {"error": f"Unsupported model: {model}"}
+            
+            action = result.get('recommendation', {}).get('action', 'HOLD')
+            logger.info(f"✅ Zone confirmation: {action}")
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"❌ Zone confirmation error: {e}")
+            return {"error": f"Zone confirmation failed: {str(e)}"}
+    
+    def _generate_zone_finding_prompt(self, timeframes: List[str]) -> str:
+        """Generate prompt for finding trigger zones"""
+        formatted_timeframes = ", ".join([tf.upper() for tf in timeframes])
+        
+        return f"""You are a professional trading zone finder. Analyze market indicators to identify HIGH-PROBABILITY trigger zones for BUY and SELL entries.
+
+═══════════════════════════════════════════════════════════════════
+🎯 YOUR MISSION: FIND TRIGGER ZONES
+═══════════════════════════════════════════════════════════════════
+
+A TRIGGER ZONE is a price range where:
+• Multiple technical factors align (support/resistance + indicators)
+• High probability of price reversal or continuation
+• LLM will be called again when price enters this zone for final confirmation
+
+TIMEFRAMES ANALYZED: {formatted_timeframes}
+
+ZONE REQUIREMENTS:
+1. BUY ZONES (Support Areas):
+   • Strong support levels (multiple touches, major levels)
+   • RSI oversold (<40) or showing bullish divergence
+   • Price near lower Bollinger Band
+   • CMF showing accumulation (positive)
+   • MACD bullish crossover potential
+
+2. SELL ZONES (Resistance Areas):
+   • Strong resistance levels (multiple touches, major levels)
+   • RSI overbought (>60) or showing bearish divergence
+   • Price near upper Bollinger Band
+   • CMF showing distribution (negative)
+   • MACD bearish crossover potential
+
+ZONE QUALITY SCORING:
+• CONFIDENCE 80-100%: 3+ confirming factors, major level (5+ touches)
+• CONFIDENCE 60-79%: 2-3 confirming factors, strong level (3-4 touches)
+• CONFIDENCE < 60%: Don't include (not worth monitoring)
+
+═══════════════════════════════════════════════════════════════════
+📤 OUTPUT FORMAT (STRICT JSON SCHEMA)
+═══════════════════════════════════════════════════════════════════
+
+{{
+  "trigger_zones": [
+    {{
+      "type": "BUY",
+      "range": [<min_price>, <max_price>],
+      "confidence": <60-100>
+    }},
+    {{
+      "type": "SELL",
+      "range": [<min_price>, <max_price>],
+      "confidence": <60-100>
+    }}
+  ],
+  "reasoning": "<1-2 sentences explaining why these zones were selected>"
+}}
+
+OUTPUT RULES:
+• Return 2-4 zones maximum (1-2 BUY, 1-2 SELL)
+• Range width should be 1-3% of current price
+• Only include zones with confidence >= 60%
+• RETURN ONLY VALID JSON - no explanatory text outside JSON
+• If no high-quality zones found, return empty trigger_zones array
+
+═══════════════════════════════════════════════════════════════════
+"""
+    
+    async def _find_zones_with_openai(self, prompt: str, bot_id: int = None) -> Dict[str, Any]:
+        """Find trigger zones using OpenAI"""
+        try:
+            response = await asyncio.to_thread(
+                self.openai_client.chat.completions.create,
+                model=self.openai_model,
+                messages=[
+                    {"role": "system", "content": "You are a professional trading zone finder. Analyze indicators to identify trigger zones. Return ONLY valid JSON."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.3,
+                max_tokens=1000
+            )
+            
+            content = response.choices[0].message.content.strip()
+            
+            # Log usage if bot_id provided
+            if bot_id:
+                self._log_llm_usage(
+                    provider="openai",
+                    model=self.openai_model,
+                    input_tokens=response.usage.prompt_tokens,
+                    output_tokens=response.usage.completion_tokens,
+                    request_type="zone_finding",
+                    bot_id=bot_id
+                )
+            
+            # Parse JSON
+            parsed = self._parse_json_response(content)
+            if not parsed:
+                return {"error": "Failed to parse zone finding response"}
+            
+            return parsed
+            
+        except Exception as e:
+            logger.error(f"OpenAI zone finding error: {e}")
+            return {"error": str(e)}
+    
+    async def _find_zones_with_claude(self, prompt: str, bot_id: int = None) -> Dict[str, Any]:
+        """Find trigger zones using Claude"""
+        try:
+            response = await asyncio.to_thread(
+                self.claude_client.messages.create,
+                model=self.claude_model,
+                max_tokens=1000,
+                temperature=0.3,
+                system="You are a professional trading zone finder. Analyze indicators to identify trigger zones. Return ONLY valid JSON.",
+                messages=[
+                    {"role": "user", "content": prompt}
+                ]
+            )
+            
+            content = response.content[0].text.strip()
+            
+            # Log usage if bot_id provided
+            if bot_id:
+                self._log_llm_usage(
+                    provider="claude",
+                    model=self.claude_model,
+                    input_tokens=response.usage.input_tokens,
+                    output_tokens=response.usage.output_tokens,
+                    request_type="zone_finding",
+                    bot_id=bot_id
+                )
+            
+            # Parse JSON
+            parsed = self._parse_json_response(content)
+            if not parsed:
+                return {"error": "Failed to parse zone finding response"}
+            
+            return parsed
+            
+        except Exception as e:
+            logger.error(f"Claude zone finding error: {e}")
+            return {"error": str(e)}
+    
+    async def _find_zones_with_gemini(self, prompt: str, bot_id: int = None) -> Dict[str, Any]:
+        """Find trigger zones using Gemini"""
+        try:
+            response = await asyncio.to_thread(
+                self.gemini_model.generate_content,
+                prompt,
+                generation_config={
+                    "temperature": 0.3,
+                    "max_output_tokens": 1000,
+                    "response_mime_type": "application/json"
+                }
+            )
+            
+            content = response.text.strip()
+            
+            # Log usage (Gemini doesn't provide token counts in response)
+            if bot_id:
+                self._log_llm_usage(
+                    provider="gemini",
+                    model=self.gemini_model_name,
+                    input_tokens=len(prompt.split()) * 1.3,  # Estimate
+                    output_tokens=len(content.split()) * 1.3,  # Estimate
+                    request_type="zone_finding",
+                    bot_id=bot_id
+                )
+            
+            # Parse JSON
+            parsed = self._parse_json_response(content)
+            if not parsed:
+                return {"error": "Failed to parse zone finding response"}
+            
+            return parsed
+            
+        except Exception as e:
+            logger.error(f"Gemini zone finding error: {e}")
+            return {"error": str(e)}
+    
+    def _generate_zone_confirmation_prompt(self, zone: Dict[str, Any], current_price: float, filtered_data: Dict[str, Any]) -> str:
+        """Generate prompt for confirming zone trade"""
+        zone_type = zone.get('type', 'UNKNOWN')
+        price_min = zone.get('price_min', zone.get('range', [0])[0] if isinstance(zone.get('range'), list) else 0)
+        price_max = zone.get('price_max', zone.get('range', [0, 0])[1] if isinstance(zone.get('range'), list) else 0)
+        confidence = zone.get('confidence', 0)
+        reasoning = zone.get('reasoning', 'No reasoning provided')
+        
+        timeframes = list(filtered_data.get('indicators', {}).keys())
+        formatted_timeframes = ", ".join([tf.upper() for tf in timeframes])
+        
+        return f"""╔══════════════════════════════════════════════════════════════════╗
+║ ⚡ ZONE TRADE CONFIRMATION REQUEST                                ║
+╚══════════════════════════════════════════════════════════════════╝
+
+You are confirming whether to execute a trade in a PRE-IDENTIFIED trigger zone.
+
+🎯 TRIGGER ZONE DETECTED:
+  • Type: {zone_type}
+  • Price Range: ${price_min:,.2f} - ${price_max:,.2f}
+  • Current Price: ${current_price:,.2f} (✓ IN ZONE)
+  • Confidence: {confidence}%
+  • Reasoning: {reasoning}
+
+📊 YOUR TASK:
+Analyze the current market indicators to CONFIRM or REJECT this {zone_type} trade.
+
+⚡ KEY QUESTIONS TO ANSWER:
+1. Do current indicators support a {zone_type} at this price?
+2. Is momentum/trend aligned with {zone_type} direction?
+3. Are there any WARNING SIGNS (divergence, weak volume, extreme RSI)?
+4. What is the risk/reward at current price ${current_price:,.2f}?
+
+═══════════════════════════════════════════════════════════════════
+╔══════════════════════════════════════════════════════════════════╗
+║ 📊 CURRENT MARKET INDICATORS (Timeframes: {formatted_timeframes})           ║
+╚══════════════════════════════════════════════════════════════════╝
+
+{json.dumps(filtered_data, indent=2)}
+
+═══════════════════════════════════════════════════════════════════
+🎯 CONFIRMATION GUIDELINES:
+
+FOR {zone_type} CONFIRMATION:
+✓ If {zone_type}: Check trend_bullish/trend_strength direction aligns
+✓ If BUY: RSI < 50, price near support, positive momentum
+✓ If SELL: RSI > 50, price near resistance, negative momentum  
+✓ Volume confirmation: volume_ratio > 1.0
+✓ Multi-timeframe alignment: Check at least 2 timeframes agree
+
+WARNING SIGNS (→ HOLD):
+✗ Divergence between price and indicators
+✗ Extreme RSI (>80 or <20)
+✗ Volume too low (volume_ratio < 0.8)
+✗ Conflicting signals across timeframes
+✗ Price far from zone center (near zone edge)
+
+═══════════════════════════════════════════════════════════════════
+╔══════════════════════════════════════════════════════════════════╗
+║ 📤 OUTPUT FORMAT (STRICT JSON SCHEMA)                            ║
+╚══════════════════════════════════════════════════════════════════╝
+
+{{
+  "recommendation": {{
+    "action": "{zone_type}" | "HOLD",
+    "entry_price": {current_price},
+    "confidence": <0-100>,
+    "reasoning": "<1-2 sentences: why confirm or reject based on indicators>"
+  }}
+}}
+
+OUTPUT RULES:
+• ONLY return valid JSON (no markdown, no extra text)
+• action MUST be "{zone_type}" (to confirm) or "HOLD" (to reject)
+• If confidence < 60%: action MUST be "HOLD"
+• entry_price = {current_price} (the triggered price)
+• reasoning: Brief explanation based on actual indicator values
+
+RESPOND NOW WITH JSON ONLY:
+"""
+    
+    async def _confirm_zone_with_openai(self, prompt: str, bot_id: int = None) -> Dict[str, Any]:
+        """Confirm zone trade using OpenAI"""
+        try:
+            response = await self.openai_client.chat.completions.create(
+                model=self.openai_model,
+                messages=[
+                    {"role": "system", "content": "You are a professional trading confirmation engine. Analyze indicators and respond ONLY with valid JSON."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.3,
+                max_tokens=500,
+                response_format={"type": "json_object"}
+            )
+            
+            content = response.choices[0].message.content.strip()
+            
+            # Log usage
+            if bot_id:
+                self._log_llm_usage(
+                    provider="openai",
+                    model=self.openai_model,
+                    input_tokens=response.usage.prompt_tokens,
+                    output_tokens=response.usage.completion_tokens,
+                    request_type="zone_confirmation",
+                    bot_id=bot_id
+                )
+            
+            # Parse JSON
+            parsed = self._parse_json_response(content)
+            if not parsed:
+                return {"error": "Failed to parse zone confirmation response"}
+            
+            return parsed
+            
+        except Exception as e:
+            logger.error(f"OpenAI zone confirmation error: {e}")
+            return {"error": str(e)}
+    
+    async def _confirm_zone_with_claude(self, prompt: str, bot_id: int = None) -> Dict[str, Any]:
+        """Confirm zone trade using Claude"""
+        try:
+            response = await asyncio.to_thread(
+                self.claude_client.messages.create,
+                model=self.claude_model,
+                max_tokens=500,
+                temperature=0.3,
+                system="You are a professional trading confirmation engine. Analyze indicators and respond ONLY with valid JSON.",
+                messages=[
+                    {"role": "user", "content": prompt}
+                ]
+            )
+            
+            content = response.content[0].text.strip()
+            
+            # Log usage
+            if bot_id:
+                self._log_llm_usage(
+                    provider="claude",
+                    model=self.claude_model,
+                    input_tokens=response.usage.input_tokens,
+                    output_tokens=response.usage.output_tokens,
+                    request_type="zone_confirmation",
+                    bot_id=bot_id
+                )
+            
+            # Parse JSON
+            parsed = self._parse_json_response(content)
+            if not parsed:
+                return {"error": "Failed to parse zone confirmation response"}
+            
+            return parsed
+            
+        except Exception as e:
+            logger.error(f"Claude zone confirmation error: {e}")
+            return {"error": str(e)}
+    
+    async def _confirm_zone_with_gemini(self, prompt: str, bot_id: int = None) -> Dict[str, Any]:
+        """Confirm zone trade using Gemini"""
+        try:
+            response = await asyncio.to_thread(
+                self.gemini_model.generate_content,
+                prompt,
+                generation_config={
+                    "temperature": 0.3,
+                    "max_output_tokens": 500,
+                    "response_mime_type": "application/json"
+                }
+            )
+            
+            content = response.text.strip()
+            
+            # Log usage
+            if bot_id:
+                self._log_llm_usage(
+                    provider="gemini",
+                    model=self.gemini_model_name,
+                    input_tokens=len(prompt.split()) * 1.3,  # Estimate
+                    output_tokens=len(content.split()) * 1.3,  # Estimate
+                    request_type="zone_confirmation",
+                    bot_id=bot_id
+                )
+            
+            # Parse JSON
+            parsed = self._parse_json_response(content)
+            if not parsed:
+                return {"error": "Failed to parse zone confirmation response"}
+            
+            return parsed
+            
+        except Exception as e:
+            logger.error(f"Gemini zone confirmation error: {e}")
+            return {"error": str(e)}
     
     async def analyze_sentiment(self, news_data: List[Dict[str, Any]], 
                                model: str = "openai") -> Dict[str, Any]:

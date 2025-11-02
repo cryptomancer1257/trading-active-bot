@@ -361,6 +361,10 @@ class BotUpdate(BaseModel):
     historical_transaction_limit: Optional[int] = None
     include_failed_trades: Optional[bool] = None
     learning_mode: Optional[str] = None
+    
+    # Zone Trading Configuration
+    zone_trading_enabled: Optional[bool] = None
+    zone_update_frequency: Optional[int] = None
 
 class BotInDB(BotBase):
     id: int
