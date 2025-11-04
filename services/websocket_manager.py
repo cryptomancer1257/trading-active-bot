@@ -416,9 +416,15 @@ class WebSocketManager:
                 return False
             
             # Extract indicators
+            # multi_timeframe directly contains timeframe data (e.g., '1h', '4h', '2h')
             multi_timeframe = analysis.get('multi_timeframe', {})
-            indicators_analysis = multi_timeframe.get('indicators', {})
-            timeframes_data = multi_timeframe.get('timeframes', {})
+            indicators_analysis = multi_timeframe  # This IS the indicators by timeframe
+            
+            # Debug logging
+            logger.info(f"    🔍 Available timeframes: {list(multi_timeframe.keys())}")
+            if not multi_timeframe:
+                logger.error(f"    ❌ No timeframe data found in analysis")
+                return False
             
             # Call LLM for final confirmation
             llm_service = LLMIntegrationService()
@@ -453,8 +459,11 @@ class WebSocketManager:
             # Check LLM recommendation
             recommendation = llm_result.get('recommendation', {})
             action = recommendation.get('action', 'HOLD')
+            reasoning = recommendation.get('reasoning', 'No reasoning provided')
+            confidence = recommendation.get('confidence', 0)
             
-            logger.info(f"    📝 LLM Recommendation: {action}")
+            logger.info(f"    📝 LLM Recommendation: {action} (confidence: {confidence}%)")
+            logger.info(f"    💭 Reasoning: {reasoning}")
             
             # If LLM says HOLD, don't execute
             if action == 'HOLD':

@@ -11,6 +11,7 @@ This script helps you:
 
 import sys
 import os
+import asyncio
 from dotenv import load_dotenv
 
 # Load environment
@@ -103,22 +104,73 @@ def manually_trigger_zone_finding(subscription_id: int):
 
 
 def create_test_zone(bot_id: int, subscription_id: int, symbol: str = "BTCUSDT"):
-    """Create a test trigger zone manually"""
+    """Create a test trigger zone manually using REAL current price from exchange"""
     db = SessionLocal()
     
     try:
-        # Get current price (you can set this manually)
-        test_price = 68500.0
+        # Fetch REAL current price from testnet
+        subscription = db.query(models.Subscription).filter_by(id=subscription_id).first()
+        if not subscription:
+            print(f"❌ Subscription {subscription_id} not found")
+            return None
+        
+        bot_db = subscription.bot
+        if not bot_db:
+            print(f"❌ Bot not found for subscription {subscription_id}")
+            return None
+        
+        print(f"🔄 Fetching real price from {bot_db.exchange_type} testnet...")
+        
+        # Fetch current price directly from Bybit testnet API
+        import requests
+        try:
+            # Bybit testnet ticker endpoint
+            url = "https://api-testnet.bybit.com/v5/market/tickers"
+            params = {
+                "category": "linear",
+                "symbol": symbol.replace("/", "")  # Remove slash if present
+            }
+            response = requests.get(url, params=params, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+            
+            if data.get('retCode') != 0:
+                print(f"❌ Bybit API error: {data.get('retMsg')}")
+                return None
+            
+            ticker_list = data.get('result', {}).get('list', [])
+            if not ticker_list:
+                print(f"❌ No ticker data found for {symbol}")
+                return None
+            
+            current_price = float(ticker_list[0].get('lastPrice', 0))
+            
+        except Exception as e:
+            print(f"❌ Error fetching price from Bybit API: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+        
+        if current_price <= 0:
+            print(f"❌ Invalid price from exchange: {current_price}")
+            return None
+        
+        print(f"✅ Real testnet price: ${current_price:,.2f}")
+        
+        # Create zone around current price (±5% range for testing)
+        range_percent = 0.05  # 5%
+        price_min = current_price * (1 - range_percent)
+        price_max = current_price * (1 + range_percent)
         
         zone = models.TriggerZone(
             bot_id=bot_id,
             subscription_id=subscription_id,
             symbol=symbol,
             zone_type='BUY',
-            price_min=Decimal(str(test_price - 500)),  # $68,000
-            price_max=Decimal(str(test_price + 500)),  # $69,000
+            price_min=Decimal(str(price_min)),
+            price_max=Decimal(str(price_max)),
             confidence=85,
-            reasoning='Test zone for manual testing',
+            reasoning=f'Test zone created around real testnet price ${current_price:,.2f}',
             status='active',
             expires_at=datetime.utcnow() + timedelta(hours=1)
         )
@@ -126,11 +178,14 @@ def create_test_zone(bot_id: int, subscription_id: int, symbol: str = "BTCUSDT")
         db.add(zone)
         db.commit()
         
-        print(f"✅ Test zone created:")
+        print(f"\n✅ Test zone created with REAL price:")
         print(f"   Zone ID: {zone.id}")
         print(f"   Type: {zone.zone_type}")
-        print(f"   Range: ${float(zone.price_min):,.2f} - ${float(zone.price_max):,.2f}")
         print(f"   Symbol: {zone.symbol}")
+        print(f"   Current Price: ${current_price:,.2f}")
+        print(f"   Zone Range: ${float(zone.price_min):,.2f} - ${float(zone.price_max):,.2f}")
+        print(f"   Coverage: ±{range_percent*100}% of current price")
+        print(f"   Expires: {zone.expires_at}")
         
         return zone
         
@@ -222,6 +277,118 @@ def simulate_price_in_zone(zone_id: int, price: float):
         db.close()
 
 
+async def execute_zone_trade(zone_id: int):
+    """Execute trade for a specific zone with current real price"""
+    db = SessionLocal()
+    
+    try:
+        # Get zone
+        zone = db.query(models.TriggerZone).filter_by(id=zone_id).first()
+        if not zone:
+            print(f"❌ Zone {zone_id} not found")
+            return
+        
+        print(f"\n🎯 Executing trade for Zone #{zone_id}:")
+        print(f"   Type: {zone.zone_type}")
+        print(f"   Symbol: {zone.symbol}")
+        print(f"   Range: ${float(zone.price_min):,.2f} - ${float(zone.price_max):,.2f}")
+        print(f"   Status: {zone.status}")
+        
+        if zone.status != 'active':
+            print(f"⚠️  Zone is not active (status: {zone.status})")
+            return
+        
+        # Fetch current real price from Bybit testnet
+        import requests
+        print(f"\n🔄 Fetching current price from Bybit testnet...")
+        
+        try:
+            url = "https://api-testnet.bybit.com/v5/market/tickers"
+            params = {
+                "category": "linear",
+                "symbol": zone.symbol.replace("/", "")
+            }
+            response = requests.get(url, params=params, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+            
+            if data.get('retCode') != 0:
+                print(f"❌ Bybit API error: {data.get('retMsg')}")
+                return
+            
+            ticker_list = data.get('result', {}).get('list', [])
+            if not ticker_list:
+                print(f"❌ No ticker data found for {zone.symbol}")
+                return
+            
+            current_price = float(ticker_list[0].get('lastPrice', 0))
+            print(f"✅ Current testnet price: ${current_price:,.2f}")
+            
+        except Exception as e:
+            print(f"❌ Error fetching price: {e}")
+            return
+        
+        # Check if price is in zone
+        if not (float(zone.price_min) <= current_price <= float(zone.price_max)):
+            print(f"\n⚠️  Price ${current_price:,.2f} is NOT in zone range!")
+            print(f"   Zone Range: ${float(zone.price_min):,.2f} - ${float(zone.price_max):,.2f}")
+            print(f"\n💡 You can either:")
+            print(f"   1. Wait for price to enter zone")
+            print(f"   2. Create a new zone around current price: python test_zone_trading.py create {zone.bot_id} {zone.subscription_id}")
+            return
+        
+        print(f"✅ Price is IN zone range!")
+        
+        # Import WebSocket manager and execute trade
+        print(f"\n🚀 Executing trade via WebSocket manager...")
+        
+        from services.websocket_manager import WebSocketManager
+        
+        # Get subscription to determine exchange
+        subscription = db.query(models.Subscription).filter_by(id=zone.subscription_id).first()
+        if not subscription:
+            print(f"❌ Subscription {zone.subscription_id} not found")
+            return
+        
+        # Determine exchange type
+        exchange = subscription.bot.exchange_type.value if hasattr(subscription.bot.exchange_type, 'value') else str(subscription.bot.exchange_type).lower()
+        
+        # Create manager instance
+        manager = WebSocketManager()
+        
+        print(f"🤖 Calling LLM for trade confirmation...")
+        print(f"   Exchange: {exchange}")
+        
+        # Call the execute method directly
+        success = await manager._execute_zone_trade(
+            zone=zone,
+            current_price=current_price,
+            exchange=exchange,
+            db=db
+        )
+        
+        print(f"\n{'✅ SUCCESS' if success else '❌ FAILED'}: Trade execution {'completed' if success else 'failed'}")
+        
+        # Refresh zone to see updates
+        db.refresh(zone)
+        print(f"\n📊 Zone status after execution:")
+        print(f"   Status: {zone.status}")
+        print(f"   Last triggered: {zone.last_triggered_at}")
+        
+        print(f"\n✅ Trade execution completed!")
+        print(f"\n📝 Check results:")
+        print(f"   1. Database - transactions table")
+        print(f"   2. Exchange - open positions")
+        print(f"   3. Logs - websocket.log or terminal output")
+        
+    except Exception as e:
+        print(f"❌ Error executing trade: {e}")
+        import traceback
+        traceback.print_exc()
+    finally:
+        db.close()
+
+
 def main():
     """Main test menu"""
     print("=" * 70)
@@ -237,10 +404,12 @@ def main():
         print("  3. find <subscription_id>           - Manually trigger zone finding (by sub ID)")
         print("  4. create <bot_id> <sub_id>         - Create test zone")
         print("  5. list <bot_id>                    - List active zones")
-        print("  6. simulate <zone_id> <price>       - Simulate price trigger")
-        print("  7. full-test <bot_id>               - Run full test sequence")
+        print("  6. execute <zone_id>                - Execute trade for zone (TEST)")
+        print("  7. simulate <zone_id> <price>       - Simulate price trigger (info only)")
+        print("  8. full-test <bot_id>               - Run full test sequence")
         print("\nExamples:")
         print("  python test_zone_trading.py trigger 140")
+        print("  python test_zone_trading.py execute 8")
         print("  python test_zone_trading.py full-test 140")
         return
     
@@ -285,6 +454,13 @@ def main():
             return
         bot_id = int(sys.argv[2])
         list_active_zones(bot_id)
+    
+    elif command == "execute":
+        if len(sys.argv) < 3:
+            print("❌ Usage: python test_zone_trading.py execute <zone_id>")
+            return
+        zone_id = int(sys.argv[2])
+        asyncio.run(execute_zone_trade(zone_id))
         
     elif command == "simulate":
         if len(sys.argv) < 4:

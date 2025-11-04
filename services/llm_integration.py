@@ -2265,7 +2265,7 @@ RESPOND NOW WITH JSON ONLY:
     async def _confirm_zone_with_openai(self, prompt: str, bot_id: int = None) -> Dict[str, Any]:
         """Confirm zone trade using OpenAI"""
         try:
-            response = await self.openai_client.chat.completions.create(
+            response = self.openai_client.chat.completions.create(
                 model=self.openai_model,
                 messages=[
                     {"role": "system", "content": "You are a professional trading confirmation engine. Analyze indicators and respond ONLY with valid JSON."},
